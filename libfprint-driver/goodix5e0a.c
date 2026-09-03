@@ -99,10 +99,9 @@ on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
       fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
       return;
     }
-  fp_dbg ("Chip enabled! Configuring sensor register 0x022c...");
-  goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
-                                     GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL,
-                                     on_register_written, NULL);
+  /* ponytail: experiment — bypass 0x022c write to test if register zeroes content */
+  fp_dbg ("Chip enabled! Bypassing 0x022c register write; completing activation directly.");
+  fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), NULL);
 }
 
 static void
