@@ -14,6 +14,7 @@
 #include "gusb/gusb-device.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 
 #define FP_COMPONENT "goodixtls5e0a"
 
@@ -99,9 +100,11 @@ on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
       fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
       return;
     }
-  /* ponytail: experiment — bypass 0x022c write to test if register zeroes content */
-  fp_dbg ("Chip enabled! Bypassing 0x022c register write; completing activation directly.");
-  fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), NULL);
+  /* Ticket 09 Suspect 1: write 0x022c with 0x030a (\x0a\x03) */
+  fp_dbg ("Chip enabled! Configuring sensor register 0x022c with 0x030a...");
+  goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
+                                     GOODIX_5E0A_REG_GAIN_EXPOSURE_CALIB_VAL,
+                                     on_register_written, NULL);
 }
 
 G_GNUC_UNUSED static void
@@ -145,10 +148,10 @@ on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
       return;
     }
 
-  /* Experiment C: upload CONFIG_WBDI bytes extracted from wbdi.dll */
-  fp_dbg ("TLS connection ready! Uploading MCU config (CONFIG_WBDI)...");
-  goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config_wbdi,
-                                 sizeof (goodix_5e0a_config_wbdi), NULL,
+  /* Restore CONFIG_52XD config (CONFIG_WBDI was rejected by MCU) */
+  fp_dbg ("TLS connection ready! Uploading MCU config (CONFIG_52XD)...");
+  goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config,
+                                 sizeof (goodix_5e0a_config), NULL,
                                  on_config_uploaded, NULL);
 }
 
@@ -233,9 +236,62 @@ process_raw_frame (GoodixTls5xxPix * pix)
   if (min_v == 65535) min_v = 0;
   guint16 range = (max_v > min_v) ? (max_v - min_v) : 1;
 
+  double adj_sum = 0.0;
+  int adj_cnt = 0;
+  double all_sum = 0.0;
+  int all_cnt = 0;
+  double dist_0_18 = 0.0;
+
+  if (active >= 64)
+    {
+      double col_mean[19];
+      double col_std[19];
+      for (int k = 0; k < 19; ++k)
+        {
+          double sum = 0.0;
+          for (int r = 0; r < GOODIX_5E0A_HEIGHT; ++r)
+            sum += samples[k][r];
+          col_mean[k] = sum / (double) GOODIX_5E0A_HEIGHT;
+
+          double var_sum = 0.0;
+          for (int r = 0; r < GOODIX_5E0A_HEIGHT; ++r)
+            {
+              double diff = samples[k][r] - col_mean[k];
+              var_sum += diff * diff;
+            }
+          col_std[k] = sqrt (var_sum);
+        }
+
+      for (int i = 0; i < 19; ++i)
+        {
+          for (int j = i + 1; j < 19; ++j)
+            {
+              double cov = 0.0;
+              for (int r = 0; r < GOODIX_5E0A_HEIGHT; ++r)
+                cov += (samples[i][r] - col_mean[i]) * (samples[j][r] - col_mean[j]);
+              double denom = col_std[i] * col_std[j];
+              double r_val = (denom > 1e-6) ? (cov / denom) : 0.0;
+
+              if (j == i + 1)
+                {
+                  adj_sum += r_val;
+                  adj_cnt++;
+                }
+              if (i == 0 && j == 18)
+                dist_0_18 = r_val;
+
+              all_sum += r_val;
+              all_cnt++;
+            }
+        }
+    }
+
+  double mean_adj = (adj_cnt > 0) ? (adj_sum / (double) adj_cnt) : 0.0;
+  double mean_all = (all_cnt > 0) ? (all_sum / (double) all_cnt) : 0.0;
+
   /* Guaranteed journald output without needing debug flags */
-  g_message ("5e0a frame stats: active=%u, min_v=%u, max_v=%u, range=%u, declen=%u",
-             active, min_v, max_v, range, goodix5e0a_last_declen);
+  g_message ("5e0a frame stats: active=%u, min_v=%u, max_v=%u, range=%u, declen=%u, adj_corr=%.3f, all_corr=%.3f, dist_corr=%.3f",
+             active, min_v, max_v, range, goodix5e0a_last_declen, mean_adj, mean_all, dist_0_18);
 
   const int W = GOODIX_5E0A_WIDTH;   // Native 80
   const int H = GOODIX_5E0A_HEIGHT;  // Native 64
