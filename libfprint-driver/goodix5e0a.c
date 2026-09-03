@@ -145,9 +145,10 @@ on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
       return;
     }
 
-  fp_dbg ("TLS connection ready! Uploading MCU config (CONFIG_52XD)...");
-  goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config,
-                                 sizeof (goodix_5e0a_config), NULL,
+  /* Experiment C: upload CONFIG_WBDI bytes extracted from wbdi.dll */
+  fp_dbg ("TLS connection ready! Uploading MCU config (CONFIG_WBDI)...");
+  goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config_wbdi,
+                                 sizeof (goodix_5e0a_config_wbdi), NULL,
                                  on_config_uploaded, NULL);
 }
 

@@ -74,7 +74,15 @@ runs do not count; lesson learned from prior false "verified" marks)
   → revert this ticket's commit and report the exact journal lines. Do not
   pile further tweaks on a failing shape.
 
-## Experiment B (next, decided 09-03 — Experiment A falsified)
+## Experiment B — FALSIFIED 09-03
+
+`set_drv_state` skipped, activation/polling healthy, frames still zero under
+hold. drv_state neither blanks nor enables content. (Side note: enroll client
+going fully silent with no retries is the designed poll-until-content
+behavior, not a regression — retries only return when content frames reach
+minutiae stage.)
+
+## Experiment C (next): upload CONFIG_WBDI instead of CONFIG_52XD
 
 Experiment A result: per-poll 00-arm sends cleanly (zero journal errors —
 no arm-replies exist to clog the queue), captures flow, but frames stay
