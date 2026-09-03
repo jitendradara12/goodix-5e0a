@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Windows driver binaries & dumps
+*.dll
+windows_driver/
+*.bin
+
+# Captured images / test artifacts
+*.pgm
+*.bmp
+*.png
+
+# Nix build outputs
+result
+result-*
+clear-*.pgm
+
+# Build artifacts & executables
+debug_minutiae
+test_current_algo
+test_match
+test_minutiae
+*.raw
+
+# Internal AI agent workdir
+.agents/
