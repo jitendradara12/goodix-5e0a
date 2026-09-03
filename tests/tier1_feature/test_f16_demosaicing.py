@@ -97,8 +97,8 @@ class TestF16Demosaicing(unittest.TestCase):
             c_code = repo_c.read_text(encoding="utf-8")
             self.assertIn("process_raw_frame (GoodixTls5xxPix * pix)", c_code)
             self.assertIn("xx_cls->process_raw_frame = process_raw_frame;", c_code)
-            self.assertIn("const int W = GOODIX_5E0A_WIDTH * 2;   // 160", c_code)
-            self.assertIn("const int H = GOODIX_5E0A_HEIGHT * 2;  // 128", c_code)
+            self.assertIn("const int W = GOODIX_5E0A_WIDTH;   // Native 80", c_code)
+            self.assertIn("const int H = GOODIX_5E0A_HEIGHT;  // Native 64", c_code)
             self.assertIn("if (active < 64 || range < 8)", c_code)
 
 

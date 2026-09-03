@@ -52,8 +52,8 @@ class TestM2DriverRefactoring(unittest.TestCase):
             "dev_class->temp_hot_seconds = -1;",
             "img_dev_class->activate = dev_activate;",
             "img_dev_class->bz3_threshold = 12;",
-            "img_dev_class->img_width = GOODIX_5E0A_WIDTH * 2;",
-            "img_dev_class->img_height = GOODIX_5E0A_HEIGHT * 2;",
+            "img_dev_class->img_width = GOODIX_5E0A_WIDTH;",
+            "img_dev_class->img_height = GOODIX_5E0A_HEIGHT;",
         ]
         for entry in expected_vtable_entries:
             self.assertIn(entry, self.c_content, f"Missing vtable entry: {entry}")

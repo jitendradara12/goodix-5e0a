@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Flush-tolerant NOP, 04 — Discover the frame-data key.
 
-**Status:** verified-on-hardware
+**Status:** in-progress — script-level detection verified, enroll-level pending driver deploy (09-03: agent hardware test shows 01-WAIT blocks on air and wakes on touch at USB level; fprintd-stage advance untested — driver not yet deployed).
 
 Live-trace evidence & resolution (2026-09-03):
 - Root cause of always-fire: `SCAN_STAGE_SWITCH_TO_FDT_DOWN_ARM` was sending 0x32 with `noreply`, but the MCU actually generates a 17-byte reply (`a0 18 00 b8 32...`). This reply was left in the USB IN queue and immediately popped by the subsequent 01-WAIT stage within 0.01s on empty air.

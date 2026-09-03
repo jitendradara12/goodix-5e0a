@@ -632,10 +632,10 @@ index a19379c..d7427ea 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..cee8220
+index 0000000..51afd63
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,338 @@
+@@ -0,0 +1,329 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS
 +
@@ -700,7 +700,10 @@ index 0000000..cee8220
 +      break;
 +
 +    case ACTIVATE_RESET:
-+      goodix_send_reset (dev, TRUE, 20, goodixtls5xx_check_reset, ssm);
++      /* ponytail: soft-reset MCU state only (reset_sensor=FALSE).
++       * Resetting sensor die under finger recalibrates baseline capacitance
++       * to the finger (delta -> 0), yielding dark frames with zero minutiae. */
++      goodix_send_reset (dev, FALSE, 20, goodixtls5xx_check_reset, ssm);
 +      break;
 +
 +    case ACTIVATE_READ_CHIP_ID:
@@ -868,18 +871,16 @@ index 0000000..cee8220
 +  if (min_v == 65535) min_v = 0;
 +  guint16 range = (max_v > min_v) ? (max_v - min_v) : 1;
 +
-+  fp_info ("5e0a raw frame stats: active=%u, min_v=%u, max_v=%u, range=%u",
-+           active, min_v, max_v, range);
++  /* Guaranteed journald output without needing debug flags */
++  g_message ("5e0a frame stats: active=%u, min_v=%u, max_v=%u, range=%u",
++             active, min_v, max_v, range);
 +
-+  const int W = GOODIX_5E0A_WIDTH * 2;   // 160
-+  const int H = GOODIX_5E0A_HEIGHT * 2;  // 128
++  const int W = GOODIX_5E0A_WIDTH;   // Native 80
++  const int H = GOODIX_5E0A_HEIGHT;  // Native 64
 +
 +  /* B9-air: empty-air frames must NOT full-range stretch to fake ridges.
-+   * ponytail: ceiling — bar (64 samples / range 8) grounded only on
-+   * fingerprint.pgm (697 active, range 356) vs clear-0.pgm (0 active);
-+   * re-tune against windows_unpacked.pgm before raising. Dim, not NULL:
-+   * 511's crop_frame never returns NULL and scan_on_read_img passes img
-+   * straight to fpi_image_device_image_captured, so NULL is unverified. */
++   * Dim, not NULL: scan_on_read_img passes img straight to
++   * fpi_image_device_image_captured, so NULL is unverified. */
 +  if (active < 64 || range < 8)
 +    {
 +      fp_dbg ("5e0a empty air gated (active=%u < 64 || range=%u < 8)", active, range);
@@ -896,32 +897,24 @@ index 0000000..cee8220
 +
 +  for (int r = 0; r < H; ++r)
 +    {
-+      float orig_r = (float) r / 2.0f;
-+      int r0 = (int) orig_r;
-+      int r1 = (r0 + 1 < GOODIX_5E0A_HEIGHT) ? r0 + 1 : r0;
-+      float r_frac = orig_r - (float) r0;
-+
 +      for (int c = 0; c < W; ++c)
 +        {
-+          float orig_c = (float) c / 2.0f;
-+          float pos = (orig_c - 3.0f) / 4.0f;
++          float pos = ((float) c - 3.0f) / 4.0f;
 +          float val;
 +
 +          if (pos <= 0.0f)
 +            {
-+              val = (float) samples[0][r0] * (1.0f - r_frac) + (float) samples[0][r1] * r_frac;
++              val = (float) samples[0][r];
 +            }
 +          else if (pos >= 18.0f)
 +            {
-+              val = (float) samples[18][r0] * (1.0f - r_frac) + (float) samples[18][r1] * r_frac;
++              val = (float) samples[18][r];
 +            }
 +          else
 +            {
 +              int k = (int) pos;
 +              float c_frac = pos - (float) k;
-+              float top = (float) samples[k][r0] * (1.0f - c_frac) + (float) samples[k + 1][r0] * c_frac;
-+              float bot = (float) samples[k][r1] * (1.0f - c_frac) + (float) samples[k + 1][r1] * c_frac;
-+              val = top * (1.0f - r_frac) + bot * r_frac;
++              val = (float) samples[k][r] * (1.0f - c_frac) + (float) samples[k + 1][r] * c_frac;
 +            }
 +
 +          int norm = (int) (((val - (float) min_v) * 255.0f) / (float) range);
@@ -966,17 +959,15 @@ index 0000000..cee8220
 +  dev_class->temp_hot_seconds = -1; // Disable thermal watchdog
 +
 +  img_dev_class->activate = dev_activate;
-+  /* ponytail: ceiling — bz3_threshold kept at 12 (511 uses 24); no
-+   * windows_unpacked.pgm vs clear-0.pgm minutiae validation yet, do not tune. */
 +  img_dev_class->bz3_threshold = 12;
-+  img_dev_class->img_width = GOODIX_5E0A_WIDTH * 2;
-+  img_dev_class->img_height = GOODIX_5E0A_HEIGHT * 2;
++  img_dev_class->img_width = GOODIX_5E0A_WIDTH;
++  img_dev_class->img_height = GOODIX_5E0A_HEIGHT;
 +
 +  fpi_device_class_auto_initialize_features (dev_class);
 +}
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.h b/libfprint/drivers/goodixtls/goodix5e0a.h
 new file mode 100644
-index 0000000..0a16db7
+index 0000000..6f84d5b
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.h
 @@ -0,0 +1,88 @@
@@ -1042,21 +1033,21 @@ index 0000000..0a16db7
 +  0x00, 0x00, 0x00
 +};
 +
-+// 39-byte FDT down touch detection sequence
++// 39-byte FDT down touch detection sequence (desensitized +0x18 to prevent ambient air false triggers)
 +static const guint8 goodix_5e0a_fdt_down[] = {
 +  0x9c, 0x01, 0x27, 0x01, 0x21, 0x01, 0x27, 0x01,
-+  0x23, 0x01, 0x8d, 0x8d, 0x86, 0x86, 0x97, 0x97,
-+  0x8f, 0x8f, 0x9b, 0x9b, 0x92, 0x92, 0x96, 0x96,
-+  0x8c, 0x8c, 0x01, 0x00, 0x05, 0x03, 0xa7, 0x00,
++  0x23, 0x01, 0xa5, 0xa5, 0x9e, 0x9e, 0xaf, 0xaf,
++  0xa7, 0xa7, 0xb3, 0xb3, 0xaa, 0xaa, 0xae, 0xae,
++  0xa4, 0xa4, 0x01, 0x00, 0x05, 0x03, 0xa7, 0x00,
 +  0xa1, 0x00, 0xa7, 0x00, 0xa3, 0x00, 0x00
 +};
 +
 +// 39-byte FDT up touch release sequence (byte 26 is 0x00)
 +static const guint8 goodix_5e0a_fdt_up[] = {
 +  0x9c, 0x01, 0x27, 0x01, 0x21, 0x01, 0x27, 0x01,
-+  0x23, 0x01, 0x8d, 0x8d, 0x86, 0x86, 0x97, 0x97,
-+  0x8f, 0x8f, 0x9b, 0x9b, 0x92, 0x92, 0x96, 0x96,
-+  0x8c, 0x8c, 0x00, 0x00, 0x05, 0x03, 0xa7, 0x00,
++  0x23, 0x01, 0xa5, 0xa5, 0x9e, 0x9e, 0xaf, 0xaf,
++  0xa7, 0xa7, 0xb3, 0xb3, 0xaa, 0xaa, 0xae, 0xae,
++  0xa4, 0xa4, 0x00, 0x00, 0x05, 0x03, 0xa7, 0x00,
 +  0xa1, 0x00, 0xa7, 0x00, 0xa3, 0x00, 0x00
 +};
 +

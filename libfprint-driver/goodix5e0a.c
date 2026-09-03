@@ -62,7 +62,10 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
       break;
 
     case ACTIVATE_RESET:
-      goodix_send_reset (dev, TRUE, 20, goodixtls5xx_check_reset, ssm);
+      /* ponytail: soft-reset MCU state only (reset_sensor=FALSE).
+       * Resetting sensor die under finger recalibrates baseline capacitance
+       * to the finger (delta -> 0), yielding dark frames with zero minutiae. */
+      goodix_send_reset (dev, FALSE, 20, goodixtls5xx_check_reset, ssm);
       break;
 
     case ACTIVATE_READ_CHIP_ID:
@@ -230,18 +233,16 @@ process_raw_frame (GoodixTls5xxPix * pix)
   if (min_v == 65535) min_v = 0;
   guint16 range = (max_v > min_v) ? (max_v - min_v) : 1;
 
-  fp_info ("5e0a raw frame stats: active=%u, min_v=%u, max_v=%u, range=%u",
-           active, min_v, max_v, range);
+  /* Guaranteed journald output without needing debug flags */
+  g_message ("5e0a frame stats: active=%u, min_v=%u, max_v=%u, range=%u",
+             active, min_v, max_v, range);
 
-  const int W = GOODIX_5E0A_WIDTH * 2;   // 160
-  const int H = GOODIX_5E0A_HEIGHT * 2;  // 128
+  const int W = GOODIX_5E0A_WIDTH;   // Native 80
+  const int H = GOODIX_5E0A_HEIGHT;  // Native 64
 
   /* B9-air: empty-air frames must NOT full-range stretch to fake ridges.
-   * ponytail: ceiling — bar (64 samples / range 8) grounded only on
-   * fingerprint.pgm (697 active, range 356) vs clear-0.pgm (0 active);
-   * re-tune against windows_unpacked.pgm before raising. Dim, not NULL:
-   * 511's crop_frame never returns NULL and scan_on_read_img passes img
-   * straight to fpi_image_device_image_captured, so NULL is unverified. */
+   * Dim, not NULL: scan_on_read_img passes img straight to
+   * fpi_image_device_image_captured, so NULL is unverified. */
   if (active < 64 || range < 8)
     {
       fp_dbg ("5e0a empty air gated (active=%u < 64 || range=%u < 8)", active, range);
@@ -258,32 +259,24 @@ process_raw_frame (GoodixTls5xxPix * pix)
 
   for (int r = 0; r < H; ++r)
     {
-      float orig_r = (float) r / 2.0f;
-      int r0 = (int) orig_r;
-      int r1 = (r0 + 1 < GOODIX_5E0A_HEIGHT) ? r0 + 1 : r0;
-      float r_frac = orig_r - (float) r0;
-
       for (int c = 0; c < W; ++c)
         {
-          float orig_c = (float) c / 2.0f;
-          float pos = (orig_c - 3.0f) / 4.0f;
+          float pos = ((float) c - 3.0f) / 4.0f;
           float val;
 
           if (pos <= 0.0f)
             {
-              val = (float) samples[0][r0] * (1.0f - r_frac) + (float) samples[0][r1] * r_frac;
+              val = (float) samples[0][r];
             }
           else if (pos >= 18.0f)
             {
-              val = (float) samples[18][r0] * (1.0f - r_frac) + (float) samples[18][r1] * r_frac;
+              val = (float) samples[18][r];
             }
           else
             {
               int k = (int) pos;
               float c_frac = pos - (float) k;
-              float top = (float) samples[k][r0] * (1.0f - c_frac) + (float) samples[k + 1][r0] * c_frac;
-              float bot = (float) samples[k][r1] * (1.0f - c_frac) + (float) samples[k + 1][r1] * c_frac;
-              val = top * (1.0f - r_frac) + bot * r_frac;
+              val = (float) samples[k][r] * (1.0f - c_frac) + (float) samples[k + 1][r] * c_frac;
             }
 
           int norm = (int) (((val - (float) min_v) * 255.0f) / (float) range);
@@ -328,11 +321,9 @@ fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
   dev_class->temp_hot_seconds = -1; // Disable thermal watchdog
 
   img_dev_class->activate = dev_activate;
-  /* ponytail: ceiling — bz3_threshold kept at 12 (511 uses 24); no
-   * windows_unpacked.pgm vs clear-0.pgm minutiae validation yet, do not tune. */
   img_dev_class->bz3_threshold = 12;
-  img_dev_class->img_width = GOODIX_5E0A_WIDTH * 2;
-  img_dev_class->img_height = GOODIX_5E0A_HEIGHT * 2;
+  img_dev_class->img_width = GOODIX_5E0A_WIDTH;
+  img_dev_class->img_height = GOODIX_5E0A_HEIGHT;
 
   fpi_device_class_auto_initialize_features (dev_class);
 }
