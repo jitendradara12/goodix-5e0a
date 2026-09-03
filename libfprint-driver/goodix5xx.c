@@ -378,8 +378,8 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 
   if (cls->process_raw_frame && img == NULL)
     {
-      /* Empty frame / no finger touch: wait 500ms and re-poll via 00-arm (Experiment A) */
-      fpi_ssm_jump_to_state_delayed (ssm, SCAN_STAGE_SWITCH_TO_FDT_DOWN_ARM, 500);
+      /* Empty frame / no finger touch: wait 500ms and re-poll */
+      fpi_ssm_jump_to_state_delayed (ssm, SCAN_STAGE_GET_IMG, 500);
       return;
     }
 
@@ -473,19 +473,6 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
         is 0x70 vs trace sleep; needs payload-plumbed transport helpers.
         Existing SCAN_STAGE_QUERY_MCU covers the pre-FDT query slot. */
     case SCAN_STAGE_SWITCH_TO_FDT_DOWN_ARM:
-      /* Experiment A: send 00-arm (ACK-only), capture immediately, no 01-wait */
-      if (cls->process_raw_frame && cls->get_fdt_down_cfg)
-        {
-          GoodixTls5xxMcuConfig cfg = cls->get_fdt_down_cfg ();
-          if (cfg.data && cfg.data_len > 26 && cfg.data_len <= 64)
-            {
-              guint8 arm[64];
-              memcpy (arm, cfg.data, cfg.data_len);
-              arm[26] = 0x00;
-              goodix_send_mcu_switch_to_fdt_down_noreply (dev, arm, cfg.data_len, NULL, goodixtls5xx_check_none, ssm);
-              break;
-            }
-        }
       fpi_ssm_next_state (ssm);
       break;
 

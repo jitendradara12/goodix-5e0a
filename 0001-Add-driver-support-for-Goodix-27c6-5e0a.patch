@@ -1,22 +1,22 @@
-From 50fd1d6b241e96ecba5bbc5200e91a7c8dde219d Mon Sep 17 00:00:00 2001
+From 90d2cecc9ab7ac0852231fab95b26ef9d52835d8 Mon Sep 17 00:00:00 2001
 From: Test <test@test.com>
-Date: Thu, 3 Sep 2026 21:19:02 +0530
+Date: Thu, 3 Sep 2026 21:35:58 +0530
 Subject: [PATCH] Add driver support for Goodix 27c6:5e0a
 
 ---
  libfprint/drivers/goodixtls/goodix.c       | 303 +++++++++++++++----
  libfprint/drivers/goodixtls/goodix.h       |  55 +++-
  libfprint/drivers/goodixtls/goodix511.c    |   1 +
- libfprint/drivers/goodixtls/goodix5e0a.c   | 322 +++++++++++++++++++++
+ libfprint/drivers/goodixtls/goodix5e0a.c   | 323 +++++++++++++++++++++
  libfprint/drivers/goodixtls/goodix5e0a.h   |  89 ++++++
- libfprint/drivers/goodixtls/goodix5xx.c    | 247 ++++++++++++----
+ libfprint/drivers/goodixtls/goodix5xx.c    | 234 +++++++++++----
  libfprint/drivers/goodixtls/goodix5xx.h    |  18 +-
  libfprint/drivers/goodixtls/goodix_proto.h |   4 +
  libfprint/drivers/goodixtls/goodixtls.c    | 105 +++++--
  libfprint/fprint-list-udev-hwdb.c          |   1 -
  libfprint/meson.build                      |   2 +
  meson.build                                |   2 +
- 12 files changed, 990 insertions(+), 159 deletions(-)
+ 12 files changed, 978 insertions(+), 159 deletions(-)
  create mode 100644 libfprint/drivers/goodixtls/goodix5e0a.c
  create mode 100644 libfprint/drivers/goodixtls/goodix5e0a.h
 
@@ -648,10 +648,10 @@ index a19379c..d7427ea 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..d973db4
+index 0000000..26d408d
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,322 @@
+@@ -0,0 +1,323 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS
 +
@@ -731,7 +731,7 @@ index 0000000..d973db4
 +    }
 +}
 +
-+static void
++G_GNUC_UNUSED static void
 +on_register_written (FpDevice *dev, gpointer user_data, GError *error)
 +{
 +  if (error)
@@ -758,7 +758,7 @@ index 0000000..d973db4
 +  fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), NULL);
 +}
 +
-+static void
++G_GNUC_UNUSED static void
 +on_drv_state_set (FpDevice *dev, gpointer user_data, GError *error)
 +{
 +  if (error)
@@ -783,8 +783,9 @@ index 0000000..d973db4
 +      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
 +      return;
 +    }
-+  fp_dbg ("MCU config uploaded successfully after TLS! Setting drv state...");
-+  goodix_send_set_drv_state (dev, on_drv_state_set, NULL);
++  /* Experiment B: bypass set_drv_state, enable chip directly */
++  fp_dbg ("MCU config uploaded successfully after TLS! Enabling chip directly...");
++  goodix_send_enable_chip (dev, TRUE, on_chip_enabled, NULL);
 +}
 +
 +static void
@@ -1070,7 +1071,7 @@ index 0000000..24bc531
 +  {.vid = 0, .pid = 0, .driver_data = 0},
 +};
 diff --git a/libfprint/drivers/goodixtls/goodix5xx.c b/libfprint/drivers/goodixtls/goodix5xx.c
-index a75d28b..a7d442b 100644
+index a75d28b..a3e61e1 100644
 --- a/libfprint/drivers/goodixtls/goodix5xx.c
 +++ b/libfprint/drivers/goodixtls/goodix5xx.c
 @@ -27,6 +27,9 @@
@@ -1153,8 +1154,8 @@ index a75d28b..a7d442b 100644
 +
 +  if (cls->process_raw_frame && img == NULL)
 +    {
-+      /* Empty frame / no finger touch: wait 500ms and re-poll via 00-arm (Experiment A) */
-+      fpi_ssm_jump_to_state_delayed (ssm, SCAN_STAGE_SWITCH_TO_FDT_DOWN_ARM, 500);
++      /* Empty frame / no finger touch: wait 500ms and re-poll */
++      fpi_ssm_jump_to_state_delayed (ssm, SCAN_STAGE_GET_IMG, 500);
 +      return;
 +    }
 +
@@ -1201,7 +1202,7 @@ index a75d28b..a7d442b 100644
    fpi_ssm_next_state (ssm);
  }
  
-@@ -369,30 +434,130 @@ static void
+@@ -369,30 +434,117 @@ static void
  scan_run_state (FpiSsm * ssm, FpDevice * dev)
  {
    FpImageDevice *img_dev = FP_IMAGE_DEVICE (dev);
@@ -1247,19 +1248,6 @@ index a75d28b..a7d442b 100644
 +        is 0x70 vs trace sleep; needs payload-plumbed transport helpers.
 +        Existing SCAN_STAGE_QUERY_MCU covers the pre-FDT query slot. */
 +    case SCAN_STAGE_SWITCH_TO_FDT_DOWN_ARM:
-+      /* Experiment A: send 00-arm (ACK-only), capture immediately, no 01-wait */
-+      if (cls->process_raw_frame && cls->get_fdt_down_cfg)
-+        {
-+          GoodixTls5xxMcuConfig cfg = cls->get_fdt_down_cfg ();
-+          if (cfg.data && cfg.data_len > 26 && cfg.data_len <= 64)
-+            {
-+              guint8 arm[64];
-+              memcpy (arm, cfg.data, cfg.data_len);
-+              arm[26] = 0x00;
-+              goodix_send_mcu_switch_to_fdt_down_noreply (dev, arm, cfg.data_len, NULL, goodixtls5xx_check_none, ssm);
-+              break;
-+            }
-+        }
 +      fpi_ssm_next_state (ssm);
        break;
 +
@@ -1338,7 +1326,7 @@ index a75d28b..a7d442b 100644
        break;
  
      case SCAN_STAGE_SWITCH_TO_FTD_DONE:
-@@ -425,8 +590,16 @@ void
+@@ -425,8 +577,16 @@ void
  goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const guint8 *raw_frame)
  {
    GoodixTls5xxPix *pix = frame;
@@ -1356,7 +1344,7 @@ index a75d28b..a7d442b 100644
      {
        const guint8 *chunk = raw_frame + i;
        *pix++ = ((chunk[0] & 0xf) << 8) + chunk[1];
-@@ -436,43 +609,6 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const gu
+@@ -436,43 +596,6 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const gu
      }
  }
  
@@ -1400,7 +1388,7 @@ index a75d28b..a7d442b 100644
  static void
  dev_change_state (FpImageDevice * img_dev, FpiImageDeviceState state)
  {
-@@ -523,6 +659,7 @@ dev_deactivate (FpImageDevice *img_dev)
+@@ -523,6 +646,7 @@ dev_deactivate (FpImageDevice *img_dev)
  
    if (cls->reset_state)
      cls->reset_state (dev);
@@ -1408,7 +1396,7 @@ index a75d28b..a7d442b 100644
    fpi_image_device_deactivate_complete (img_dev, error);
  }
  
-@@ -550,6 +687,8 @@ void
+@@ -550,6 +674,8 @@ void
  fpi_device_goodixtls5xx_class_init (FpiDeviceGoodixTls5xxClass * self)
  {
    self->get_mcu_cfg = NULL;

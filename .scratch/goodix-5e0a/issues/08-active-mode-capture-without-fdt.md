@@ -74,22 +74,28 @@ runs do not count; lesson learned from prior false "verified" marks)
   → revert this ticket's commit and report the exact journal lines. Do not
   pile further tweaks on a failing shape.
 
-## Experiment A (next, decided 09-03 after poll-proven-zero-content)
+## Experiment B (next, decided 09-03 — Experiment A falsified)
 
-Polling works (2 polls/s, silent hands-off) but all frames decode zero under
-held finger too. Eliminated by evidence: truncation (declen full), reset
-phasing (zeros persist without per-cycle reset), settle (60s+ of polling),
-reg-write (bypassed), row/col layout (19/19 measured), Python decrypt theater
-notwithstanding. Remaining structural difference vs the one proven script
-frame: the script armed FDT (`0x32`), the driver sends nothing before
-capture. Hypothesis: capture outside armed state yields zero-filled valid
-frames. Test: per poll iteration send 00-arm (ACK-only noreply sender) then
-capture immediately, no 01-wait. Predicted signatures: content frames
-(`active>0`) on hold = confirmed; `0x32` timeouts/errors in journal =
-arm-replies exist after all, abort and report. Backup hypothesis if A fails:
-`set_drv_state` (absent from the proven script path) blanks captures — drop
-it from activation and re-test. Payload question stays parked: both payloads
-return identical framing, so it cannot explain zeros.
+Experiment A result: per-poll 00-arm sends cleanly (zero journal errors —
+no arm-replies exist to clog the queue), captures flow, but frames stay
+all-zero under held finger. FDT-arming does not enable content. Eliminated
+with it: stale-arm-reply as the always-fire mechanism (no clogging observed).
+
+Remaining structural diffs vs the one proven script frame
+(`experiments/test_press_and_minutiae.py`, which used CONFIG_WBDI, no
+drv_state, no reg-write, 01-payload): (1) driver sends `set_drv_state`
+(absent in proven path); (2) driver uploads CONFIG_52XD instead of
+CONFIG_WBDI. Test ONE variable at a time, this order:
+
+- B: skip `set_drv_state` in activation (keep the callback chain flowing to
+  `enable_chip`, same bypass pattern as the reg-write). Rebuild, two-phase
+  verify. Nonzero on hold = confirmed → remove permanently.
+- C (only if B fails): upload CONFIG_WBDI bytes in place of CONFIG_52XD and
+  re-test. Do not combine B and C in one build.
+
+(Experiment A record: per-poll 00-arm hypothesis falsified 09-03 — arms send
+cleanly with zero journal errors yet frames stay zero under hold. Payload
+question stays parked: both payloads return identical framing.)
 
 ## Critical implementation context & edge cases (Must-Know)
 

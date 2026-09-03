@@ -77,7 +77,7 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
     }
 }
 
-static void
+G_GNUC_UNUSED static void
 on_register_written (FpDevice *dev, gpointer user_data, GError *error)
 {
   if (error)
@@ -104,7 +104,7 @@ on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
   fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), NULL);
 }
 
-static void
+G_GNUC_UNUSED static void
 on_drv_state_set (FpDevice *dev, gpointer user_data, GError *error)
 {
   if (error)
@@ -129,8 +129,9 @@ on_config_uploaded (FpDevice *dev, gboolean success,
       fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
       return;
     }
-  fp_dbg ("MCU config uploaded successfully after TLS! Setting drv state...");
-  goodix_send_set_drv_state (dev, on_drv_state_set, NULL);
+  /* Experiment B: bypass set_drv_state, enable chip directly */
+  fp_dbg ("MCU config uploaded successfully after TLS! Enabling chip directly...");
+  goodix_send_enable_chip (dev, TRUE, on_chip_enabled, NULL);
 }
 
 static void
