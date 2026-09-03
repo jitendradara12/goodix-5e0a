@@ -74,6 +74,23 @@ runs do not count; lesson learned from prior false "verified" marks)
   → revert this ticket's commit and report the exact journal lines. Do not
   pile further tweaks on a failing shape.
 
+## Experiment A (next, decided 09-03 after poll-proven-zero-content)
+
+Polling works (2 polls/s, silent hands-off) but all frames decode zero under
+held finger too. Eliminated by evidence: truncation (declen full), reset
+phasing (zeros persist without per-cycle reset), settle (60s+ of polling),
+reg-write (bypassed), row/col layout (19/19 measured), Python decrypt theater
+notwithstanding. Remaining structural difference vs the one proven script
+frame: the script armed FDT (`0x32`), the driver sends nothing before
+capture. Hypothesis: capture outside armed state yields zero-filled valid
+frames. Test: per poll iteration send 00-arm (ACK-only noreply sender) then
+capture immediately, no 01-wait. Predicted signatures: content frames
+(`active>0`) on hold = confirmed; `0x32` timeouts/errors in journal =
+arm-replies exist after all, abort and report. Backup hypothesis if A fails:
+`set_drv_state` (absent from the proven script path) blanks captures — drop
+it from activation and re-test. Payload question stays parked: both payloads
+return identical framing, so it cannot explain zeros.
+
 ## Critical implementation context & edge cases (Must-Know)
 
 1. **Register 0x022c Factual Correction**:
