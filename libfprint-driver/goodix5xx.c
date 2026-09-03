@@ -343,8 +343,10 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
   FpiDeviceGoodixTls5xx* self = FPI_DEVICE_GOODIXTLS5XX(dev);
   FpiDeviceGoodixTls5xxPrivate* priv = fpi_device_goodixtls5xx_get_instance_private(self);
   FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
+  extern guint32 goodix5e0a_last_declen;
+  goodix5e0a_last_declen = len;
 
-  fp_info ("5e0a scan_on_read_img: decrypted %u bytes from SSL_read", len);
+  g_message ("5e0a scan_on_read_img: declen=%u", len);
 
   static gboolean frame_saved = FALSE;
   if (!frame_saved && data && len > 0)

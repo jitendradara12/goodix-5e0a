@@ -82,6 +82,7 @@ static const guint8 goodix_5e0a_fdt_up[] = {
 // (45 03 a7 00 a1 00 a7 00 a3 00 per driver_52xd.py:299-302). Not duplicated
 // here: base (goodix.c) must not include subclass header.
 
+extern guint32 goodix5e0a_last_declen;
 static const FpIdEntry goodix_5e0a_id_table[] = {
   {.vid = 0x27c6, .pid = 0x5e0a},
   {.vid = 0, .pid = 0, .driver_data = 0},

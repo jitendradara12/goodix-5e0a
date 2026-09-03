@@ -25,6 +25,8 @@
 #include "goodix_proto.h"
 #include "goodix5e0a.h"
 
+guint32 goodix5e0a_last_declen = 0;
+
 struct _FpiDeviceGoodixTls5e0a
 {
   FpiDeviceGoodixTls5xx parent;
@@ -231,8 +233,8 @@ process_raw_frame (GoodixTls5xxPix * pix)
   guint16 range = (max_v > min_v) ? (max_v - min_v) : 1;
 
   /* Guaranteed journald output without needing debug flags */
-  g_message ("5e0a frame stats: active=%u, min_v=%u, max_v=%u, range=%u",
-             active, min_v, max_v, range);
+  g_message ("5e0a frame stats: active=%u, min_v=%u, max_v=%u, range=%u, declen=%u",
+             active, min_v, max_v, range, goodix5e0a_last_declen);
 
   const int W = GOODIX_5E0A_WIDTH;   // Native 80
   const int H = GOODIX_5E0A_HEIGHT;  // Native 64

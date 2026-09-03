@@ -632,10 +632,10 @@ index a19379c..d7427ea 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..f8cba79
+index 0000000..8f15303
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,326 @@
+@@ -0,0 +1,328 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS
 +
@@ -662,6 +662,8 @@ index 0000000..f8cba79
 +#include "goodix.h"
 +#include "goodix_proto.h"
 +#include "goodix5e0a.h"
++
++guint32 goodix5e0a_last_declen = 0;
 +
 +struct _FpiDeviceGoodixTls5e0a
 +{
@@ -869,8 +871,8 @@ index 0000000..f8cba79
 +  guint16 range = (max_v > min_v) ? (max_v - min_v) : 1;
 +
 +  /* Guaranteed journald output without needing debug flags */
-+  g_message ("5e0a frame stats: active=%u, min_v=%u, max_v=%u, range=%u",
-+             active, min_v, max_v, range);
++  g_message ("5e0a frame stats: active=%u, min_v=%u, max_v=%u, range=%u, declen=%u",
++             active, min_v, max_v, range, goodix5e0a_last_declen);
 +
 +  const int W = GOODIX_5E0A_WIDTH;   // Native 80
 +  const int H = GOODIX_5E0A_HEIGHT;  // Native 64
@@ -964,10 +966,10 @@ index 0000000..f8cba79
 +}
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.h b/libfprint/drivers/goodixtls/goodix5e0a.h
 new file mode 100644
-index 0000000..6f84d5b
+index 0000000..24bc531
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.h
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,89 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS
 +
@@ -1052,12 +1054,13 @@ index 0000000..6f84d5b
 +// (45 03 a7 00 a1 00 a7 00 a3 00 per driver_52xd.py:299-302). Not duplicated
 +// here: base (goodix.c) must not include subclass header.
 +
++extern guint32 goodix5e0a_last_declen;
 +static const FpIdEntry goodix_5e0a_id_table[] = {
 +  {.vid = 0x27c6, .pid = 0x5e0a},
 +  {.vid = 0, .pid = 0, .driver_data = 0},
 +};
 diff --git a/libfprint/drivers/goodixtls/goodix5xx.c b/libfprint/drivers/goodixtls/goodix5xx.c
-index a75d28b..14c4b32 100644
+index a75d28b..4e36a94 100644
 --- a/libfprint/drivers/goodixtls/goodix5xx.c
 +++ b/libfprint/drivers/goodixtls/goodix5xx.c
 @@ -27,6 +27,7 @@
@@ -1096,11 +1099,14 @@ index a75d28b..14c4b32 100644
        break;
      case CALIBRATION_STAGE_NAV0:
        goodix_send_nav_0(dev, goodixtls5xx_check_none_cmd, ssm);
-@@ -331,31 +344,40 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
+@@ -330,32 +343,43 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
+   FpiDeviceGoodixTls5xx* self = FPI_DEVICE_GOODIXTLS5XX(dev);
    FpiDeviceGoodixTls5xxPrivate* priv = fpi_device_goodixtls5xx_get_instance_private(self);
    FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
- 
-+  fp_info ("5e0a scan_on_read_img: decrypted %u bytes from SSL_read", len);
++  extern guint32 goodix5e0a_last_declen;
++  goodix5e0a_last_declen = len;
++
++  g_message ("5e0a scan_on_read_img: declen=%u", len);
 +
 +  static gboolean frame_saved = FALSE;
 +  if (!frame_saved && data && len > 0)
@@ -1109,7 +1115,7 @@ index a75d28b..14c4b32 100644
 +      frame_saved = TRUE;
 +      fp_info ("5e0a saved /tmp/live_frame.raw (%u bytes)", len);
 +    }
-+
+ 
    GoodixTls5xxPix * raw_frame = calloc (cls->scan_width * cls->scan_height, sizeof (GoodixTls5xxPix));
    goodixtls5xx_decode_frame (raw_frame, len, data);
 -  linear_subtract_inplace(raw_frame, priv->calibration_img, cls->scan_width * cls->scan_height);
@@ -1153,7 +1159,7 @@ index a75d28b..14c4b32 100644
  
  static void
  scan_get_img (FpDevice * dev, FpiSsm * ssm)
-@@ -373,17 +395,56 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
+@@ -373,17 +397,56 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
    switch (fpi_ssm_get_cur_state (ssm))
      {
      case SCAN_STAGE_QUERY_MCU:
@@ -1214,7 +1220,7 @@ index a75d28b..14c4b32 100644
        break;
  
      case SCAN_STAGE_GET_IMG:
-@@ -391,8 +452,46 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
+@@ -391,8 +454,46 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
        scan_get_img (dev, ssm);
        break;
  
@@ -1262,7 +1268,7 @@ index a75d28b..14c4b32 100644
        break;
  
      case SCAN_STAGE_SWITCH_TO_FTD_DONE:
-@@ -425,8 +524,16 @@ void
+@@ -425,8 +526,16 @@ void
  goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const guint8 *raw_frame)
  {
    GoodixTls5xxPix *pix = frame;
@@ -1280,7 +1286,7 @@ index a75d28b..14c4b32 100644
      {
        const guint8 *chunk = raw_frame + i;
        *pix++ = ((chunk[0] & 0xf) << 8) + chunk[1];
-@@ -436,43 +543,6 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const gu
+@@ -436,43 +545,6 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const gu
      }
  }
  
@@ -1324,7 +1330,7 @@ index a75d28b..14c4b32 100644
  static void
  dev_change_state (FpImageDevice * img_dev, FpiImageDeviceState state)
  {
-@@ -523,6 +593,7 @@ dev_deactivate (FpImageDevice *img_dev)
+@@ -523,6 +595,7 @@ dev_deactivate (FpImageDevice *img_dev)
  
    if (cls->reset_state)
      cls->reset_state (dev);
@@ -1332,7 +1338,7 @@ index a75d28b..14c4b32 100644
    fpi_image_device_deactivate_complete (img_dev, error);
  }
  
-@@ -550,6 +621,8 @@ void
+@@ -550,6 +623,8 @@ void
  fpi_device_goodixtls5xx_class_init (FpiDeviceGoodixTls5xxClass * self)
  {
    self->get_mcu_cfg = NULL;
