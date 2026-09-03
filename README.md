@@ -35,7 +35,6 @@ A reverse-engineered Linux driver for the **Goodix 27c6:5e0a** fingerprint scann
 │   ├── tier4_realworld/     # PAM auth, enrollment, & lifecycle scenarios
 │   └── tier5_adversarial/   # Fuzzing, fault injection, & stress tests
 ├── experiments/             # Reverse-engineering prototypes and sample data
-├── specs/                   # Hardware protocol specifications and gap analysis
 ├── libfprint-goodix.nix     # Nix package derivation for libfprint with driver
 ├── nixos-module.nix         # NixOS module configuration
 └── 0001-Add-driver-support-for-Goodix-27c6-5e0a.patch  # Unified libfprint patch

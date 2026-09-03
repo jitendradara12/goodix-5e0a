@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Master E2E Test Suite Runner for Goodix 27c6:5e0a Fingerprint Sensor Driver
-# Covers Tiers 1-5 per TEST_INFRA.md and PROJECT.md
+# Covers Tiers 1-5: Features, Boundaries, Combinations, Scenarios, and Stress tests
 # ==============================================================================
 
 set -euo pipefail
