@@ -665,9 +665,8 @@ goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,
                            gpointer user_data)
 {
   GoodixCallbackInfo *cb_info;
-  /* Hardware-verified live finger-capture payload: 0x01 mode (wbdi.dll _FpMcuGetImage);
-     45 03... was an unverified prototype artifact that yielded zero minutiae. */
-  guint8 payload_5e0a[10] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+  /* Ticket 09 Experiment E: exact 52xD exposure pairing payload */
+  guint8 payload_5e0a[10] = {0x45, 0x03, 0xa7, 0x00, 0xa1, 0x00, 0xa7, 0x00, 0xa3, 0x00};
   GoodixDefault payload_default = {.unused_flags = 0x01};
   guint8 *payload = (guint8 *) &payload_default;
   guint16 len = sizeof (payload_default);

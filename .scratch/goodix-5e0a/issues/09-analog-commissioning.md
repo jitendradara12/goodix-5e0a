@@ -28,6 +28,32 @@ window) fits better than any value tweak so far.
 
 ## Suspect list (test in this order, ONE variable per build)
 
+0. STATUS 09-03 late: Suspect 1 (CONFIG_52XD + reg `0x030a` + live corr
+   metrics) deployed — frames still banding (`adj≈0.83`, `dist≈0.89`),
+   minutiae zero. CONFIG eliminated (WBDI and 52XD fail identically); reg
+   value eliminated (05 03 / skip / 0x030a all identical); polarity frozen
+   OFF (511-match, do not flip-flop — moot until ridges exist). New key
+   realization recorded below: the "proven script frame" carries the SAME
+   banding signature (uniform ~0.8 corr), so script-vs-driver was never a
+   content contrast — both paths band. The sensor has never verifiably
+   produced ridges on Linux.
+
+1. `0x022c` value and toggle schedule — DONE, eliminated (see 0).
+2. Exposure pairing (Experiment E, NEXT): the 52xD trace pairs FDT DOWN
+   trailing `…05 03 a7 00 a1 00 a7 00 a3 00 00` with image payload
+   `45 03 a7 00 a1 00 a7 00 a3 00` — trailing bytes echoing each other. The
+   driver has never run this exact pairing (only `01`+39B-FDT and
+   `45`+39B-FDT without stats). Test: per poll, 39B DOWN fire-and-forget
+   (tolerant, never wait/block), then `45`-payload capture, reg `05 03`,
+   config 52XD. Read `max_v`/corr on hold. Brighter/decaying corr =
+   confirmed. Identical banding = falsified, move to 3.
+3. Missing init sequence from the 52xD flow (OTP-conditioned writes, POV
+   check + POV config, calibration captures, sleep/query transitions).
+   Port stepwise, not wholesale, each with hold-stats readout.
+4. Capture timing within the poll loop (integration window vs read moment)
+   and inter-command gaps (driver fires in ms; scripts always had 100ms+
+   Python overhead between commands).
+
 1. `0x022c` value: tried `05 03` (zeros) and skip (zeros). Untested:
    `0x030a` and the `0x020a/0x030a` toggle schedule from the 52xD reference
    flow (which also interleaves calibration captures between toggles).

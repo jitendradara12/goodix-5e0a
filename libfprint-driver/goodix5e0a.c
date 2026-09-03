@@ -100,10 +100,10 @@ on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
       fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
       return;
     }
-  /* Ticket 09 Suspect 1: write 0x022c with 0x030a (\x0a\x03) */
-  fp_dbg ("Chip enabled! Configuring sensor register 0x022c with 0x030a...");
+  /* Ticket 09 Experiment E: write 0x022c with 05 03 (\x05\x03) */
+  fp_dbg ("Chip enabled! Configuring sensor register 0x022c with 05 03...");
   goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
-                                     GOODIX_5E0A_REG_GAIN_EXPOSURE_CALIB_VAL,
+                                     GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL,
                                      on_register_written, NULL);
 }
 
