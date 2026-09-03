@@ -451,6 +451,12 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
   switch (fpi_ssm_get_cur_state (ssm))
     {
     case SCAN_STAGE_QUERY_MCU:
+      /* Experiment D2: skip SCAN_STAGE_QUERY_MCU for 5e0a */
+      if (cls->process_raw_frame)
+        {
+          fpi_ssm_next_state (ssm);
+          break;
+        }
       goodix_send_query_mcu_state (dev, goodixtls5xx_check_none, ssm);
       break;
     case SCAN_STAGE_SWITCH_TO_FDT_MODE:

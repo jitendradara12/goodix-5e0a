@@ -1,6 +1,6 @@
-From 6379393e32337052ffcee7adbfad66d62a071015 Mon Sep 17 00:00:00 2001
+From 470df0d2d4b4e245d04fa2ccb6693a6804156942 Mon Sep 17 00:00:00 2001
 From: Test <test@test.com>
-Date: Thu, 3 Sep 2026 22:44:46 +0530
+Date: Thu, 3 Sep 2026 22:55:38 +0530
 Subject: [PATCH] Add driver support for Goodix 27c6:5e0a
 
 ---
@@ -9,14 +9,14 @@ Subject: [PATCH] Add driver support for Goodix 27c6:5e0a
  libfprint/drivers/goodixtls/goodix511.c    |   1 +
  libfprint/drivers/goodixtls/goodix5e0a.c   | 324 +++++++++++++++++++++
  libfprint/drivers/goodixtls/goodix5e0a.h   | 109 +++++++
- libfprint/drivers/goodixtls/goodix5xx.c    | 254 ++++++++++++----
+ libfprint/drivers/goodixtls/goodix5xx.c    | 260 +++++++++++++----
  libfprint/drivers/goodixtls/goodix5xx.h    |  18 +-
  libfprint/drivers/goodixtls/goodix_proto.h |   4 +
  libfprint/drivers/goodixtls/goodixtls.c    | 105 +++++--
  libfprint/fprint-list-udev-hwdb.c          |   1 -
  libfprint/meson.build                      |   2 +
  meson.build                                |   2 +
- 12 files changed, 1019 insertions(+), 159 deletions(-)
+ 12 files changed, 1025 insertions(+), 159 deletions(-)
  create mode 100644 libfprint/drivers/goodixtls/goodix5e0a.c
  create mode 100644 libfprint/drivers/goodixtls/goodix5e0a.h
 
@@ -1092,7 +1092,7 @@ index 0000000..eb50adc
 +  {.vid = 0, .pid = 0, .driver_data = 0},
 +};
 diff --git a/libfprint/drivers/goodixtls/goodix5xx.c b/libfprint/drivers/goodixtls/goodix5xx.c
-index a75d28b..70efb90 100644
+index a75d28b..0744973 100644
 --- a/libfprint/drivers/goodixtls/goodix5xx.c
 +++ b/libfprint/drivers/goodixtls/goodix5xx.c
 @@ -27,6 +27,9 @@
@@ -1235,7 +1235,7 @@ index a75d28b..70efb90 100644
    fpi_ssm_next_state (ssm);
  }
  
-@@ -369,30 +446,125 @@ static void
+@@ -369,30 +446,131 @@ static void
  scan_run_state (FpiSsm * ssm, FpDevice * dev)
  {
    FpImageDevice *img_dev = FP_IMAGE_DEVICE (dev);
@@ -1245,6 +1245,12 @@ index a75d28b..70efb90 100644
      {
      case SCAN_STAGE_QUERY_MCU:
 -      goodix_send_query_mcu_state (dev, query_mcu_state_cb, ssm);
++      /* Experiment D2: skip SCAN_STAGE_QUERY_MCU for 5e0a */
++      if (cls->process_raw_frame)
++        {
++          fpi_ssm_next_state (ssm);
++          break;
++        }
 +      goodix_send_query_mcu_state (dev, goodixtls5xx_check_none, ssm);
        break;
      case SCAN_STAGE_SWITCH_TO_FDT_MODE:
@@ -1367,7 +1373,7 @@ index a75d28b..70efb90 100644
        break;
  
      case SCAN_STAGE_SWITCH_TO_FTD_DONE:
-@@ -425,8 +597,16 @@ void
+@@ -425,8 +603,16 @@ void
  goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const guint8 *raw_frame)
  {
    GoodixTls5xxPix *pix = frame;
@@ -1385,7 +1391,7 @@ index a75d28b..70efb90 100644
      {
        const guint8 *chunk = raw_frame + i;
        *pix++ = ((chunk[0] & 0xf) << 8) + chunk[1];
-@@ -436,43 +616,6 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const gu
+@@ -436,43 +622,6 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const gu
      }
  }
  
@@ -1429,7 +1435,7 @@ index a75d28b..70efb90 100644
  static void
  dev_change_state (FpImageDevice * img_dev, FpiImageDeviceState state)
  {
-@@ -523,6 +666,7 @@ dev_deactivate (FpImageDevice *img_dev)
+@@ -523,6 +672,7 @@ dev_deactivate (FpImageDevice *img_dev)
  
    if (cls->reset_state)
      cls->reset_state (dev);
@@ -1437,7 +1443,7 @@ index a75d28b..70efb90 100644
    fpi_image_device_deactivate_complete (img_dev, error);
  }
  
-@@ -550,6 +694,8 @@ void
+@@ -550,6 +700,8 @@ void
  fpi_device_goodixtls5xx_class_init (FpiDeviceGoodixTls5xxClass * self)
  {
    self->get_mcu_cfg = NULL;
