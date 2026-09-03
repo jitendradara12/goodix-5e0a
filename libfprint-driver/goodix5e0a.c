@@ -49,10 +49,7 @@ enum activate_states {
   ACTIVATE_NUM_STATES,
 };
 
-static void on_config_uploaded (FpDevice *dev, gboolean success,
-                                gpointer user_data, GError *error);
-static void on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error);
-static void on_drv_state_set (FpDevice *dev, gpointer user_data, GError *error);
+
 
 static void
 activate_run_state (FpiSsm *ssm, FpDevice *dev)
@@ -78,63 +75,323 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
     }
 }
 
-G_GNUC_UNUSED static void
-on_register_written (FpDevice *dev, gpointer user_data, GError *error)
+enum bringup_states {
+  BRINGUP_UPLOAD_CONFIG,
+  BRINGUP_SET_DRV_STATE,
+  BRINGUP_GET_POV_IMAGE,
+  BRINGUP_FDT_MODE_0D_00,
+  BRINGUP_FDT_MODE_0D_01,
+  BRINGUP_REG_022C_030A_0,
+  BRINGUP_CALIB_CAPTURE_0,
+  BRINGUP_REG_022C_020A_0,
+  BRINGUP_REG_022C_030A_1,
+  BRINGUP_CALIB_CAPTURE_1,
+  BRINGUP_REG_022C_020A_1,
+  BRINGUP_REG_022C_030A_2,
+  BRINGUP_CALIB_CAPTURE_2,
+  BRINGUP_REG_022C_020A_2,
+  BRINGUP_FDT_MODE_8D_00,
+  BRINGUP_FDT_MODE_8D_01,
+  BRINGUP_REG_022C_030A_3,
+  BRINGUP_CALIB_CAPTURE_3,
+  BRINGUP_REG_022C_020A_3,
+  BRINGUP_FDT_MODE_0D_00_POST,
+  BRINGUP_FDT_MODE_0D_01_POST,
+  BRINGUP_SET_POV_CONFIG,
+  BRINGUP_SLEEP_0,
+  BRINGUP_QUERY_MCU_0,
+  BRINGUP_FDT_DOWN_ARM_0,
+  BRINGUP_FDT_DOWN_ARM_1,
+  BRINGUP_SLEEP_1,
+  BRINGUP_QUERY_MCU_1,
+  BRINGUP_QUERY_MCU_2,
+  BRINGUP_FDT_DOWN_ARM_2,
+  BRINGUP_ENABLE_CHIP,
+  BRINGUP_REG_022C_FINAL,
+  BRINGUP_NUM_STATES,
+};
+
+static const char *bringup_state_names[] = {
+  [BRINGUP_UPLOAD_CONFIG] = "UPLOAD_CONFIG",
+  [BRINGUP_SET_DRV_STATE] = "SET_DRV_STATE",
+  [BRINGUP_GET_POV_IMAGE] = "GET_POV_IMAGE",
+  [BRINGUP_FDT_MODE_0D_00] = "FDT_MODE_0D_00",
+  [BRINGUP_FDT_MODE_0D_01] = "FDT_MODE_0D_01",
+  [BRINGUP_REG_022C_030A_0] = "REG_022C_030A_0",
+  [BRINGUP_CALIB_CAPTURE_0] = "CALIB_CAPTURE_0",
+  [BRINGUP_REG_022C_020A_0] = "REG_022C_020A_0",
+  [BRINGUP_REG_022C_030A_1] = "REG_022C_030A_1",
+  [BRINGUP_CALIB_CAPTURE_1] = "CALIB_CAPTURE_1",
+  [BRINGUP_REG_022C_020A_1] = "REG_022C_020A_1",
+  [BRINGUP_REG_022C_030A_2] = "REG_022C_030A_2",
+  [BRINGUP_CALIB_CAPTURE_2] = "CALIB_CAPTURE_2",
+  [BRINGUP_REG_022C_020A_2] = "REG_022C_020A_2",
+  [BRINGUP_FDT_MODE_8D_00] = "FDT_MODE_8D_00",
+  [BRINGUP_FDT_MODE_8D_01] = "FDT_MODE_8D_01",
+  [BRINGUP_REG_022C_030A_3] = "REG_022C_030A_3",
+  [BRINGUP_CALIB_CAPTURE_3] = "CALIB_CAPTURE_3",
+  [BRINGUP_REG_022C_020A_3] = "REG_022C_020A_3",
+  [BRINGUP_FDT_MODE_0D_00_POST] = "FDT_MODE_0D_00_POST",
+  [BRINGUP_FDT_MODE_0D_01_POST] = "FDT_MODE_0D_01_POST",
+  [BRINGUP_SET_POV_CONFIG] = "SET_POV_CONFIG",
+  [BRINGUP_SLEEP_0] = "SLEEP_0",
+  [BRINGUP_QUERY_MCU_0] = "QUERY_MCU_0",
+  [BRINGUP_FDT_DOWN_ARM_0] = "FDT_DOWN_ARM_0",
+  [BRINGUP_FDT_DOWN_ARM_1] = "FDT_DOWN_ARM_1",
+  [BRINGUP_SLEEP_1] = "SLEEP_1",
+  [BRINGUP_QUERY_MCU_1] = "QUERY_MCU_1",
+  [BRINGUP_QUERY_MCU_2] = "QUERY_MCU_2",
+  [BRINGUP_FDT_DOWN_ARM_2] = "FDT_DOWN_ARM_2",
+  [BRINGUP_ENABLE_CHIP] = "ENABLE_CHIP",
+  [BRINGUP_REG_022C_FINAL] = "REG_022C_FINAL",
+};
+
+static void
+send_bringup_protocol (FpDevice *dev, guint8 cmd, const guint8 *payload, guint16 len,
+                       gboolean reply, GoodixNoneCallback cb, gpointer user_data)
 {
-  if (error)
+  GoodixCallbackInfo *cb_info = NULL;
+  GoodixDefaultCallback callback = NULL;
+
+  if (cb)
     {
-      fp_err ("failed to write sensor register: %s", error->message);
-      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
-      return;
+      cb_info = malloc (sizeof (GoodixCallbackInfo));
+      cb_info->callback = G_CALLBACK (cb);
+      cb_info->user_data = user_data;
+      callback = goodix_receive_none_tolerant;
     }
-  fp_dbg ("Sensor register 0x022c configured! Activation complete and device is ready for scan.");
-  fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), NULL);
+
+  goodix_send_protocol (dev, cmd, payload, len, NULL, reply, GOODIX_TIMEOUT,
+                        FALSE, callback, cb_info);
 }
 
 static void
-on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
+bringup_tolerant_cb (FpDevice *dev, gpointer user_data, GError *error)
 {
+  FpiSsm *ssm = user_data;
   if (error)
     {
-      fp_err ("failed to enable chip: %s", error->message);
-      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
-      return;
+      fp_dbg ("5e0a bring-up step error (tolerant): %s", error->message);
+      g_error_free (error);
     }
-  /* Ticket 09 Experiment E: write 0x022c with 05 03 (\x05\x03) */
-  fp_dbg ("Chip enabled! Configuring sensor register 0x022c with 05 03...");
-  goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
-                                     GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL,
-                                     on_register_written, NULL);
-}
-
-G_GNUC_UNUSED static void
-on_drv_state_set (FpDevice *dev, gpointer user_data, GError *error)
-{
-  if (error)
-    {
-      fp_err ("failed to set drv state: %s", error->message);
-      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
-      return;
-    }
-  /* ponytail: POV check (0xd2/0xac) skipped — test_touch_sensor proves touch
-     works without it; add only if a Windows trace shows it required. */
-  fp_dbg ("Driver state set! Enabling chip...");
-  goodix_send_enable_chip (dev, TRUE, on_chip_enabled, NULL);
+  fpi_ssm_next_state (ssm);
 }
 
 static void
-on_config_uploaded (FpDevice *dev, gboolean success,
-                    gpointer user_data, GError *error)
+bringup_config_cb (FpDevice *dev, gboolean success, gpointer user_data, GError *error)
 {
+  FpiSsm *ssm = user_data;
   if (error || !success)
     {
-      fp_err ("failed to upload MCU config");
+      fp_err ("5e0a bring-up failed to upload MCU config");
+      if (error)
+        fpi_ssm_mark_failed (ssm, error);
+      else
+        fpi_ssm_mark_failed (ssm, g_error_new (FP_DEVICE_ERROR, FP_DEVICE_ERROR_PROTO, "MCU config rejected"));
+      return;
+    }
+  fpi_ssm_next_state (ssm);
+}
+
+static void
+bringup_calib_img_cb (FpDevice *dev, guint8 *data, guint16 len, gpointer user_data, GError *error)
+{
+  FpiSsm *ssm = user_data;
+  if (error)
+    {
+      fp_dbg ("5e0a bring-up calib img read error (tolerant): %s", error->message);
+      g_error_free (error);
+    }
+  else
+    {
+      g_message ("5e0a bring-up: calib capture completed (%u bytes)", len);
+    }
+  fpi_ssm_next_state (ssm);
+}
+
+static void
+bringup_run_state (FpiSsm *ssm, FpDevice *dev)
+{
+  int state = fpi_ssm_get_cur_state (ssm);
+  g_message ("5e0a bring-up stage %d/%d: %s", state + 1, BRINGUP_NUM_STATES, bringup_state_names[state]);
+
+  switch (state)
+    {
+    case BRINGUP_UPLOAD_CONFIG:
+      goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config,
+                                     sizeof (goodix_5e0a_config), NULL,
+                                     bringup_config_cb, ssm);
+      break;
+
+    case BRINGUP_SET_DRV_STATE:
+      send_bringup_protocol (dev, GOODIX_CMD_SET_DRV_STATE, (const guint8 *) "\x01\x00", 2, TRUE, bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_GET_POV_IMAGE:
+      send_bringup_protocol (dev, GOODIX_CMD_MCU_GET_POV_IMAGE, (const guint8 *) "\x00\x00", 2, TRUE, bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_FDT_MODE_0D_00:
+      send_bringup_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE, goodix_5e0a_fdt_mode_0d_00, 27, FALSE, bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_FDT_MODE_0D_01:
+      send_bringup_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE, goodix_5e0a_fdt_mode_0d_01, 27, TRUE, bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_REG_022C_030A_0:
+      goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
+                                         GOODIX_5E0A_REG_GAIN_EXPOSURE_CALIB_VAL,
+                                         bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_CALIB_CAPTURE_0:
+      memcpy (goodix5e0a_capture_payload, goodix_5e0a_calib_payload_0, 10);
+      goodix_tls_read_image (dev, bringup_calib_img_cb, ssm);
+      break;
+
+    case BRINGUP_REG_022C_020A_0:
+      goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
+                                         GOODIX_5E0A_REG_GAIN_EXPOSURE_RESET_VAL,
+                                         bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_REG_022C_030A_1:
+      goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
+                                         GOODIX_5E0A_REG_GAIN_EXPOSURE_CALIB_VAL,
+                                         bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_CALIB_CAPTURE_1:
+      memcpy (goodix5e0a_capture_payload, goodix_5e0a_calib_payload_1, 10);
+      goodix_tls_read_image (dev, bringup_calib_img_cb, ssm);
+      break;
+
+    case BRINGUP_REG_022C_020A_1:
+      goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
+                                         GOODIX_5E0A_REG_GAIN_EXPOSURE_RESET_VAL,
+                                         bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_REG_022C_030A_2:
+      goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
+                                         GOODIX_5E0A_REG_GAIN_EXPOSURE_CALIB_VAL,
+                                         bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_CALIB_CAPTURE_2:
+      memcpy (goodix5e0a_capture_payload, goodix_5e0a_calib_payload_2, 10);
+      goodix_tls_read_image (dev, bringup_calib_img_cb, ssm);
+      break;
+
+    case BRINGUP_REG_022C_020A_2:
+      goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
+                                         GOODIX_5E0A_REG_GAIN_EXPOSURE_RESET_VAL,
+                                         bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_FDT_MODE_8D_00:
+      send_bringup_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE, goodix_5e0a_fdt_mode_8d_00, 27, FALSE, bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_FDT_MODE_8D_01:
+      send_bringup_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE, goodix_5e0a_fdt_mode_8d_01, 27, TRUE, bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_REG_022C_030A_3:
+      goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
+                                         GOODIX_5E0A_REG_GAIN_EXPOSURE_CALIB_VAL,
+                                         bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_CALIB_CAPTURE_3:
+      memcpy (goodix5e0a_capture_payload, goodix_5e0a_calib_payload_3, 10);
+      goodix_tls_read_image (dev, bringup_calib_img_cb, ssm);
+      break;
+
+    case BRINGUP_REG_022C_020A_3:
+      goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
+                                         GOODIX_5E0A_REG_GAIN_EXPOSURE_RESET_VAL,
+                                         bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_FDT_MODE_0D_00_POST:
+      send_bringup_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE, goodix_5e0a_fdt_mode_0d_00, 27, FALSE, bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_FDT_MODE_0D_01_POST:
+      send_bringup_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE, goodix_5e0a_fdt_mode_0d_01, 27, TRUE, bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_SET_POV_CONFIG:
+      goodix_send_set_pov_config (dev, goodix_5e0a_pov_config,
+                                  sizeof (goodix_5e0a_pov_config), NULL,
+                                  bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_SLEEP_0:
+      send_bringup_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_SLEEP_MODE, (const guint8 *) "\x01\x00", 2, FALSE, bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_QUERY_MCU_0:
+      send_bringup_protocol (dev, GOODIX_CMD_QUERY_MCU_STATE, (const guint8 *) "\x01\x01\x01", 3, FALSE, bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_FDT_DOWN_ARM_0:
+      goodix_send_mcu_switch_to_fdt_down_noreply (dev, goodix_5e0a_fdt_up,
+                                                  sizeof (goodix_5e0a_fdt_up), NULL,
+                                                  bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_FDT_DOWN_ARM_1:
+      goodix_send_mcu_switch_to_fdt_down_noreply (dev, goodix_5e0a_fdt_down,
+                                                  sizeof (goodix_5e0a_fdt_down), NULL,
+                                                  bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_SLEEP_1:
+      send_bringup_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_SLEEP_MODE, (const guint8 *) "\x01\x00", 2, FALSE, bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_QUERY_MCU_1:
+      send_bringup_protocol (dev, GOODIX_CMD_QUERY_MCU_STATE, (const guint8 *) "\x00\x00\x00", 3, FALSE, bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_QUERY_MCU_2:
+      send_bringup_protocol (dev, GOODIX_CMD_QUERY_MCU_STATE, (const guint8 *) "\x01\x01\x01", 3, FALSE, bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_FDT_DOWN_ARM_2:
+      goodix_send_mcu_switch_to_fdt_down_noreply (dev, goodix_5e0a_fdt_up,
+                                                  sizeof (goodix_5e0a_fdt_up), NULL,
+                                                  bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_ENABLE_CHIP:
+      goodix_send_enable_chip (dev, TRUE, bringup_tolerant_cb, ssm);
+      break;
+
+    case BRINGUP_REG_022C_FINAL:
+      /* Restore finger capture payload */
+      memcpy (goodix5e0a_capture_payload, goodix_5e0a_finger_payload, 10);
+      goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
+                                         GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL,
+                                         bringup_tolerant_cb, ssm);
+      break;
+    }
+}
+
+static void
+on_bringup_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
+{
+  if (error)
+    {
+      g_warning ("5e0a bring-up failed: %s", error->message);
       fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
       return;
     }
-  /* Experiment B: bypass set_drv_state, enable chip directly */
-  fp_dbg ("MCU config uploaded successfully after TLS! Enabling chip directly...");
-  goodix_send_enable_chip (dev, TRUE, on_chip_enabled, NULL);
+  g_message ("5e0a bring-up complete! Device is armed and ready for scan.");
+  fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), NULL);
 }
 
 static void
@@ -148,11 +405,9 @@ on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
       return;
     }
 
-  /* Restore CONFIG_52XD config (CONFIG_WBDI was rejected by MCU) */
-  fp_dbg ("TLS connection ready! Uploading MCU config (CONFIG_52XD)...");
-  goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config,
-                                 sizeof (goodix_5e0a_config), NULL,
-                                 on_config_uploaded, NULL);
+  g_message ("5e0a TLS ready! Starting 52xD analog bring-up sequence...");
+  fpi_ssm_start (fpi_ssm_new (dev, bringup_run_state, BRINGUP_NUM_STATES),
+                 on_bringup_complete);
 }
 
 static void

@@ -47,9 +47,18 @@ window) fits better than any value tweak so far.
    (tolerant, never wait/block), then `45`-payload capture, reg `05 03`,
    config 52XD. Read `max_v`/corr on hold. Brighter/decaying corr =
    confirmed. Identical banding = falsified, move to 3.
-3. Missing init sequence from the 52xD flow (OTP-conditioned writes, POV
-   check + POV config, calibration captures, sleep/query transitions).
-   Port stepwise, not wholesale, each with hold-stats readout.
+## Suspect 3 (ACTIVE): full analog bring-up as one experiment
+
+Experiments B–E falsified one variable at a time with zero movement. What
+has never run in the driver is the 52xD bring-up *sequence* (its elements
+only work as a pipeline): POV image check + POV config, calibration captures
+with `0x022c` toggles, sleep/query transitions — then the finger wait. Add
+the sequence with a journal marker per stage so partial progress is visible
+in `5e0a frame`-style lines. Rationale for one unit instead of stepwise:
+each element alone is not expected to function. If content appears, bisect
+for minimality afterwards; if zeros persist with the full pipeline, escalate
+to capture-timing/inter-command-gap analysis with the stage markers as
+evidence. Do not touch transport/activation-TLS core, tests, or frozen files.
 4. Capture timing within the poll loop (integration window vs read moment)
    and inter-command gaps (driver fires in ms; scripts always had 100ms+
    Python overhead between commands).

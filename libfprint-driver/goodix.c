@@ -660,21 +660,21 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
                         NULL, FALSE, GOODIX_NOP_TIMEOUT, FALSE, NULL, NULL);
 }
 
+guint8 goodix5e0a_capture_payload[10] = {0x45, 0x03, 0xa7, 0x00, 0xa1, 0x00, 0xa7, 0x00, 0xa3, 0x00};
+
 void
 goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,
                            gpointer user_data)
 {
   GoodixCallbackInfo *cb_info;
-  /* Ticket 09 Experiment E: exact 52xD exposure pairing payload */
-  guint8 payload_5e0a[10] = {0x45, 0x03, 0xa7, 0x00, 0xa1, 0x00, 0xa7, 0x00, 0xa3, 0x00};
   GoodixDefault payload_default = {.unused_flags = 0x01};
   guint8 *payload = (guint8 *) &payload_default;
   guint16 len = sizeof (payload_default);
 
   if (g_strcmp0 (fp_device_get_driver (dev), "goodixtls5e0a") == 0)
     {
-      payload = payload_5e0a;
-      len = sizeof (payload_5e0a);
+      payload = goodix5e0a_capture_payload;
+      len = sizeof (goodix5e0a_capture_payload);
     }
 
   if (callback)
