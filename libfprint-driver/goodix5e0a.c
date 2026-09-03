@@ -62,10 +62,7 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
       break;
 
     case ACTIVATE_RESET:
-      /* ponytail: soft-reset MCU state only (reset_sensor=FALSE).
-       * Resetting sensor die under finger recalibrates baseline capacitance
-       * to the finger (delta -> 0), yielding dark frames with zero minutiae. */
-      goodix_send_reset (dev, FALSE, 20, goodixtls5xx_check_reset, ssm);
+      goodix_send_reset (dev, TRUE, 20, goodixtls5xx_check_reset, ssm);
       break;
 
     case ACTIVATE_READ_CHIP_ID:

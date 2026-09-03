@@ -17,7 +17,7 @@ class TestB19TimeoutLimits(unittest.TestCase):
         """Verify reset command sets sleep_time=20ms."""
         with open("/home/sastauser/code/temp/goodix/libfprint-driver/goodix5e0a.c", "r") as f:
             content = f.read()
-        self.assertIn("goodix_send_reset (dev, FALSE, 20", content)
+        self.assertIn("goodix_send_reset (dev, TRUE, 20", content)
 
     def test_blocking_fdt_zero_timeout(self):
         """Verify hardware FDT calls block until interrupt is generated."""

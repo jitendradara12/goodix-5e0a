@@ -632,10 +632,10 @@ index a19379c..d7427ea 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..51afd63
+index 0000000..f8cba79
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,329 @@
+@@ -0,0 +1,326 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS
 +
@@ -700,10 +700,7 @@ index 0000000..51afd63
 +      break;
 +
 +    case ACTIVATE_RESET:
-+      /* ponytail: soft-reset MCU state only (reset_sensor=FALSE).
-+       * Resetting sensor die under finger recalibrates baseline capacitance
-+       * to the finger (delta -> 0), yielding dark frames with zero minutiae. */
-+      goodix_send_reset (dev, FALSE, 20, goodixtls5xx_check_reset, ssm);
++      goodix_send_reset (dev, TRUE, 20, goodixtls5xx_check_reset, ssm);
 +      break;
 +
 +    case ACTIVATE_READ_CHIP_ID:
