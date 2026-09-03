@@ -378,8 +378,8 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 
   if (cls->process_raw_frame && img == NULL)
     {
-      /* Empty frame / no finger touch: wait 500ms and re-poll */
-      fpi_ssm_jump_to_state_delayed (ssm, SCAN_STAGE_GET_IMG, 500);
+      /* Empty frame / no finger touch: wait 500ms and re-poll via 39-byte DOWN (Experiment D1) */
+      fpi_ssm_jump_to_state_delayed (ssm, SCAN_STAGE_SWITCH_TO_FDT_DOWN, 500);
       return;
     }
 
@@ -419,6 +419,18 @@ scan_on_release_img (FpDevice *dev, guint8 *data, guint16 len,
     }
 
   /* Finger lifted (active < 64): advance to complete stage and report release */
+  fpi_ssm_next_state (ssm);
+}
+
+static void
+scan_on_fdt_down_tolerant (FpDevice *dev, gpointer user_data, GError *error)
+{
+  FpiSsm *ssm = user_data;
+  if (error)
+    {
+      fp_dbg ("5e0a FDT DOWN tolerant error ignored: %s", error->message);
+      g_error_free (error);
+    }
   fpi_ssm_next_state (ssm);
 }
 
@@ -477,8 +489,16 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
       break;
 
     case SCAN_STAGE_SWITCH_TO_FDT_DOWN:
+      /* Experiment D1: per poll iteration, send 39-byte DOWN fire-and-forget (ACK-tolerant) */
       if (cls->process_raw_frame)
         {
+          if (cls->get_fdt_down_cfg)
+            {
+              GoodixTls5xxMcuConfig cfg = cls->get_fdt_down_cfg ();
+              goodix_send_mcu_switch_to_fdt_down_noreply (dev, cfg.data, cfg.data_len, cfg.free_fn,
+                                                          scan_on_fdt_down_tolerant, ssm);
+              break;
+            }
           fpi_ssm_next_state (ssm);
           break;
         }

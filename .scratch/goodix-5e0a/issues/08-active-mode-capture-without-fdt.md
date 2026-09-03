@@ -74,7 +74,25 @@ runs do not count; lesson learned from prior false "verified" marks)
   → revert this ticket's commit and report the exact journal lines. Do not
   pile further tweaks on a failing shape.
 
-## Experiment B — FALSIFIED 09-03
+## Experiment D (next, decided 09-03 — B and C falsified, zeros persist)
+
+B (no drv_state) and C (CONFIG_WBDI) both deployed cleanly; frames still
+all-zero under hold. FDT-arming also falsified. What remains is pre-capture
+ritual: the proven script sends 39-byte DOWN + ACK-check before capturing;
+the driver sends nothing (and still sends `0xae` QUERY every poll, which no
+script ever sends). Test ONE variable at a time, this order, all gated on
+`process_raw_frame` (5e0a-only), polling loop otherwise untouched:
+
+- D1: per poll iteration, send 39-byte DOWN fire-and-forget (ACK-tolerant:
+  advance on ACK *or* timeout, never abort — reuse the tolerant-receiver
+  pattern; a strict ACK check risks session abort on state-dependent NAKs
+  as observed in script runs), then capture immediately.
+- D2 (only if D1 fails): additionally skip `SCAN_STAGE_QUERY_MCU` for 5e0a
+  (same gating pattern). Resulting per-poll path (capture only) then matches
+  the proven script loop exactly, modulo TLS implementation.
+- Predicted signatures: content frames on hold at either step = confirmed,
+  keep it and stop. Zeros through D2 = pre-capture ritual dead; escalate to
+  TLS/session-level bisection (C vs script handshake) with journal evidence.
 
 `set_drv_state` skipped, activation/polling healthy, frames still zero under
 hold. drv_state neither blanks nor enables content. (Side note: enroll client

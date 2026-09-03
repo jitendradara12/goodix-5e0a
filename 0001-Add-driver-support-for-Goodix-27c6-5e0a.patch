@@ -1,6 +1,6 @@
-From 0aaf83826e18b5b28edb8f2a716e5a601f860ba4 Mon Sep 17 00:00:00 2001
+From 6379393e32337052ffcee7adbfad66d62a071015 Mon Sep 17 00:00:00 2001
 From: Test <test@test.com>
-Date: Thu, 3 Sep 2026 21:51:32 +0530
+Date: Thu, 3 Sep 2026 22:44:46 +0530
 Subject: [PATCH] Add driver support for Goodix 27c6:5e0a
 
 ---
@@ -9,14 +9,14 @@ Subject: [PATCH] Add driver support for Goodix 27c6:5e0a
  libfprint/drivers/goodixtls/goodix511.c    |   1 +
  libfprint/drivers/goodixtls/goodix5e0a.c   | 324 +++++++++++++++++++++
  libfprint/drivers/goodixtls/goodix5e0a.h   | 109 +++++++
- libfprint/drivers/goodixtls/goodix5xx.c    | 234 +++++++++++----
+ libfprint/drivers/goodixtls/goodix5xx.c    | 254 ++++++++++++----
  libfprint/drivers/goodixtls/goodix5xx.h    |  18 +-
  libfprint/drivers/goodixtls/goodix_proto.h |   4 +
  libfprint/drivers/goodixtls/goodixtls.c    | 105 +++++--
  libfprint/fprint-list-udev-hwdb.c          |   1 -
  libfprint/meson.build                      |   2 +
  meson.build                                |   2 +
- 12 files changed, 999 insertions(+), 159 deletions(-)
+ 12 files changed, 1019 insertions(+), 159 deletions(-)
  create mode 100644 libfprint/drivers/goodixtls/goodix5e0a.c
  create mode 100644 libfprint/drivers/goodixtls/goodix5e0a.h
 
@@ -1092,7 +1092,7 @@ index 0000000..eb50adc
 +  {.vid = 0, .pid = 0, .driver_data = 0},
 +};
 diff --git a/libfprint/drivers/goodixtls/goodix5xx.c b/libfprint/drivers/goodixtls/goodix5xx.c
-index a75d28b..a3e61e1 100644
+index a75d28b..70efb90 100644
 --- a/libfprint/drivers/goodixtls/goodix5xx.c
 +++ b/libfprint/drivers/goodixtls/goodix5xx.c
 @@ -27,6 +27,9 @@
@@ -1175,8 +1175,8 @@ index a75d28b..a3e61e1 100644
 +
 +  if (cls->process_raw_frame && img == NULL)
 +    {
-+      /* Empty frame / no finger touch: wait 500ms and re-poll */
-+      fpi_ssm_jump_to_state_delayed (ssm, SCAN_STAGE_GET_IMG, 500);
++      /* Empty frame / no finger touch: wait 500ms and re-poll via 39-byte DOWN (Experiment D1) */
++      fpi_ssm_jump_to_state_delayed (ssm, SCAN_STAGE_SWITCH_TO_FDT_DOWN, 500);
 +      return;
 +    }
 +
@@ -1185,7 +1185,7 @@ index a75d28b..a3e61e1 100644
  
    fpi_image_device_image_captured (img_dev, img);
  
-@@ -346,14 +392,33 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
+@@ -346,14 +392,45 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
  }
  
  static void
@@ -1220,10 +1220,22 @@ index a75d28b..a3e61e1 100644
      }
 +
 +  /* Finger lifted (active < 64): advance to complete stage and report release */
++  fpi_ssm_next_state (ssm);
++}
++
++static void
++scan_on_fdt_down_tolerant (FpDevice *dev, gpointer user_data, GError *error)
++{
++  FpiSsm *ssm = user_data;
++  if (error)
++    {
++      fp_dbg ("5e0a FDT DOWN tolerant error ignored: %s", error->message);
++      g_error_free (error);
++    }
    fpi_ssm_next_state (ssm);
  }
  
-@@ -369,30 +434,117 @@ static void
+@@ -369,30 +446,125 @@ static void
  scan_run_state (FpiSsm * ssm, FpDevice * dev)
  {
    FpImageDevice *img_dev = FP_IMAGE_DEVICE (dev);
@@ -1256,7 +1268,7 @@ index a75d28b..a3e61e1 100644
 +        else
 +          fpi_ssm_next_state (ssm);
 +      }
-+      break;
+       break;
 +     /* ponytail: B5 arming order per driver_52xd.py:269-283 — 00-arm then
 +        01-wait. The 00-arm is a stack copy of the 01-wait table with byte 26
 +        cleared (no new heap helper; payload is memcpy'd synchronously by
@@ -1270,12 +1282,20 @@ index a75d28b..a3e61e1 100644
 +        Existing SCAN_STAGE_QUERY_MCU covers the pre-FDT query slot. */
 +    case SCAN_STAGE_SWITCH_TO_FDT_DOWN_ARM:
 +      fpi_ssm_next_state (ssm);
-       break;
++      break;
 +
      case SCAN_STAGE_SWITCH_TO_FDT_DOWN:
 -      send_switch_mode (dev, ssm, goodix_send_mcu_switch_to_fdt_down );
++      /* Experiment D1: per poll iteration, send 39-byte DOWN fire-and-forget (ACK-tolerant) */
 +      if (cls->process_raw_frame)
 +        {
++          if (cls->get_fdt_down_cfg)
++            {
++              GoodixTls5xxMcuConfig cfg = cls->get_fdt_down_cfg ();
++              goodix_send_mcu_switch_to_fdt_down_noreply (dev, cfg.data, cfg.data_len, cfg.free_fn,
++                                                          scan_on_fdt_down_tolerant, ssm);
++              break;
++            }
 +          fpi_ssm_next_state (ssm);
 +          break;
 +        }
@@ -1347,7 +1367,7 @@ index a75d28b..a3e61e1 100644
        break;
  
      case SCAN_STAGE_SWITCH_TO_FTD_DONE:
-@@ -425,8 +577,16 @@ void
+@@ -425,8 +597,16 @@ void
  goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const guint8 *raw_frame)
  {
    GoodixTls5xxPix *pix = frame;
@@ -1365,7 +1385,7 @@ index a75d28b..a3e61e1 100644
      {
        const guint8 *chunk = raw_frame + i;
        *pix++ = ((chunk[0] & 0xf) << 8) + chunk[1];
-@@ -436,43 +596,6 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const gu
+@@ -436,43 +616,6 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const gu
      }
  }
  
@@ -1409,7 +1429,7 @@ index a75d28b..a3e61e1 100644
  static void
  dev_change_state (FpImageDevice * img_dev, FpiImageDeviceState state)
  {
-@@ -523,6 +646,7 @@ dev_deactivate (FpImageDevice *img_dev)
+@@ -523,6 +666,7 @@ dev_deactivate (FpImageDevice *img_dev)
  
    if (cls->reset_state)
      cls->reset_state (dev);
@@ -1417,7 +1437,7 @@ index a75d28b..a3e61e1 100644
    fpi_image_device_deactivate_complete (img_dev, error);
  }
  
-@@ -550,6 +674,8 @@ void
+@@ -550,6 +694,8 @@ void
  fpi_device_goodixtls5xx_class_init (FpiDeviceGoodixTls5xxClass * self)
  {
    self->get_mcu_cfg = NULL;
