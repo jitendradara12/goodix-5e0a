@@ -1,4 +1,5 @@
 import sys
+sys.path.insert(0, ".")
 import socket
 import subprocess
 import time
@@ -48,16 +49,29 @@ try:
         device.enable_chip(True)
         device.write_sensor_register(0x022c, b"\x05\x03")
 
-        print("\nCapturing image frame...")
+        print("\n" + "=" * 50)
+        print(">>> PLACE YOUR FINGER FIRMLY ON THE SENSOR NOW! <<<")
+        print("Capturing in 5 seconds...")
+        print("=" * 50)
+        for i in range(5, 0, -1):
+            print(f"  {i}...")
+            time.sleep(1.0)
+        print(">>> CAPTURING NOW! <<<")
+
         img_req = device.mcu_get_image(
-            b"\x45\x03\xa7\x00\xa1\x00\xa7\x00\xa3\x00",
+            b"\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00",
             goodix.FLAGS_TRANSPORT_LAYER_SECURITY_DATA)
         print(f"Got encrypted frame from MCU: {len(img_req)} bytes!")
         tls_client.sendall(img_req[9:])
+        time.sleep(0.1)
         dec = tls_server.stdout.read(7684)
         print(f"Decrypted frame: {len(dec)} bytes!")
-        nonzeros = sum(1 for b in dec if b != 0)
-        print(f"Non-zero byte count: {nonzeros} / {len(dec)}")
+        pixels = tool.decode_image(dec[:-4])
+        print(f"Pixels: {len(pixels)}, min={min(pixels)}, max={max(pixels)}, avg={sum(pixels)/len(pixels):.1f}")
+        active = sum(1 for p in pixels if p > 30)
+        print(f"Active pixels (>30): {active} / {len(pixels)}")
+        tool.write_pgm(pixels, 80, 64, "/tmp/press_capture.pgm")
+        print("Saved /tmp/press_capture.pgm!")
     finally:
         tls_client.close()
 finally:

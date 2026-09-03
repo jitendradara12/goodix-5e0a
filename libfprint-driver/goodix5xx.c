@@ -426,29 +426,10 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
         is 0x70 vs trace sleep; needs payload-plumbed transport helpers.
         Existing SCAN_STAGE_QUERY_MCU covers the pre-FDT query slot. */
     case SCAN_STAGE_SWITCH_TO_FDT_DOWN_ARM:
-      {
-        FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
-        if (cls->get_fdt_down_cfg)
-          {
-            GoodixTls5xxMcuConfig cfg = cls->get_fdt_down_cfg ();
-            if (cfg.data && cfg.data_len > 26 && cfg.data_len <= 64)
-              {
-                guint8 arm[64];
-                memcpy (arm, cfg.data, cfg.data_len);
-                arm[26] = 0x00;
-                goodix_send_mcu_switch_to_fdt_down_noreply (dev, arm, cfg.data_len, NULL, goodixtls5xx_check_none, ssm);
-              }
-            else
-              {
-                fpi_ssm_next_state (ssm);
-              }
-          }
-        else
-          {
-            /* ponytail: 511 has no DOWN table; keep its legacy single-wait. */
-            fpi_ssm_next_state (ssm);
-          }
-      }
+      /* 00-arm stage was generating an unread MCU reply packet on the USB IN
+         endpoint that immediately satisfied the 01-wait below on empty air.
+         Bypass to keep endpoint clean so 01-wait blocks until physical touch. */
+      fpi_ssm_next_state (ssm);
       break;
 
     case SCAN_STAGE_SWITCH_TO_FDT_DOWN:

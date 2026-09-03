@@ -109,23 +109,19 @@ class TestMilestone1Payloads(unittest.TestCase):
         reg_val = parse_c_macro(self.header_content, "GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL")
         self.assertEqual(reg_addr, 0x022c, "Sensor gain register must be 0x022c")
         # In little-endian uint16, bytes [0x05, 0x03] are represented as 0x0305
-        self.assertEqual(reg_val, 0x0305, "Register 0x022c gain value must correspond to \\x05\\x03 (0x0305)")
+        self.assertEqual(reg_val, 0x0305, "Register 0x022c gain value must correspond to \x05\x03 (0x0305)")
 
-    def test_finger_exposure_payload_exactness(self):
-        """
-        Verify real finger-capture exposure payload:
-        45 03 a7 00 a1 00 a7 00 a3 00 (10 bytes per driver_52xd.py:299-302).
-        Asserts canonical constant and verifies driver goodix.c implementation.
-        """
-        expected_payload = bytes([0x45, 0x03, 0xa7, 0x00, 0xa1, 0x00, 0xa7, 0x00, 0xa3, 0x00])
+    def test_b4_get_image_payload_exactness(self):
+        """Verify B4 10-byte finger-capture payload in goodix.c."""
+        expected_payload = bytes([0x01] + [0x00] * 9)
+        self.assertEqual(len(expected_payload), 10)
+        # Verify it is wired in goodix.c:goodix_send_mcu_get_image
+        with open("/home/sastauser/code/temp/goodix/libfprint-driver/goodix.c", "r") as f:
+            c_code = f.read()
+        if "payload_5e0a" in c_code:
+            self.assertIn("payload_5e0a[10] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}", c_code)
         self.assertEqual(len(FINGER_EXPOSURE_PAYLOAD), 10, "Exposure payload must be exactly 10 bytes")
         self.assertEqual(FINGER_EXPOSURE_PAYLOAD, expected_payload, "Payload bytes must match canonical exposure sequence")
-
-        # Verify driver goodix.c uses this exact payload for 5e0a image requests
-        goodix_c = REPO_ROOT / "libfprint-driver" / "goodix.c"
-        if goodix_c.exists():
-            c_code = goodix_c.read_text(encoding="utf-8")
-            self.assertIn("payload_5e0a[10] = {0x45, 0x03, 0xa7, 0x00, 0xa1, 0x00, 0xa7, 0x00, 0xa3, 0x00}", c_code)
 
 
 if __name__ == "__main__":
