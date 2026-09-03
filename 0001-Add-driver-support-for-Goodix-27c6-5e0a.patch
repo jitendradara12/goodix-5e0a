@@ -1,13 +1,13 @@
-From 470df0d2d4b4e245d04fa2ccb6693a6804156942 Mon Sep 17 00:00:00 2001
+From c5a5b15b891b21867bf345a915f6e8236314598f Mon Sep 17 00:00:00 2001
 From: Test <test@test.com>
-Date: Thu, 3 Sep 2026 22:55:38 +0530
+Date: Thu, 3 Sep 2026 23:14:12 +0530
 Subject: [PATCH] Add driver support for Goodix 27c6:5e0a
 
 ---
  libfprint/drivers/goodixtls/goodix.c       | 303 +++++++++++++++----
  libfprint/drivers/goodixtls/goodix.h       |  55 +++-
  libfprint/drivers/goodixtls/goodix511.c    |   1 +
- libfprint/drivers/goodixtls/goodix5e0a.c   | 324 +++++++++++++++++++++
+ libfprint/drivers/goodixtls/goodix5e0a.c   | 325 +++++++++++++++++++++
  libfprint/drivers/goodixtls/goodix5e0a.h   | 109 +++++++
  libfprint/drivers/goodixtls/goodix5xx.c    | 260 +++++++++++++----
  libfprint/drivers/goodixtls/goodix5xx.h    |  18 +-
@@ -16,7 +16,7 @@ Subject: [PATCH] Add driver support for Goodix 27c6:5e0a
  libfprint/fprint-list-udev-hwdb.c          |   1 -
  libfprint/meson.build                      |   2 +
  meson.build                                |   2 +
- 12 files changed, 1025 insertions(+), 159 deletions(-)
+ 12 files changed, 1026 insertions(+), 159 deletions(-)
  create mode 100644 libfprint/drivers/goodixtls/goodix5e0a.c
  create mode 100644 libfprint/drivers/goodixtls/goodix5e0a.h
 
@@ -648,10 +648,10 @@ index a19379c..d7427ea 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..3860e07
+index 0000000..429b09d
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,324 @@
+@@ -0,0 +1,325 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS
 +
@@ -904,7 +904,8 @@ index 0000000..3860e07
 +  fp_info ("5e0a finger touch accepted! active=%u, range=%u - extracting minutiae", active, range);
 +
 +  FpImage *img = fp_image_new (W, H);
-+  img->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
++  img->flags |= FPI_IMAGE_PARTIAL;
++  /* FPI_IMAGE_COLORS_INVERTED flipped OFF: img->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED; */
 +
 +  for (int r = 0; r < H; ++r)
 +    {

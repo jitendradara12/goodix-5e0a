@@ -250,7 +250,8 @@ process_raw_frame (GoodixTls5xxPix * pix)
   fp_info ("5e0a finger touch accepted! active=%u, range=%u - extracting minutiae", active, range);
 
   FpImage *img = fp_image_new (W, H);
-  img->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
+  img->flags |= FPI_IMAGE_PARTIAL;
+  /* FPI_IMAGE_COLORS_INVERTED flipped OFF: img->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED; */
 
   for (int r = 0; r < H; ++r)
     {
