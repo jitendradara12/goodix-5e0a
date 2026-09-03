@@ -4,7 +4,9 @@
 
 **Blocked by:** 05 — FDT touch-wait on real hardware (frames are meaningless before touch gating works).
 
-**Status:** in-progress — script-level frame verified (19-col geometry + ridge periodicity proven on live PGM 09-03), enroll-level pending driver deploy.
+**Status:** superseded by 08 — content flows via the active-mode path proven by the
+script capture; exposure/gate tuning happens inside 08's poll-until-content
+loop, not as a separate stage.
 
 Live-trace evidence & resolution (2026-09-03):
 - Root cause: `goodix.c` was sending `45 03 a7 00 a1 00 a7 00 a3 00` (an unverified prototype artifact from `driver_52xd.py`) for `mcu_get_image` (`0x20`). This caused the sensor die to return all-zero frames (7,680 bytes of `0x00`).

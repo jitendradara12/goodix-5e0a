@@ -29,6 +29,8 @@
 #include <stdio.h>
 #include <string.h>
 
+extern guint32 goodix5e0a_last_declen;
+
 
 typedef struct
 {
@@ -343,7 +345,6 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
   FpiDeviceGoodixTls5xx* self = FPI_DEVICE_GOODIXTLS5XX(dev);
   FpiDeviceGoodixTls5xxPrivate* priv = fpi_device_goodixtls5xx_get_instance_private(self);
   FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
-  extern guint32 goodix5e0a_last_declen;
   goodix5e0a_last_declen = len;
 
   g_message ("5e0a scan_on_read_img: declen=%u", len);
@@ -375,11 +376,51 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
     }
   free (raw_frame);
 
+  if (cls->process_raw_frame && img == NULL)
+    {
+      /* Empty frame / no finger touch: wait 500ms and re-poll */
+      fpi_ssm_jump_to_state_delayed (ssm, SCAN_STAGE_GET_IMG, 500);
+      return;
+    }
+
+  if (cls->process_raw_frame)
+    fpi_image_device_report_finger_status (img_dev, TRUE);
+
   fpi_image_device_image_captured (img_dev, img);
 
   fpi_ssm_next_state (ssm);
 }
 
+static void
+scan_on_release_img (FpDevice *dev, guint8 *data, guint16 len,
+                     gpointer ssm, GError *err)
+{
+  if (err)
+    {
+      fpi_ssm_mark_failed (ssm, err);
+      return;
+    }
+
+  FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
+  goodix5e0a_last_declen = len;
+
+  GoodixTls5xxPix * raw_frame = calloc (cls->scan_width * cls->scan_height, sizeof (GoodixTls5xxPix));
+  goodixtls5xx_decode_frame (raw_frame, len, data);
+
+  FpImage * img = cls->process_raw_frame (raw_frame);
+  free (raw_frame);
+
+  if (img != NULL)
+    {
+      /* Finger still held: discard image and poll release again after 200ms */
+      g_object_unref (img);
+      fpi_ssm_jump_to_state_delayed (ssm, SCAN_STAGE_SWITCH_TO_FTD_UP, 200);
+      return;
+    }
+
+  /* Finger lifted (active < 64): advance to complete stage and report release */
+  fpi_ssm_next_state (ssm);
+}
 
 static void
 scan_get_img (FpDevice * dev, FpiSsm * ssm)
@@ -393,6 +434,7 @@ static void
 scan_run_state (FpiSsm * ssm, FpDevice * dev)
 {
   FpImageDevice *img_dev = FP_IMAGE_DEVICE (dev);
+  FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
 
   switch (fpi_ssm_get_cur_state (ssm))
     {
@@ -400,8 +442,12 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
       goodix_send_query_mcu_state (dev, goodixtls5xx_check_none, ssm);
       break;
     case SCAN_STAGE_SWITCH_TO_FDT_MODE:
+      if (cls->process_raw_frame)
+        {
+          fpi_ssm_next_state (ssm);
+          break;
+        }
       {
-        FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
         GoodixTls5xxMcuConfig cfg = cls->get_mcu_cfg ();
         goodix_send_mcu_switch_to_fdt_mode (dev, cfg.data, cfg.data_len, cfg.free_fn, goodixtls5xx_check_none, ssm);
       }
@@ -409,7 +455,6 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
 
     case SCAN_STAGE_CALIBRATE:
       {
-        FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
         if (cls->has_calibration)
           do_calibration (dev, ssm);
         else
@@ -435,8 +480,12 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
       break;
 
     case SCAN_STAGE_SWITCH_TO_FDT_DOWN:
+      if (cls->process_raw_frame)
+        {
+          fpi_ssm_next_state (ssm);
+          break;
+        }
       {
-        FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
         if (cls->get_fdt_down_cfg)
           {
             GoodixTls5xxMcuConfig cfg = cls->get_fdt_down_cfg ();
@@ -450,7 +499,8 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
       break;
 
     case SCAN_STAGE_GET_IMG:
-      fpi_image_device_report_finger_status (img_dev, TRUE);
+      if (!cls->process_raw_frame)
+        fpi_image_device_report_finger_status (img_dev, TRUE);
       scan_get_img (dev, ssm);
       break;
 
@@ -468,8 +518,12 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
        signatures are absent from goodix.h and has_calibration is FALSE
        for 5e0a so the calibration sub-SSM is skipped. */
     case SCAN_STAGE_SWITCH_TO_FTD_UP:
+      if (cls->process_raw_frame)
+        {
+          goodix_tls_read_image (dev, scan_on_release_img, ssm);
+          break;
+        }
       {
-        FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
         if (cls->get_mcu_cfg && cls->get_fdt_down_cfg)
           {
             GoodixTls5xxMcuConfig mode = cls->get_mcu_cfg ();

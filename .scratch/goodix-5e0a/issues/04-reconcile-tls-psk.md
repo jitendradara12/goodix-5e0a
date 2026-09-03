@@ -41,7 +41,11 @@ sensor bytes. Proven facts (2026-09-03, Python USB probes, no hardware damage):
 
 **Blocked by:** 01 — Flush-tolerant NOP (TLS is unreachable until activation passes the early commands).
 
-**Status:** ready-for-agent (diagnostics armed, pending live finger press test)
+**Status:** superseded by 08 — the key hunt is moot for shipping: ~100 consecutive
+driver cycles show zero SSL/timeout/parser errors, i.e. C-land decrypt delivers,
+and 08 self-validates content via minutiae instead of external decrypt. The
+Python-harness flake (stray servers, buffer loss, desync) is a lab problem, not
+a driver problem. Reopen only on a live journal line proving decrypt failure. (diagnostics armed, pending live finger press test)
 
 - [ ] A live `0x20` reply decrypts to 7680 bytes with sensor structure (column sparsity, sane 12-bit range) — method must pass its own control test first.
 - [ ] The derivation (fixed key, reported slot, OTP/whitebox-derived, or session-bound) is documented with the capture that proves it — no guessing.

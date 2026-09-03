@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Flush-tolerant NOP (deeper behavior is unobservable until activation passes NOP).
 
-**Status:** ready-for-agent
+**Status:** closed — verdict recorded 09-03 (reset harmless on basic path: reset/chip/OTP/FW succeed every run; activation passes with zero errors). The abort-poisoning concern moved to 07 (consecutive-run stability), where a real failure — not a theory — is required to reopen this.
 
 Verdict so far (2026-09-03, Python probes): reset is HARMLESS on the basic path —
 `reset → (True, 2048)`, chip-ID, OTP and firmware reads succeed back-to-back every

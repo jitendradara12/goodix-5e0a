@@ -238,16 +238,11 @@ process_raw_frame (GoodixTls5xxPix * pix)
   const int W = GOODIX_5E0A_WIDTH;   // Native 80
   const int H = GOODIX_5E0A_HEIGHT;  // Native 64
 
-  /* B9-air: empty-air frames must NOT full-range stretch to fake ridges.
-   * Dim, not NULL: scan_on_read_img passes img straight to
-   * fpi_image_device_image_captured, so NULL is unverified. */
+  /* B9-air: empty-air frames return NULL so scan_on_read_img can poll until content. */
   if (active < 64 || range < 8)
     {
       fp_dbg ("5e0a empty air gated (active=%u < 64 || range=%u < 8)", active, range);
-      FpImage *dim = fp_image_new (W, H);
-      dim->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
-      memset (dim->data, 0, W * H);
-      return dim;
+      return NULL;
     }
 
   fp_info ("5e0a finger touch accepted! active=%u, range=%u - extracting minutiae", active, range);

@@ -2,7 +2,7 @@
 
 **What to build:** Repeated verification and system-auth logins work without timeouts and without daemon restarts — the original multi-run failure loops stay fixed, including across activation/deactivation cycles.
 
-**Blocked by:** 06 — Finger exposure and air-gate validation (stability is untestable before enroll and verify work once).
+**Blocked by:** 08 — Active-mode capture without FDT (stability is untestable before enroll and verify work once).
 
 **Status:** ready-for-agent
 
