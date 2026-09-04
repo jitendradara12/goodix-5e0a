@@ -376,61 +376,8 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
     }
   free (raw_frame);
 
-  if (cls->process_raw_frame && img == NULL)
-    {
-      /* Empty frame / no finger touch: wait 500ms and re-poll via 39-byte DOWN (Experiment D1) */
-      fpi_ssm_jump_to_state_delayed (ssm, SCAN_STAGE_SWITCH_TO_FDT_DOWN, 500);
-      return;
-    }
-
-  if (cls->process_raw_frame)
-    fpi_image_device_report_finger_status (img_dev, TRUE);
-
   fpi_image_device_image_captured (img_dev, img);
 
-  fpi_ssm_next_state (ssm);
-}
-
-static void
-scan_on_release_img (FpDevice *dev, guint8 *data, guint16 len,
-                     gpointer ssm, GError *err)
-{
-  if (err)
-    {
-      fpi_ssm_mark_failed (ssm, err);
-      return;
-    }
-
-  FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
-  goodix5e0a_last_declen = len;
-
-  GoodixTls5xxPix * raw_frame = calloc (cls->scan_width * cls->scan_height, sizeof (GoodixTls5xxPix));
-  goodixtls5xx_decode_frame (raw_frame, len, data);
-
-  FpImage * img = cls->process_raw_frame (raw_frame);
-  free (raw_frame);
-
-  if (img != NULL)
-    {
-      /* Finger still held: discard image and poll release again after 200ms */
-      g_object_unref (img);
-      fpi_ssm_jump_to_state_delayed (ssm, SCAN_STAGE_SWITCH_TO_FTD_UP, 200);
-      return;
-    }
-
-  /* Finger lifted (active < 64): advance to complete stage and report release */
-  fpi_ssm_next_state (ssm);
-}
-
-static void
-scan_on_fdt_down_tolerant (FpDevice *dev, gpointer user_data, GError *error)
-{
-  FpiSsm *ssm = user_data;
-  if (error)
-    {
-      fp_dbg ("5e0a FDT DOWN tolerant error ignored: %s", error->message);
-      g_error_free (error);
-    }
   fpi_ssm_next_state (ssm);
 }
 
@@ -439,8 +386,6 @@ scan_get_img (FpDevice * dev, FpiSsm * ssm)
 {
   goodix_tls_read_image (dev, scan_on_read_img, ssm);
 }
-
-
 
 static void
 scan_run_state (FpiSsm * ssm, FpDevice * dev)
@@ -451,20 +396,9 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
   switch (fpi_ssm_get_cur_state (ssm))
     {
     case SCAN_STAGE_QUERY_MCU:
-      /* Experiment D2: skip SCAN_STAGE_QUERY_MCU for 5e0a */
-      if (cls->process_raw_frame)
-        {
-          fpi_ssm_next_state (ssm);
-          break;
-        }
       goodix_send_query_mcu_state (dev, goodixtls5xx_check_none, ssm);
       break;
     case SCAN_STAGE_SWITCH_TO_FDT_MODE:
-      if (cls->process_raw_frame)
-        {
-          fpi_ssm_next_state (ssm);
-          break;
-        }
       {
         GoodixTls5xxMcuConfig cfg = cls->get_mcu_cfg ();
         goodix_send_mcu_switch_to_fdt_mode (dev, cfg.data, cfg.data_len, cfg.free_fn, goodixtls5xx_check_none, ssm);
@@ -479,35 +413,12 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
           fpi_ssm_next_state (ssm);
       }
       break;
-     /* ponytail: B5 arming order per driver_52xd.py:269-283 — 00-arm then
-        01-wait. The 00-arm is a stack copy of the 01-wait table with byte 26
-        cleared (no new heap helper; payload is memcpy'd synchronously by
-        goodix_send_protocol so the stack buffer is safe). The arm is ACK-only
-        (trace never shows a reply to it), so it uses the noreply sender;
-        the 01-wait below stays blocking.
-        ponytail ceiling: no sleep/query between arm and wait —
-        goodix_send_query_mcu_state sends fixed 0x55 (goodix.c) vs the trace
-        3-byte 00/01 payloads (driver_52xd.py:265-267), and the idle helper
-        is 0x70 vs trace sleep; needs payload-plumbed transport helpers.
-        Existing SCAN_STAGE_QUERY_MCU covers the pre-FDT query slot. */
+
     case SCAN_STAGE_SWITCH_TO_FDT_DOWN_ARM:
       fpi_ssm_next_state (ssm);
       break;
 
     case SCAN_STAGE_SWITCH_TO_FDT_DOWN:
-      /* Experiment D1: per poll iteration, send 39-byte DOWN fire-and-forget (ACK-tolerant) */
-      if (cls->process_raw_frame)
-        {
-          if (cls->get_fdt_down_cfg)
-            {
-              GoodixTls5xxMcuConfig cfg = cls->get_fdt_down_cfg ();
-              goodix_send_mcu_switch_to_fdt_down_noreply (dev, cfg.data, cfg.data_len, cfg.free_fn,
-                                                          scan_on_fdt_down_tolerant, ssm);
-              break;
-            }
-          fpi_ssm_next_state (ssm);
-          break;
-        }
       {
         if (cls->get_fdt_down_cfg)
           {
@@ -522,30 +433,11 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
       break;
 
     case SCAN_STAGE_GET_IMG:
-      if (!cls->process_raw_frame)
-        fpi_image_device_report_finger_status (img_dev, TRUE);
+      fpi_image_device_report_finger_status (img_dev, TRUE);
       scan_get_img (dev, ssm);
       break;
 
-    /* ponytail: B6 post-finger release is FDT_MODE 0d..8d 27B
-       (driver_52xd.py:285-295), not 0x34 — the 9c..00 UP vector was DOWN
-       with byte 26 flipped and has no trace source. The post-finger bytes
-       are derived from get_mcu_cfg with the 8d-block (16B at offset 10)
-       patched from the DOWN table, last byte 00 (the no-reply half, which
-       matches goodix_send_mcu_switch_to_fdt_mode's reply=FALSE semantics).
-       Only one stage is used (fewer stages wins); the 01/blocking half
-       needs reply=True support in the fdt_mode helper. Upgrade path: a
-       real 5e0a capture table in goodix5e0a.h.
-       ponytail: B3 — no POV/drv_state wiring here. It belongs to
-       activation (goodix5e0a.c, owned by the 5e0a agent); the transport
-       signatures are absent from goodix.h and has_calibration is FALSE
-       for 5e0a so the calibration sub-SSM is skipped. */
     case SCAN_STAGE_SWITCH_TO_FTD_UP:
-      if (cls->process_raw_frame)
-        {
-          goodix_tls_read_image (dev, scan_on_release_img, ssm);
-          break;
-        }
       {
         if (cls->get_mcu_cfg && cls->get_fdt_down_cfg)
           {

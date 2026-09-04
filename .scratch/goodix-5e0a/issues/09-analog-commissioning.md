@@ -7,7 +7,9 @@ signal to preserve.
 
 **Blocked by:** None — hardware experiments + driver init changes.
 
-**Status:** ready-for-agent
+**Status:** superseded by 10 — capture ground truth (35B FDT, 05-payload,
+10638B replies, touch-gated 0x32, D32 status byte) answers the analog
+questions structurally. Suspect list retired, not merely parked.
 
 ## Decisive measurement (09-03, offline on saved live frame, reproducible)
 

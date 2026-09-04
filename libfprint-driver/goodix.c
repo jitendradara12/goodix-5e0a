@@ -660,7 +660,7 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
                         NULL, FALSE, GOODIX_NOP_TIMEOUT, FALSE, NULL, NULL);
 }
 
-guint8 goodix5e0a_capture_payload[10] = {0x45, 0x03, 0xa7, 0x00, 0xa1, 0x00, 0xa7, 0x00, 0xa3, 0x00};
+guint8 goodix5e0a_capture_payload[10] = {0x05, 0x00, 0xb0, 0x00, 0xb2, 0x00, 0xb0, 0x00, 0xb1, 0x00};
 
 void
 goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,

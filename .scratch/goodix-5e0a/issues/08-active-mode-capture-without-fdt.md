@@ -5,9 +5,9 @@ mode with no FDT mode-switching at all, advancing only when a polled frame
 actually contains finger content. End-to-end: hands-off enroll stays silent,
 press-and-hold advances stages to a completed enroll, verify matches.
 
-**Blocked by:** None — ready now. (Supersedes the remaining halves of 05 and
-06; see those files for history. Transport/activation/TLS are proven working
-and frozen — do not touch them for this ticket.)
+**Blocked by:** superseded by 10 (Windows USBPcap ground truth) — see 10 for
+what survives (polling UX lessons, metrics logging) and what was wrong
+(39B tables, 01/45 payloads, 80x64 geometry, no-poll-query).
 
 **Status:** ready-for-agent
 
@@ -74,25 +74,19 @@ runs do not count; lesson learned from prior false "verified" marks)
   → revert this ticket's commit and report the exact journal lines. Do not
   pile further tweaks on a failing shape.
 
-## Experiment D (next, decided 09-03 — B and C falsified, zeros persist)
+## FDT semantics, definitively mapped 09-04 (raw-USB 4-run matrix, no touch ambiguity)
 
-B (no drv_state) and C (CONFIG_WBDI) both deployed cleanly; frames still
-all-zero under hold. FDT-arming also falsified. What remains is pre-capture
-ritual: the proven script sends 39-byte DOWN + ACK-check before capturing;
-the driver sends nothing (and still sends `0xae` QUERY every poll, which no
-script ever sends). Test ONE variable at a time, this order, all gated on
-`process_raw_frame` (5e0a-only), polling loop otherwise untouched:
+- DOWN without prior MODE: ACK instantly, no reply in 20s, held or not.
+- MODE pair + DOWN, untouched: ACK + 28B status reply
+  (`a0 18 00 b8 32 15 00 02 00 ff …`) in 0.01s.
+- MODE pair + DOWN, held: byte-identical instant reply.
+Conclusion: `0x32` is a mode-switch status reply, never touch-gated on
+APP_10036. Do not revisit blocking-FDT on this firmware without a Windows
+USB traffic capture showing otherwise.
 
-- D1: per poll iteration, send 39-byte DOWN fire-and-forget (ACK-tolerant:
-  advance on ACK *or* timeout, never abort — reuse the tolerant-receiver
-  pattern; a strict ACK check risks session abort on state-dependent NAKs
-  as observed in script runs), then capture immediately.
-- D2 (only if D1 fails): additionally skip `SCAN_STAGE_QUERY_MCU` for 5e0a
-  (same gating pattern). Resulting per-poll path (capture only) then matches
-  the proven script loop exactly, modulo TLS implementation.
-- Predicted signatures: content frames on hold at either step = confirmed,
-  keep it and stop. Zeros through D2 = pre-capture ritual dead; escalate to
-  TLS/session-level bisection (C vs script handshake) with journal evidence.
+(Experiment D record: D1 fire-and-forget DOWN + D2 QUERY-skip both deployed;
+zeros persisted. Per-poll path now matches the script loop modulo TLS impl.
+Pre-capture ritual closed as a lead.)
 
 `set_drv_state` skipped, activation/polling healthy, frames still zero under
 hold. drv_state neither blanks nor enables content. (Side note: enroll client
