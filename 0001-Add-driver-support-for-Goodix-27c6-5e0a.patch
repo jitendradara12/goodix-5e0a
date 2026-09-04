@@ -1,22 +1,22 @@
-From 4e6c63380393a220ef5a94f7eaee3d7a147aa1d1 Mon Sep 17 00:00:00 2001
+From 5bb4ffe068052d652486021261c5a933132fec2a Mon Sep 17 00:00:00 2001
 From: Test <test@test.com>
-Date: Fri, 4 Sep 2026 13:59:12 +0530
+Date: Fri, 4 Sep 2026 14:27:54 +0530
 Subject: [PATCH] Add driver support for Goodix 27c6:5e0a
 
 ---
  libfprint/drivers/goodixtls/goodix.c       | 302 ++++++++--
  libfprint/drivers/goodixtls/goodix.h       |  55 +-
  libfprint/drivers/goodixtls/goodix511.c    |   1 +
- libfprint/drivers/goodixtls/goodix5e0a.c   | 629 +++++++++++++++++++++
+ libfprint/drivers/goodixtls/goodix5e0a.c   | 650 +++++++++++++++++++++
  libfprint/drivers/goodixtls/goodix5e0a.h   | 118 ++++
- libfprint/drivers/goodixtls/goodix5xx.c    | 170 +++---
+ libfprint/drivers/goodixtls/goodix5xx.c    | 170 ++++--
  libfprint/drivers/goodixtls/goodix5xx.h    |  18 +-
  libfprint/drivers/goodixtls/goodix_proto.h |   4 +
  libfprint/drivers/goodixtls/goodixtls.c    | 105 +++-
  libfprint/fprint-list-udev-hwdb.c          |   1 -
  libfprint/meson.build                      |   2 +
  meson.build                                |   2 +
- 12 files changed, 1239 insertions(+), 168 deletions(-)
+ 12 files changed, 1260 insertions(+), 168 deletions(-)
  create mode 100644 libfprint/drivers/goodixtls/goodix5e0a.c
  create mode 100644 libfprint/drivers/goodixtls/goodix5e0a.h
 
@@ -647,10 +647,10 @@ index a19379c..d7427ea 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..d7538a6
+index 0000000..90ea5e0
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,629 @@
+@@ -0,0 +1,650 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -730,19 +730,6 @@ index 0000000..d7538a6
 +}
 +
 +static void
-+on_register_written (FpDevice *dev, gpointer user_data, GError *error)
-+{
-+  if (error)
-+    {
-+      g_warning ("5e0a sensor register 0x022c write failed: %s", error->message);
-+      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
-+      return;
-+    }
-+  fp_dbg ("Sensor register 0x022c configured! Completing activation.");
-+  fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), NULL);
-+}
-+
-+static void
 +on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
 +{
 +  if (error)
@@ -751,10 +738,8 @@ index 0000000..d7538a6
 +      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
 +      return;
 +    }
-+  fp_dbg ("Chip enabled! Configuring sensor register 0x022c with 0x030a...");
-+  goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
-+                                     GOODIX_5E0A_REG_GAIN_EXPOSURE_CALIB_VAL,
-+                                     on_register_written, NULL);
++  fp_dbg ("Chip enabled! Activation complete.");
++  fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), NULL);
 +}
 +
 +static void
@@ -956,6 +941,13 @@ index 0000000..d7538a6
 +  goodix5e0a_last_declen = len;
 +  g_message ("5e0a scan_on_read_img: declen=%u", len);
 +
++  if (data && len >= 16)
++    {
++      g_message ("5e0a raw first 16 bytes: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
++                 data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
++                 data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15]);
++    }
++
 +  if (data && len > 0)
 +    {
 +      g_file_set_contents ("/tmp/live_frame.raw", (const gchar *) data, len, NULL);
@@ -966,6 +958,20 @@ index 0000000..d7538a6
 +  guint32 num_pixels = (len / 6) * 4;
 +  GoodixTls5xxPix *raw_frame = calloc (MAX (num_pixels, GOODIX_5E0A_FRAME_SIZE * 4), sizeof (GoodixTls5xxPix));
 +  goodixtls5xx_decode_frame (raw_frame, len, data);
++
++  guint total_nonzero = 0;
++  guint16 raw_min = 65535, raw_max = 0;
++  for (guint32 i = 0; i < num_pixels; i++)
++    {
++      if (raw_frame[i] > 0)
++        {
++          total_nonzero++;
++          if (raw_frame[i] < raw_min) raw_min = raw_frame[i];
++          if (raw_frame[i] > raw_max) raw_max = raw_frame[i];
++        }
++    }
++  g_message ("5e0a raw_frame: num_px=%u nonzero=%u min=%u max=%u",
++             num_pixels, total_nonzero, raw_min == 65535 ? 0 : raw_min, raw_max);
 +
 +  FpImage *img = process_raw_frame (raw_frame);
 +  free (raw_frame);
@@ -1200,6 +1206,21 @@ index 0000000..d7538a6
 +
 +  double mean_adj = (adj_cnt > 0) ? (adj_sum / (double) adj_cnt) : 0.0;
 +  double mean_all = (all_cnt > 0) ? (all_sum / (double) all_cnt) : 0.0;
++
++  GString *active_cols = g_string_new ("");
++  for (int c = 0; c < GOODIX_5E0A_WIDTH; ++c)
++    {
++      guint32 c_sum = 0;
++      for (int r = 0; r < GOODIX_5E0A_HEIGHT; ++r)
++        c_sum += pix[c * GOODIX_5E0A_HEIGHT + r];
++      if (c_sum > 0)
++        g_string_append_printf (active_cols, "%d ", c);
++    }
++  if (active_cols->len > 0)
++    g_message ("5e0a active cols: %s", active_cols->str);
++  else
++    g_message ("5e0a active cols: NONE (all 0)");
++  g_string_free (active_cols, TRUE);
 +
 +  /* Guaranteed journald output without needing debug flags */
 +  g_message ("5e0a frame stats: active=%u, min_v=%u, max_v=%u, range=%u, declen=%u, adj_corr=%.3f, all_corr=%.3f, dist_corr=%.3f",
