@@ -551,13 +551,11 @@ process_raw_frame (GoodixTls5xxPix * pix)
 
   guint16 min_v = 65535, max_v = 0;
   guint active = 0;
-  for (int k = 0; k < 19; ++k)
+  for (int c = 0; c < GOODIX_5E0A_WIDTH; ++c)
     {
-      int col = 4 * k + 3;
       for (int r = 0; r < GOODIX_5E0A_HEIGHT; ++r)
         {
-          guint16 v = pix[col * GOODIX_5E0A_HEIGHT + r];
-          samples[k][r] = v;
+          guint16 v = pix[c * GOODIX_5E0A_HEIGHT + r];
           if (v > 30)
             {
               active++;
@@ -565,6 +563,13 @@ process_raw_frame (GoodixTls5xxPix * pix)
               if (v > max_v) max_v = v;
             }
         }
+    }
+
+  for (int k = 0; k < 19; ++k)
+    {
+      int col = 4 * k + 3;
+      for (int r = 0; r < GOODIX_5E0A_HEIGHT; ++r)
+        samples[k][r] = pix[col * GOODIX_5E0A_HEIGHT + r];
     }
 
   if (min_v == 65535) min_v = 0;
@@ -652,24 +657,7 @@ process_raw_frame (GoodixTls5xxPix * pix)
     {
       for (int c = 0; c < W; ++c)
         {
-          float pos = ((float) c - 3.0f) / 4.0f;
-          float val;
-
-          if (pos <= 0.0f)
-            {
-              val = (float) samples[0][r];
-            }
-          else if (pos >= 18.0f)
-            {
-              val = (float) samples[18][r];
-            }
-          else
-            {
-              int k = (int) pos;
-              float c_frac = pos - (float) k;
-              val = (float) samples[k][r] * (1.0f - c_frac) + (float) samples[k + 1][r] * c_frac;
-            }
-
+          guint16 val = pix[c * H + r];
           int norm = (int) (((val - (float) min_v) * 255.0f) / (float) range);
           img->data[r * W + c] = (guint8) CLAMP (norm, 0, 255);
         }
