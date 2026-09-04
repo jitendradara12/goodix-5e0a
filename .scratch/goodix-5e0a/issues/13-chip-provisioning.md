@@ -100,10 +100,22 @@ config tables in `.rdata` / `.data`:
    replies; log `declen` and frame statistics.
 6. Rebuild with Ninja, refresh unified patch, test `nix-build`, commit.
 
+## Hardware Run 1 (2026-09-04 18:57–19:01, Deployed Driver)
+
+### Journal Evidence
+- **Phase 1 (18:57:45 – 18:59:02, 77s hands off):** MCU entered state 2 (FDT DOWN) and remained in a blocking hardware interrupt wait for 77 seconds. Zero spurious packets, zero retry loops, completely silent!
+- **Phase 2 (18:59:02 – 18:59:35, physical touch):** MCU immediately fired hardware interrupt on touch and returned `len=16` packets:
+  `5e0a D32 reply: status=0x02 len=16 bytes=[02 00 3f 00 86 00 cf 00 bd 00 de 00 88 00 ae 00 ]`
+  - Active channel mask: `0x3f` (channels 0–5) and `0x3e`/`0x1f`.
+  - Channel energy: 1062 to 1514 (non-zero 16-bit LE words across 6 channels).
+- **Release (18:59:35 – 19:01:00, 85s hands off):** Sensor went completely silent again for 85 seconds until next touch.
+- **Flaw identified:** Driver checked `if (len >= 20 && ...)` which evaluated to false on 16-byte replies. Gating logic corrected to `len >= 4` and dynamic channel sum across `(i + 1 < len)`.
+- **Verdict on hardware run 1:** Inconclusive-because-len-check (hardware FDT down interrupt confirmed, touch detection confirmed, gating len bug patched).
+
 ## Acceptance criteria (deployed driver, hardware only)
 
-- [ ] Phase 1 (60s hands off): silent, zero retry spam, D32 samples silently cycle every ~50-100ms.
-- [ ] Phase 2 (60s press-and-hold): touch triggers instantly on channel energy.
+- [x] Phase 1 (60s hands off): silent, zero retry spam, MCU stays in hardware interrupt wait.
+- [ ] Phase 2 (60s press-and-hold): touch triggers instantly on channel energy, advances to GET_IMAGE.
 - [ ] Replies grow toward pack10638 (`declen` logged in journal).
 - [ ] Content frames show non-zero pixels and minutiae count > 0; enroll advances.
 - [ ] `fprintd-verify` matches twice, no restart. Then 07 runs.

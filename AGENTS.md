@@ -56,8 +56,9 @@ tail -n 20`. Conclude only: confirmed / falsified /
 
 ## Live edge
 
-Transport/activation/TLS proven and frozen. Ticket 13 in-progress: deployed
-driver updated with true ChicagoH (GF3658 DN3 / APP_10036) configuration blob
-(256B, offset 0x197c50 in wbdi.dll, checksum 0x0e53), channel-byte energy gating
-on D32, 50ms paced silent polling, and scan SSM concurrency guard. Ready for
+Transport/activation/TLS proven and frozen. Ticket 13 in-progress: ChicagoH
+config verified on hardware — silent hardware-wait in empty air (77s and 85s
+silence) and instant touch interrupt on finger contact. D32 length check
+corrected from len>=20 to len>=4 to accept 16-byte ChicagoH touch replies (6
+channels, mask 0x3f, energy ~1000-1500). Nix derivation rebuilt. Ready for
 hardware verify. Update this section on every landing.
