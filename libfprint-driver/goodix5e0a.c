@@ -379,6 +379,8 @@ static void
 goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
                             gpointer ssm, GError *err)
 {
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
   if (err)
     {
       fp_dbg ("5e0a D34 reply (tolerant): %s", err->message);
@@ -389,8 +391,12 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
       g_message ("5e0a D34 finger release reply: len=%u", len);
     }
 
-  fpi_image_device_report_finger_status (FP_IMAGE_DEVICE (dev), FALSE);
+  /* Mark current scan SSM completed before notifying libfprint,
+   * so that when libfprint synchronously requests AWAIT_FINGER_ON,
+   * the concurrency guard does not block the new scan SSM. */
+  self->scan_ssm = NULL;
   fpi_ssm_next_state (ssm);
+  fpi_image_device_report_finger_status (FP_IMAGE_DEVICE (dev), FALSE);
 }
 
 static void

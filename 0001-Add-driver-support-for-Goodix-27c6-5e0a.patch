@@ -625,10 +625,10 @@ index a19379c..d7427ea 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..3b37b8d
+index 0000000..5533593
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,713 @@
+@@ -0,0 +1,719 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -1010,6 +1010,8 @@ index 0000000..3b37b8d
 +goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
 +                            gpointer ssm, GError *err)
 +{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
 +  if (err)
 +    {
 +      fp_dbg ("5e0a D34 reply (tolerant): %s", err->message);
@@ -1020,8 +1022,12 @@ index 0000000..3b37b8d
 +      g_message ("5e0a D34 finger release reply: len=%u", len);
 +    }
 +
-+  fpi_image_device_report_finger_status (FP_IMAGE_DEVICE (dev), FALSE);
++  /* Mark current scan SSM completed before notifying libfprint,
++   * so that when libfprint synchronously requests AWAIT_FINGER_ON,
++   * the concurrency guard does not block the new scan SSM. */
++  self->scan_ssm = NULL;
 +  fpi_ssm_next_state (ssm);
++  fpi_image_device_report_finger_status (FP_IMAGE_DEVICE (dev), FALSE);
 +}
 +
 +static void
