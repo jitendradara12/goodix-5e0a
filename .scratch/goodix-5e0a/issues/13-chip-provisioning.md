@@ -112,13 +112,24 @@ config tables in `.rdata` / `.data`:
 - **Flaw identified:** Driver checked `if (len >= 20 && ...)` which evaluated to false on 16-byte replies. Gating logic corrected to `len >= 4` and dynamic channel sum across `(i + 1 < len)`.
 - **Verdict on hardware run 1:** Inconclusive-because-len-check (hardware FDT down interrupt confirmed, touch detection confirmed, gating len bug patched).
 
+## Hardware Run 2 (2026-09-04 19:18–19:20, Deployed Driver)
+
+### Journal Evidence
+- **Full-size frame received:** `declen=10564` (canonical ChicagoH sample size `0x2944` verified in `wbdi.dll:GetImageSampleSize`). Degraded 7684-byte frames are gone!
+- **Active pixels:** `nonzero=5120` (all 80x64 sensor pixels active!). Pixel values range from 415 to 2948.
+- **Active columns:** All 80 columns (0 to 79) active!
+- **Correlation:** `adj_corr=0.460 - 0.506` (adjacent column correlation confirms ridge structures).
+- **Minutiae detection & stage pass:** Touch 3 passed minutiae extraction!
+  `fprintd-enroll: Enroll result: enroll-stage-passed`!
+- **Flaw identified:** In `goodix5e0a_on_fdt_up_reply`, `fpi_image_device_report_finger_status(dev, FALSE)` was called before `fpi_ssm_next_state(ssm)`. Libfprint synchronously requested `AWAIT_FINGER_ON`, but the concurrency guard saw the old SSM still active and dropped the new scan request. Patched by clearing `self->scan_ssm = NULL` and completing the SSM before reporting finger off.
+
 ## Acceptance criteria (deployed driver, hardware only)
 
 - [x] Phase 1 (60s hands off): silent, zero retry spam, MCU stays in hardware interrupt wait.
-- [ ] Phase 2 (60s press-and-hold): touch triggers instantly on channel energy, advances to GET_IMAGE.
-- [ ] Replies grow toward pack10638 (`declen` logged in journal).
-- [ ] Content frames show non-zero pixels and minutiae count > 0; enroll advances.
-- [ ] `fprintd-verify` matches twice, no restart. Then 07 runs.
+- [x] Phase 2 (60s press-and-hold): touch triggers instantly on channel energy, advances to GET_IMAGE.
+- [x] Replies grow toward pack10638 / 10564 (`declen=10564` logged in journal).
+- [x] Content frames show non-zero pixels and minutiae count > 0; enroll advances (`enroll-stage-passed`).
+- [ ] Complete full 9-stage `fprintd-enroll` and run `fprintd-verify` twice.
 
 ## Rollback criteria
 
