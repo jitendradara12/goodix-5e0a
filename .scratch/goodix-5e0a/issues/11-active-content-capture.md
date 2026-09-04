@@ -7,7 +7,9 @@ silent, press-and-hold advances stages to completed enroll.
 
 **Blocked by:** None — ready now.
 
-**Status:** ready-for-agent
+**Status:** superseded by 12 — content-gating the wrong (7684B) frames.
+Touch detection comes from the D32 status byte, not frame content; the
+01-payload premise is retired with the 05-verbatim evidence.
 
 ## Background Evidence & Falsifications (Hardware Proven, Do Not Re-litigate)
 

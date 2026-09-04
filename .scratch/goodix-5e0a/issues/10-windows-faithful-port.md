@@ -9,7 +9,9 @@ enroll, double verify — no polling, no FDT-mode command, no per-cycle reset.
 **Blocked by:** None — ready now. (Supersedes 08 and 09 with rationale below;
 transport/activation/TLS core stays frozen.)
 
-**Status:** superseded by 11 — 35B FDT S12 auto-fires in empty air (`status=0x02 len=20` every 7-8s), falsifying touch-gating on 0x32 for APP_10036. Image payload 05 returned 7684B of pure zeros. Successor: 11 (Active Content Capture).
+**Status:** superseded by 12 — bytes right (35B/05-payload confirmed live),
+gating model wrong (no blocking wait exists; DOWN is sampled: `80`=idle,
+`02`=touch). History preserved above.
 
 ## Hardware Run Results (2026-09-04 15:22-15:25, deployed driver)
 

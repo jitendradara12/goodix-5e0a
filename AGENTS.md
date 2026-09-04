@@ -56,8 +56,9 @@ tail -n 20`. Conclude only: confirmed / falsified /
 
 ## Live edge
 
-Transport/activation/TLS proven and frozen. Ticket 10 falsified on hardware:
-35B S12 in `0x32` auto-replies on empty air (~10ms) on APP_10036; `05` payload
-returns 7684B pure blanks. Ticket 10 is superseded by Ticket 11 (Active-mode
-capture using `01` payload + internal content-gating to eliminate empty-air
-retries). Update this section on every landing.
+Transport/activation/TLS proven and frozen. Tickets 10 and 11 superseded
+by Ticket 12 (Sampled touch-gated loop: 0x32 DOWN silently re-issued on 0x80
+idle status, 0x02 triggers immediate 0x20 image capture with 05 payload,
+followed by 34 UP-pair with reply). Driver built, unified patch regenerated,
+Nix package verified. Awaiting hardware verification run. Update this section
+on every landing.

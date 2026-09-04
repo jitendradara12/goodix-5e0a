@@ -33,7 +33,6 @@ struct _FpiDeviceGoodixTls5e0a
   FpiDeviceGoodixTls5xx parent;
 
   gboolean session_started;
-  gboolean down_retried;
 };
 
 G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a, FPI,
@@ -150,7 +149,6 @@ dev_activate (FpImageDevice *img_dev)
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 
   self->session_started = FALSE;
-  self->down_retried = FALSE;
 
   fpi_ssm_start (fpi_ssm_new (dev, activate_run_state, ACTIVATE_NUM_STATES),
                  activate_complete);
@@ -253,24 +251,38 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
       return;
     }
 
-  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
   guint8 status = (len > 0) ? data[0] : 0x00;
 
-  g_message ("5e0a D32 reply: status=0x%02x len=%u", status, len);
+  GString *hex_str = g_string_new ("");
+  for (guint16 i = 0; i < len; i++)
+    g_string_append_printf (hex_str, "%02x ", data[i]);
+  g_message ("5e0a D32 reply: status=0x%02x len=%u bytes=[%s]", status, len, hex_str->str);
+  g_string_free (hex_str, TRUE);
 
-  if (status == 0x80 && !self->down_retried)
+  if (status == 0x80)
     {
-      self->down_retried = TRUE;
-      g_message ("5e0a poor contact (0x80), re-issuing DOWN with retry table...");
+      /* 0x80 means idle / finger-off. Silently sample DOWN again with same table */
       send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN,
-                      goodix_5e0a_down_retry, sizeof (goodix_5e0a_down_retry),
+                      goodix_5e0a_down_s12, sizeof (goodix_5e0a_down_s12),
                       0, goodix5e0a_on_fdt_down_reply, ssm);
       return;
     }
-
-  /* Touch confirmed (0x02 or post-retry) */
-  fpi_image_device_report_finger_status (FP_IMAGE_DEVICE (dev), TRUE);
-  fpi_ssm_next_state (ssm);
+  else if (status == 0x02)
+    {
+      /* Touch confirmed: report finger presence and advance to image capture */
+      fpi_image_device_report_finger_status (FP_IMAGE_DEVICE (dev), TRUE);
+      fpi_ssm_next_state (ssm);
+      return;
+    }
+  else
+    {
+      /* Unexpected status: log warning and re-issue DOWN */
+      g_warning ("5e0a D32 unexpected status 0x%02x, sampling again...", status);
+      send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN,
+                      goodix_5e0a_down_s12, sizeof (goodix_5e0a_down_s12),
+                      0, goodix5e0a_on_fdt_down_reply, ssm);
+      return;
+    }
 }
 
 static FpImage * process_raw_frame (GoodixTls5xxPix * pix);
@@ -359,24 +371,23 @@ goodix5e0a_scan_run_state (FpiSsm *ssm, FpDevice *dev)
   switch (fpi_ssm_get_cur_state (ssm))
     {
     case SCAN_5E0A_SESSION_AE:
-      if (self->session_started)
-        {
-          fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
-          return;
-        }
       send_cmd_noreply (dev, GOODIX_CMD_QUERY_MCU_STATE,
                         goodix_5e0a_query_ae, sizeof (goodix_5e0a_query_ae),
                         goodix5e0a_step_cb, ssm);
       break;
 
     case SCAN_5E0A_SESSION_D6:
+      if (self->session_started)
+        {
+          fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
+          return;
+        }
       send_cmd_reply (dev, GOODIX_CMD_SESSION_D6,
                       goodix_5e0a_session_d6, sizeof (goodix_5e0a_session_d6),
                       GOODIX_TIMEOUT, goodix5e0a_on_d6_reply, ssm);
       break;
 
     case SCAN_5E0A_FDT_DOWN:
-      self->down_retried = FALSE;
       send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN,
                       goodix_5e0a_down_s12, sizeof (goodix_5e0a_down_s12),
                       0, goodix5e0a_on_fdt_down_reply, ssm);
@@ -472,7 +483,6 @@ static void
 fpi_device_goodixtls5e0a_init (FpiDeviceGoodixTls5e0a *self)
 {
   self->session_started = FALSE;
-  self->down_retried = FALSE;
 }
 
 static FpImage *
