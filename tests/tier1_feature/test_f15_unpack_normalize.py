@@ -1,12 +1,13 @@
 """
 Tier 1 - Feature 15: 12-bit Pixel Unpacking & Normalization
-Requirements: Unpack 6-byte blocks to 4 12-bit pixels (80x64 = 5120 pixels), normalize to 8-bit grayscale.
+Requirements: strip ChicagoH block padding, unpack 6-byte groups to 4 pixels (64x80 = 5120), and normalize.
 """
 
 import unittest
 from tests.test_utils import (
-    decode_12bit_frame, pack_12bit_frame, squash_frame_linear,
-    FRAME_PIXELS, RAW_FRAME_BYTES
+    decode_12bit_frame, decode_chicagoh_frame, pack_12bit_frame, squash_frame_linear,
+    FRAME_PIXELS, RAW_FRAME_BYTES, FRAME_BLOCKS, FRAME_BLOCK_BYTES,
+    FRAME_BLOCK_ACTIVE_BYTES, WIRE_FRAME_BYTES
 )
 
 class TestF15UnpackNormalize(unittest.TestCase):
@@ -35,6 +36,19 @@ class TestF15UnpackNormalize(unittest.TestCase):
         raw_data = bytes([0xAA] * RAW_FRAME_BYTES)
         pixels = decode_12bit_frame(raw_data)
         self.assertEqual(len(pixels), FRAME_PIXELS)
+
+    def test_canonical_frame_strips_each_block_padding(self):
+        pixels = [(index * 37) % 4096 for index in range(FRAME_PIXELS)]
+        packed = pack_12bit_frame(pixels)
+        wire = bytearray()
+        for block in range(FRAME_BLOCKS):
+            start = block * FRAME_BLOCK_ACTIVE_BYTES
+            wire.extend(packed[start : start + FRAME_BLOCK_ACTIVE_BYTES])
+            wire.extend(b"\x00" * (FRAME_BLOCK_BYTES - FRAME_BLOCK_ACTIVE_BYTES))
+        wire.extend(b"\x12\x34\x56\x78")
+
+        self.assertEqual(len(wire), WIRE_FRAME_BYTES)
+        self.assertEqual(decode_chicagoh_frame(bytes(wire)), pixels)
 
     def test_pixel_values_within_12bit_range(self):
         """Verify all decoded pixel values are strictly in range 0..4095."""

@@ -4,7 +4,7 @@
 
 **Blocked by:** None — builds on Ticket 13 (ChicagoH config, D32 energy gating, full 10564B frames, and 8/8 enrollment proven and frozen).
 
-**Status:** in-progress
+**Status:** superseded (successor: [15-canonical-chicago-frame-restructuring.md](15-canonical-chicago-frame-restructuring.md))
 
 ## Settled facts this ticket builds on (do not re-litigate)
 

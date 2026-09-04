@@ -14,46 +14,122 @@ Support for the Goodix 27c6:5e0a fingerprint sensor (Realme Book / ChicagoH / GF
 | **TLS Handshake** | Frozen | TLS 1.2 PSK (`PSK-AES128-CBC-SHA256`), PSK extracted from DPAPI, PSK flags `0xbb020001` |
 | **Chip Provisioning** | Frozen | Base ChicagoH table from `wbdi.dll:0x197c50` (VMA `0x180198a50`), 256 bytes, checksum `0x0e53` (`53 0e`) |
 | **Touch Gating** | Frozen | Dynamic 16-bit channel energy on D32 (`data[2] != 0xff && channel_energy > 0`); blocking hardware interrupt in empty air |
-| **Frame Decryption** | Frozen | Full 10564-byte decrypted frames (`declen=10564`), 7040 decoded 12-bit values with all 5120 sensor pixels active |
+| **Frame Decryption** | Frozen | Full 10564-byte decrypted frames (`declen=10564`), 7040 decoded 12-bit values with active contact area |
 | **Deactivation Teardown** | Frozen | Synchronous teardown: reset driver USB state, shutdown TLS, stop read loop, immediate completion callback |
-| **Minutiae & Matching** | Active | `FPI_IMAGE_COLORS_INVERTED` (capacitive high ADC -> NBIS black 0), 2x bilinear scaling (`fpi_image_resize` to 160x128) matching NBIS 500 DPI |
+| **Image Pipeline** | Active | Strip 96 active bytes from each 132-byte block, decode the natural $64 \times 80$ raster, subtract a 3x3 local mean, then scale 2x to $128 \times 160$ with `FPI_IMAGE_COLORS_INVERTED` |
 
 ---
 
 ## 3. Hardware Verification Run Log
 
-### Run 1 (2026-09-04 18:57–19:01)
-- **Observations:** Phase 1 silent for 77s and 85s in empty air; MCU remained in blocking hardware interrupt wait. Touch triggered instant interrupt and returned 16-byte D32 reply (`mask=0x3f`, channel energy 1062–1514).
-- **Flaw found:** Driver checked `len >= 20` which failed on 16-byte ChicagoH packets.
-- **Fix:** Changed gating check to `len >= 4` with dynamic channel energy summation across `len`.
+### Runs 1–5: Bring-Up, FDT Touch Gating, and Multi-Stage Enrollment
+- **Run 1:** Touch interrupt confirmed on hardware; gated D32 channel energy on 16-byte ChicagoH packets.
+- **Run 2:** Full 10564-byte decrypted frames (`declen=10564`); fixed scan SSM concurrency guard sequencing.
+- **Run 3:** Eliminated legacy degraded-frame downsampling; restored full 80-column direct mapping.
+- **Run 4:** Fixed teardown command collision; achieved 8 of 8 enrollment stages (`enroll-completed`).
+- **Run 5:** Discovered polarity inversion: capacitive ridges register higher ADC counts, requiring `FPI_IMAGE_COLORS_INVERTED` for NBIS `mindtct`.
 
-### Run 2 (2026-09-04 19:18–19:20)
-- **Observations:** Sensor delivered canonical 10564-byte decrypted frames (`declen=10564`). All 5120 pixels active (`nonzero=5120`, range 415–2948). First enroll stage passed (`enroll-stage-passed`).
-- **Flaw found:** Scan SSM concurrency guard dropped subsequent touches because finger-off was reported before SSM completion.
-- **Fix:** Clear `self->scan_ssm = NULL` and complete SSM prior to reporting finger status FALSE.
+### Runs 6–9: Contiguous Linear Unpack & Biometric Correlation Proof
+- **Run 6 (2026-09-04 22:35):**
+  - Linear contiguous unpack of first 7680 bytes into $80 \times 64$ row-major buffer.
+  - Achieved strong positive adjacent correlation (`adj_corr = +0.828`).
+  - Achieved high minutiae extraction: **52 and 57 minutiae** on good touches.
+  - Bozorth3 scored non-zero matches: **5/12, 4/12, 3/12** against enrolled gallery.
+  - Observed `active = 3728` non-zero pixels ($72.8\%$ contact area, reflecting natural fingertip contact ellipse).
+- **Run 7 (2026-09-04 22:54):** Stride-165 hypothesis (assuming 45-byte padding blocks inside scanlines) **falsified**. Minutiae collapsed to 0; reverted.
+- **Run 8 (2026-09-04 23:22):** Direct column-major unpack without stride **falsified**. Transposing 80 pixels into 64-element columns sheared scanlines diagonally; reverted.
+- **Run 9 (2026-09-04 23:35):** Re-verified contiguous linear unpack. Bozorth3 scored **6/12, 5/12, 4/12, 3/12** against gallery. Minutiae starvation occurred only on light touches (`min_v` clipping peripheral ridges).
 
-### Run 3 (2026-09-04 19:44–19:46)
-- **Observations:** 14 consecutive touches processed without deadlock. 5 of 8 stages passed in rapid succession (stages 1 to 5).
-- **Flaw found:** Driver was using legacy 19-column downsampling and horizontal blur from degraded frame era, throwing away 75% of horizontal resolution.
-- **Fix:** Direct mapping of all 80 native sensor columns into `img->data` at 1:1 optical clarity.
+### Runs 10–12: Stride-132 Column Extraction Falsification
+- **Run 10 (2026-09-04 23:48):** Zero-baseline normalization tested with linear decode. Verification failed due to light touch floor abort (`probe_nrows=5 < 10`).
+- **Run 11 & 12 (2026-09-05 00:35):**
+  - Implemented hypothesis from `wbdi.dll:0x18004db80`: extracting 96 bytes per 132-byte column block.
+  - **Falsified on physical hardware:**
+    ```text
+    5e0a frame stats: active=5120, min_v=272, max_v=2548, range=2276, declen=10564, adj_corr=-0.348
+    5e0a get_minutiae: ret=0 minutiae_count=1
+    5e0a bz3 match: gallery[0]_nrows=1 score=0/12 (probe_nrows=1)
+    ```
+  - **Verdict:** Inserting 132-byte strides sliced across true horizontal raster scanlines, inverting correlation to **-0.348** and collapsing minutiae to **1**. Wire data is contiguous 12-bit words, not stride-132. Reverted.
 
-### Run 4 (2026-09-04 20:02–20:03)
-- **Observations:** Full 8 of 8 enrollment stages completed on physical hardware (`reported 8 of 8 have been completed`).
-- **Flaw found:** Teardown collision: upon stage 8 completion, `goodix5e0a_deactivate` sent an async sleep command (`0x60`) colliding with in-flight finger release.
-- **Fix:** Made `goodix5e0a_deactivate` synchronous, matching `goodix5xx` base class.
+### Run 13 (Ticket 16 — Falsified)
+- Enrollment completed, but four verification attempts returned `verify-no-match`.
+- Gallery minutiae counts were `[9, 13, 5, 10, 8, 5, 6, 14]`; probe counts were 5, 10, 12, and 2; maximum score was `3/12`.
+- Every frame had exactly 3,728 nonzero pixels. This equals the deterministic result of decoding 58 complete 132-byte blocks while swallowing each 36-byte zero pad, not natural finger coverage.
+- Ticket 16's contiguous first-7,680-byte decoder is falsified and superseded by Ticket 17.
 
-### Run 5 (2026-09-04 20:19–20:20)
-- **Observations:** Enrollment finished cleanly (`enroll-completed`) and template was committed to disk. First verify attempt yielded `verify-retry-scan` followed by `verify-no-match`.
-- **Root cause:** Journal logged `Failed to detect minutiae: No minutiae found`. Bozorth3 matcher was never reached because:
-  1. Missing `FPI_IMAGE_COLORS_INVERTED`: capacitive ADC has high values for ridges, so normalized buffer had white ridges on black valleys. NBIS `mindtct` requires 0 = black for ridges.
-  2. Native 80x64 sensor area trimmed by `PERIMETER_PTS_DISTANCE = 10` left only 60x44 pixels, too small for 24x24 analysis windows.
-- **Fix applied:** Added `FPI_IMAGE_COLORS_INVERTED`, 2x bilinear scaling via `fpi_image_resize (img, 2, 2)` to 160x128 (standard small-sensor pattern in `elanspi`, `aes3k`, `egis0570`), and empty-air rejection gate.
+### Run 14 (Ticket 17 — Hardware Verified & Confirmed)
+- **Deployed Driver Journal Evidence (2026-09-05 01:45:08–01:45:12):**
+  ```text
+  5e0a wire layout: decoded_px=5120 blocks=80 active_bytes=96 padding_nonzero=0 footer_bytes=4
+  5e0a frame stats: active=5120, min_v=416, max_v=2623, range=2207, declen=10564, h_corr=0.944, v_corr=0.835, h_lag4_corr=0.563 (native 64x80 WxH)
+  5e0a local contrast: min=-382.00 max=310.11 range=692.11 window=3x3
+  5e0a get_minutiae: ret=0 minutiae_count=16 (image 128x160 WxH)
+  5e0a bz3 match: gallery[2]_nrows=16 score=3/12 (probe_nrows=16)
+  5e0a bz3 match: gallery[5]_nrows=18 score=5/12 (probe_nrows=16)
+  5e0a bz3 match: gallery[6]_nrows=17 score=5/12 (probe_nrows=16)
+  5e0a bz3 match: gallery[7]_nrows=12 score=6/12 (probe_nrows=13)
+  ```
+- **Confirmed:**
+  - Wire structure is 100% solved: 80 blocks × 132B (96B active + 36B zero pad) + 4B footer (`padding_nonzero = 0` across all 2,880 pad bytes).
+  - Raster geometry is 100% solved: natural $64 \times 80$ raster gives $h\_corr = 0.944$ and $v\_corr = 0.835$.
+  - 3x3 local contrast is 100% solved: removes DC pressure pedestal, lifting minutiae from 2 to 13–18.
+  - Bozorth3 cross-matching is 100% real: matches 5–6 minutiae pairs (up to 50% match rate) across multiple gallery prints.
+- **The Remaining Gap:**
+  - Minutiae counts per print capped at 12–18, which mathematically caps Bozorth### Run 15 (Ticket 18 — Hardware Verified: FIRST BIOMETRIC VERIFICATION MATCH)
+- **Deployed Driver Journal Evidence (2026-09-05 02:20:07–02:20:23):**
+  ```text
+  # Verification 1:
+  Verify started!
+  Verifying: right-index-finger
+  Verify result: verify-match (done)
+
+  # Journal Match Evidence:
+  5e0a get_minutiae: ret=0 minutiae_count=18 (image 128x160 WxH, scan_time=0.0045s)
+  5e0a bz3 match: gallery[0]_nrows=15 score=6/12 (probe_nrows=18)
+  5e0a bz3 match: gallery[1]_nrows=12 score=3/12 (probe_nrows=18)
+  5e0a bz3 match: gallery[2]_nrows=18 score=5/12 (probe_nrows=18)
+  5e0a bz3 match: gallery[3]_nrows=15 score=6/12 (probe_nrows=18)
+  5e0a bz3 match: gallery[4]_nrows=12 score=4/12 (probe_nrows=18)
+  5e0a bz3 match: gallery[5]_nrows=18 score=13/12 (probe_nrows=18)
+  ```
+- **Milestone Confirmed:**
+  - **First Genuine Biometric Match**: `Verify result: verify-match (done)` achieved on physical hardware with score **13/12**!
+  - **Enrollment Quality Gate**: 100% operational. All 8 enrolled prints achieved $\ge 12$ minutiae `[15, 12, 18, 15, 12, 18, 17, 18]`. Zero floor aborts!
+  - **Resolution & Contrast Tuning**: Setting `ppmm = 500/25.4` and 2.5x contrast gain successfully crossed the `bz3_threshold = 12` line.
+- **Repeatability Observation**:
+  - Touch 1: `score=13/12` $\implies$ `verify-match (done)`.
+  - Touch 2: `score=6/12` $\implies$ `verify-no-match (done)`.
+  - Next focus: Expand minutiae density headroom to $\ge 22\text{--}28$ to achieve repeatable first-touch verification on 100% of touches.
 
 ---
 
-## 4. Current State & Verification Protocol
+## 4. Master Ticket Roadmap & Evolution (What Worked & What Failed)
 
-- Derivation: `/nix/store/qbdkga0h4a390wdg6940grrqwg0qfgmr-libfprint-goodix-1.94.5-goodixtls`
-- Unified patch: synchronized with `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch`
-- Tests: `test_f16_demosaicing` (10/10) and `test_f23_pam_reliability` (5/5) passing.
-- Next step: Re-enrollment to generate 160x128 gallery prints, followed by `fprintd-verify`.
+```text
+Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Superseded) ──> Ticket 17 (Confirmed) ──> Ticket 18 (FIRST MATCH: 13/12)
+```
+
+| Ticket | Hypothesis / Action | Physical Hardware Result | Verdict |
+|---|---|---|---|
+| **14** | Diagnostic logging + Linear 7680B unpack into $80 \times 64$ | `nonzero=3728`, `adj_corr=0.828`, minutiae 38–57, Bozorth 3–6/12 | Superseded (22 columns appeared dead; `nonzero=3728` mystery unexplained). |
+| **15** | Column-major Stride-132 extraction from `wbdi.dll:0x18004db80` | `adj_corr=-0.348`, minutiae collapsed to **1**, match score **0/12** | **Falsified** (Transposing 80 pixels into 64-element columns sliced across scanlines). |
+| **16** | Revert to contiguous $80 \times 64$ linear unpack | Correlation restored, but `nonzero=3728` on every single frame; score capped at 3/12 | **Superseded** (`/dev/shm/live_frame.raw` revealed 7680 bytes = 58 blocks × 36 zero bytes swallowed). |
+| **17** | Canonical block extraction ($80 \times 96\text{B}$) + natural $64 \times 80$ raster + $3 \times 3$ local contrast | `padding_nonzero=0`, `active=5120`, `h_corr=0.944`, `v_corr=0.835`, Bozorth **5/12, 6/12** | **Confirmed** (Wire layout & biometric validity proven; peak score 6/12). |
+| **18** | Minutiae density elevation + Enrollment quality gate (`minutiae >= 12`) + `ppmm=500/25.4` + Contrast gain 2.5x | **Bozorth score 13/12 achieved! `Verify result: verify-match (done)`** | **In-Progress / Milestone Achieved** (First genuine hardware match!). |
+
+---
+
+## 5. Current State & Configuration Summary
+
+- **Active Ticket:** Ticket 18 (`18-minutiae-density-and-enrollment-gating.md`)
+- **Closed / Proven Tickets:** Tickets 01–14 (Transport/TLS/FDT/Provisioning), Ticket 17 (Wire layout 80x96B, 64x80 raster, 3x3 local contrast).
+- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `9c5385c962dd94b9e92fa4337682ced8a774c90c140a3c749017a8c1ebd3426d`)
+- **Frame Decoder:** Strip each 132-byte block's first 96 bytes, discard 36-byte zero pad; unpack sequentially into 5,120 pixels.
+- **Dimensions:** Native $64 \times 80$ (WxH), upscaled 2x via bilinear interpolation to $128 \times 160$.
+- **Resolution:** Explicitly calibrated: `scaled->ppmm = 500.0 / 25.4`.
+- **Normalization:** 3x3 local mean subtraction (`val - local_mean`) with $2.5\times$ contrast gain around mid-gray 128, clamped to [0, 255].
+- **Enrollment Quality Floor:** `GOODIX_5E0A_ENROLL_MIN_MINUTIAE = 12`. Faint touches rejected with retry prompt.
+- **Flags:** `scaled->flags = FPI_IMAGE_COLORS_INVERTED` (capacitive high ADC inverted to black ink 0; `FPI_IMAGE_PARTIAL` omitted to retain edge minutiae).
+- **Matching Invariants:** `bz3_threshold = 12`, `MIN_COMPUTABLE_BOZORTH_MINUTIAE = 10` (strict biometric standards).
+

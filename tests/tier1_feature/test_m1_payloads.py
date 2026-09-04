@@ -98,10 +98,10 @@ class TestMilestone1Payloads(unittest.TestCase):
         height = parse_c_macro(self.header_content, "GOODIX_5E0A_HEIGHT")
         scan_w = parse_c_macro(self.header_content, "GOODIX_5E0A_SCAN_WIDTH")
         scan_h = parse_c_macro(self.header_content, "GOODIX_5E0A_SCAN_HEIGHT")
-        self.assertEqual(width, 80)
-        self.assertEqual(height, 64)
-        self.assertEqual(scan_w, 80)
-        self.assertEqual(scan_h, 64)
+        self.assertEqual(width, 64)
+        self.assertEqual(height, 80)
+        self.assertEqual(scan_w, 64)
+        self.assertEqual(scan_h, 80)
 
     def test_gain_exposure_register_0x022c(self):
         """Verify sensor register 0x022c gain/exposure parameters (0x0503)."""

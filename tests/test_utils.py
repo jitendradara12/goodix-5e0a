@@ -31,12 +31,16 @@ PSK_FLAGS = 0xBB020001
 RESET_NUMBER = 2048
 CHIP_ID_VAL = bytes([0x27, 0xc6, 0x5e, 0x0a])
 
-SENSOR_WIDTH = 80
-SENSOR_HEIGHT = 64
+SENSOR_WIDTH = 64
+SENSOR_HEIGHT = 80
 FRAME_PIXELS = SENSOR_WIDTH * SENSOR_HEIGHT  # 5120
-RAW_FRAME_BYTES = 7680
-IMAGE_OUT_WIDTH = 160
-IMAGE_OUT_HEIGHT = 128
+FRAME_BLOCKS = 80
+FRAME_BLOCK_BYTES = 132
+FRAME_BLOCK_ACTIVE_BYTES = 96
+RAW_FRAME_BYTES = FRAME_BLOCKS * FRAME_BLOCK_ACTIVE_BYTES  # 7680
+WIRE_FRAME_BYTES = FRAME_BLOCKS * FRAME_BLOCK_BYTES + 4  # 10564
+IMAGE_OUT_WIDTH = 128
+IMAGE_OUT_HEIGHT = 160
 IMAGE_OUT_PIXELS = IMAGE_OUT_WIDTH * IMAGE_OUT_HEIGHT  # 20480
 
 FLAGS_MSG_PROTOCOL = 0xA0
@@ -224,6 +228,18 @@ def pack_12bit_frame(pixels: List[int]) -> bytes:
         out.extend([b0, b1, b2, b3, b4, b5])
     return bytes(out)
 
+
+def decode_chicagoh_frame(raw_frame: bytes) -> List[int]:
+    """Strip each ChicagoH block's zero pad and decode the natural 64x80 raster."""
+    if len(raw_frame) < WIRE_FRAME_BYTES:
+        return []
+
+    packed = bytearray()
+    for block in range(FRAME_BLOCKS):
+        start = block * FRAME_BLOCK_BYTES
+        packed.extend(raw_frame[start : start + FRAME_BLOCK_ACTIVE_BYTES])
+    return decode_12bit_frame(bytes(packed))
+
 def squash_frame_linear(pixels: List[int]) -> List[int]:
     """
     Normalizes 12-bit pixels (0..4095) to 8-bit grayscale (0..255).
@@ -239,122 +255,58 @@ def squash_frame_linear(pixels: List[int]) -> List[int]:
     return [((p - min_val) * 255) // val_range for p in pixels]
 
 def process_frame_demosaic(squashed: List[int], width: int = SENSOR_WIDTH, height: int = SENSOR_HEIGHT) -> List[int]:
-    """
-    Bilinear demosaicing & interpolation upsampling from 80x64 to 160x128.
-    Matches process_frame in goodix5e0a.c.
-    """
-    # Build 19 sample columns
-    samples = [[0] * height for _ in range(19)]
-    min_v = 255
-    max_v = 0
-    for k in range(19):
-        col = 4 * k + 3
-        for r in range(height):
-            v = squashed[col * height + r]
-            samples[k][r] = v
-            if v < min_v:
-                min_v = v
-            if v > max_v:
-                max_v = v
-
-    if min_v == 255:
-        min_v = 0
-    val_range = max_v - min_v if max_v > min_v else 1
-
-    out_w = width * 2   # 160
-    out_h = height * 2  # 128
+    """Bilinearly upscale a row-major 64x80 image to 128x160."""
+    out_w = width * 2
+    out_h = height * 2
     out_img = [0] * (out_w * out_h)
 
-    for r in range(out_h):
-        orig_r = r / 2.0
-        r0 = int(orig_r)
-        r1 = min(r0 + 1, height - 1)
-        r_frac = orig_r - r0
+    for y in range(out_h):
+        src_y = max(0.0, (y + 0.5) * 0.5 - 0.5)
+        y0 = int(src_y)
+        y1 = min(y0 + 1, height - 1)
+        y_frac = src_y - y0
 
-        for c in range(out_w):
-            orig_c = c / 2.0
-            pos = (orig_c - 3.0) / 4.0
-
-            if pos <= 0.0:
-                val = float(samples[0][r0]) * (1.0 - r_frac) + float(samples[0][r1]) * r_frac
-            elif pos >= 18.0:
-                val = float(samples[18][r0]) * (1.0 - r_frac) + float(samples[18][r1]) * r_frac
-            else:
-                k = int(pos)
-                c_frac = pos - float(k)
-                top = float(samples[k][r0]) * (1.0 - c_frac) + float(samples[k + 1][r0]) * c_frac
-                bot = float(samples[k][r1]) * (1.0 - c_frac) + float(samples[k + 1][r1]) * c_frac
-                val = top * (1.0 - r_frac) + bot * r_frac
-
-            norm = int(((val - float(min_v)) * 255.0) / float(val_range))
-            norm = max(0, min(255, norm))
-            out_img[r * out_w + c] = norm
+        for x in range(out_w):
+            src_x = max(0.0, (x + 0.5) * 0.5 - 0.5)
+            x0 = int(src_x)
+            x1 = min(x0 + 1, width - 1)
+            x_frac = src_x - x0
+            top = squashed[y0 * width + x0] * (1.0 - x_frac) + squashed[y0 * width + x1] * x_frac
+            bottom = squashed[y1 * width + x0] * (1.0 - x_frac) + squashed[y1 * width + x1] * x_frac
+            out_img[y * out_w + x] = max(0, min(255, round(top * (1.0 - y_frac) + bottom * y_frac)))
 
     return out_img
 
 def process_raw_frame(pix: List[int], width: int = SENSOR_WIDTH, height: int = SENSOR_HEIGHT) -> List[int]:
-    """
-    Direct raw 12-bit frame demosaicing with empty-air rejection gate.
-    Matches process_raw_frame in goodix5e0a.c.
-    Takes raw 12-bit sensor array (length = 80*64 = 5120 pixels).
-    Returns 160x128 8-bit image. If active samples < 64 or range < 8, returns dim/all-0s image.
-    """
-    samples = [[0] * height for _ in range(19)]
-    min_v = 65535
-    max_v = 0
-    active = 0
-
-    for k in range(19):
-        col = 4 * k + 3
-        for r in range(height):
-            v = pix[col * height + r]
-            samples[k][r] = v
-            if v > 30:
-                active += 1
-                if v < min_v:
-                    min_v = v
-                if v > max_v:
-                    max_v = v
-
-    if min_v == 65535:
-        min_v = 0
+    """Locally flatten, normalize, and upscale the 64x80 raster to 128x160."""
+    active_pixels = [value for value in pix if value > 30]
+    min_v = min(active_pixels, default=0)
+    max_v = max(active_pixels, default=0)
     val_range = (max_v - min_v) if max_v > min_v else 1
 
-    out_w = width * 2   # 160
-    out_h = height * 2  # 128
+    if len(active_pixels) < 64 or val_range < 8:
+        return [0] * (width * height * 4)
 
-    # B9-air: empty-air frames must NOT full-range stretch to fake ridges.
-    # Empty-air rejection gate: dim (all zeros) if active samples < 64 or range < 8
-    if active < 64 or val_range < 8:
-        return [0] * (out_w * out_h)
+    residuals = []
+    for y in range(height):
+        for x in range(width):
+            neighbors = [
+                pix[yy * width + xx]
+                for yy in range(max(0, y - 1), min(height, y + 2))
+                for xx in range(max(0, x - 1), min(width, x + 2))
+            ]
+            residuals.append(pix[y * width + x] - sum(neighbors) / len(neighbors))
 
-    out_img = [0] * (out_w * out_h)
-    for r in range(out_h):
-        orig_r = r / 2.0
-        r0 = int(orig_r)
-        r1 = min(r0 + 1, height - 1)
-        r_frac = orig_r - r0
+    residual_min = min(residuals)
+    residual_range = max(residuals) - residual_min
+    if residual_range < 1.0:
+        return [0] * (width * height * 4)
 
-        for c in range(out_w):
-            orig_c = c / 2.0
-            pos = (orig_c - 3.0) / 4.0
-
-            if pos <= 0.0:
-                val = float(samples[0][r0]) * (1.0 - r_frac) + float(samples[0][r1]) * r_frac
-            elif pos >= 18.0:
-                val = float(samples[18][r0]) * (1.0 - r_frac) + float(samples[18][r1]) * r_frac
-            else:
-                k = int(pos)
-                c_frac = pos - float(k)
-                top = float(samples[k][r0]) * (1.0 - c_frac) + float(samples[k + 1][r0]) * c_frac
-                bot = float(samples[k][r1]) * (1.0 - c_frac) + float(samples[k + 1][r1]) * c_frac
-                val = top * (1.0 - r_frac) + bot * r_frac
-
-            norm = int(((val - float(min_v)) * 255.0) / float(val_range))
-            norm = max(0, min(255, norm))
-            out_img[r * out_w + c] = norm
-
-    return out_img
+    normalized = [
+        max(0, min(255, int(((value - residual_min) * 255.0) / residual_range)))
+        for value in residuals
+    ]
+    return process_frame_demosaic(normalized, width, height)
 
 # ==============================================================================
 # Mock Goodix MCU & Sensor Simulator

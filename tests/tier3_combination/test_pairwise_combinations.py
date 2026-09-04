@@ -8,7 +8,8 @@ import struct
 import socket
 from tests.test_utils import (
     MockGoodixMCU, encode_pack, encode_protocol, decode_pack, decode_protocol,
-    decode_12bit_frame, pack_12bit_frame, squash_frame_linear, process_frame_demosaic,
+    decode_12bit_frame, decode_chicagoh_frame, pack_12bit_frame, squash_frame_linear,
+    process_frame_demosaic,
     FLAGS_MSG_PROTOCOL, FLAGS_TLS, FLAGS_TLS_DATA,
     CMD_NOP, CMD_RESET, CMD_READ_SENSOR_REGISTER, CMD_WRITE_SENSOR_REGISTER,
     CMD_FIRMWARE_VERSION, CMD_READ_OTP, CMD_PRESET_PSK_READ, CMD_REQUEST_TLS_CONNECTION,
@@ -17,7 +18,9 @@ from tests.test_utils import (
     CMD_MCU_GET_IMAGE, CMD_ACK, CMD_QUERY_MCU_STATE,
     CANONICAL_PSK, CANONICAL_CONFIG_52XD, CANONICAL_FDT_MODE, CANONICAL_FDT_DOWN,
     CANONICAL_FDT_UP, CANONICAL_REG_022C_GAIN, CHIP_ID_VAL, FIRMWARE_VERSION_STR,
-    RESET_NUMBER, FRAME_PIXELS, RAW_FRAME_BYTES, IMAGE_OUT_PIXELS
+    RESET_NUMBER, FRAME_PIXELS, RAW_FRAME_BYTES, IMAGE_OUT_PIXELS,
+    SENSOR_WIDTH, SENSOR_HEIGHT, FRAME_BLOCKS, FRAME_BLOCK_BYTES,
+    FRAME_BLOCK_ACTIVE_BYTES
 )
 
 class TestPairwiseCombinations(unittest.TestCase):
@@ -39,12 +42,17 @@ class TestPairwiseCombinations(unittest.TestCase):
 
     # Pairwise 2: Decrypt + 12-bit Unpack + Normalization + Bilinear Demosaicing pipeline
     def test_pair_02_decrypt_unpack_normalize_demosaic_pipeline(self):
-        """Pair 2: Full pixel processing chain from raw 12-bit chunk stream to 160x128 FpImage."""
-        test_pattern = [(r * 40 + c * 30) % 4000 for c in range(80) for r in range(64)]
-        raw_7680 = pack_12bit_frame(test_pattern)
-        raw_7684 = raw_7680 + b"\x00\x00\x00\x00"
+        """Pair 2: Full canonical-wire processing chain to a 128x160 FpImage."""
+        test_pattern = [(r * 40 + c * 30) % 4000 for r in range(SENSOR_HEIGHT) for c in range(SENSOR_WIDTH)]
+        packed = pack_12bit_frame(test_pattern)
+        raw_wire = bytearray()
+        for block in range(FRAME_BLOCKS):
+            start = block * FRAME_BLOCK_ACTIVE_BYTES
+            raw_wire.extend(packed[start : start + FRAME_BLOCK_ACTIVE_BYTES])
+            raw_wire.extend(b"\x00" * (FRAME_BLOCK_BYTES - FRAME_BLOCK_ACTIVE_BYTES))
+        raw_wire.extend(b"\x00\x00\x00\x00")
 
-        unpacked = decode_12bit_frame(raw_7684)
+        unpacked = decode_chicagoh_frame(bytes(raw_wire))
         self.assertEqual(len(unpacked), FRAME_PIXELS)
 
         squashed = squash_frame_linear(unpacked)
