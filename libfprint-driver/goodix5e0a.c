@@ -284,14 +284,14 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
   g_string_free (hex_str, TRUE);
 
   guint32 channel_energy = 0;
-  if (len >= 20)
+  if (len >= 4)
     {
-      for (guint16 i = 4; i < 20; i += 2)
+      for (guint16 i = 4; i + 1 < len; i += 2)
         channel_energy += (guint32) data[i] | ((guint32) data[i + 1] << 8);
     }
 
   /* Gating rule: touch = channel-byte energy (data[2] != 0xff and channel_energy > 0), never byte0 */
-  gboolean touch = (len >= 20 && data[2] != 0xff && channel_energy > 0);
+  gboolean touch = (len >= 4 && data[2] != 0xff && channel_energy > 0);
 
   if (touch)
     {
