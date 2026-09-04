@@ -56,10 +56,6 @@ tail -n 20`. Conclude only: confirmed / falsified /
 
 ## Live edge
 
-Transport/activation/TLS proven and frozen. Ticket 13 in-progress: All 8 of 8
-enroll stages completed on hardware (`reported 8 of 8 have been completed`).
-Fixed minutiae extraction & Bozorth3 scaling: added `FPI_IMAGE_COLORS_INVERTED`
-so capacitive ridges (high ADC) map to NBIS black (0), and applied 2x bilinear
-upsampling (`fpi_image_resize` to 160x128) matching standard small-sensor drivers
-(`elanspi`, `aes3k`, `egis0570`). Full package built and patch synced. Ready
-for user deployment, re-enrollment, and verify run. Update this section on every landing.
+Transport/activation/TLS proven and frozen. Active experiments, findings,
+and hardware run logs belong in tickets (`.scratch/goodix-5e0a/issues/NN-*.md`)
+and `docs/`, never in `AGENTS.md`. Refer to the open ticket for current status.
