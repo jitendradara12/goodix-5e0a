@@ -56,10 +56,9 @@ tail -n 20`. Conclude only: confirmed / falsified /
 
 ## Live edge
 
-Transport/activation/TLS proven and frozen. Ticket 13 in-progress: 5 enroll
-stages passed consecutively on hardware (1 of 8 through 5 of 8 completed) with
-14 touches handled without deadlock. Upgraded image processing from 19-column
-stretched demosaicing to native 80x64 sensor resolution, eliminating horizontal
-blur and maximizing minutiae detection across finger angles. Nix derivation
-rebuilt. Ready for complete 8-stage enroll verify. Update this section on every
-landing.
+Transport/activation/TLS proven and frozen. Ticket 13 in-progress: All 8 of 8
+enroll stages completed on hardware (`reported 8 of 8 have been completed`).
+Fixed teardown collision: `goodix5e0a_deactivate` is now synchronous and
+cancels in-flight scan state immediately without sending colliding sleep
+commands. Ready for final verified enrollment and double-verify run. Update
+this section on every landing.

@@ -136,13 +136,23 @@ config tables in `.rdata` / `.data`:
 - **Minutiae detection bottleneck identified:** `process_raw_frame` was using a legacy 19-column downsampling and horizontal interpolation from ticket 12 (when frames were degraded). Now that all 80 columns have real pixels (`nonzero=5120`), this downsampling was throwing away 75% of horizontal resolution and causing minutiae detection failures when finger angle changed.
 - **Resolution applied:** Mapped all 80 native sensor columns directly into `img->data` at 500 DPI native optical clarity without downsampling or horizontal blur.
 
+## Hardware Run 4 (2026-09-04 20:02–20:03, Deployed Driver)
+
+### Journal Evidence
+- **All 8 of 8 enroll stages completed on physical hardware:**
+  `Device reported enroll progress, reported 8 of 8 have been completed`!
+- **Teardown collision identified:** When stage 8 completed, libfprint called `deactivate` while the scan SSM's finger-release sequence was still in-flight. `goodix5e0a_deactivate` attempted to send an asynchronous sleep command (`0x60`), triggering `A command is already running: 0xae`, which caused `fpi_image_device_deactivate_complete` to never be called.
+- **Resolution applied:** Streamlined `goodix5e0a_deactivate` to match standard `goodix5xx` behavior: immediately cancels all timeouts, resets driver USB state via `goodix_reset_state`, shuts down TLS, stops read loop, and calls `fpi_image_device_deactivate_complete` synchronously.
+- **Verdict on hardware run 4:** All 8 enrollment stages proven. Teardown fix deployed to complete session exit and persist template.
+
 ## Acceptance criteria (deployed driver, hardware only)
 
 - [x] Phase 1 (60s hands off): silent, zero retry spam, MCU stays in hardware interrupt wait.
 - [x] Phase 2 (60s press-and-hold): touch triggers instantly on channel energy, advances to GET_IMAGE.
 - [x] Replies grow toward pack10638 / 10564 (`declen=10564` logged in journal).
 - [x] Content frames show non-zero pixels and minutiae count > 0; enroll advances (`enroll-stage-passed`).
-- [ ] Complete full 8-stage `fprintd-enroll` and run `fprintd-verify` twice.
+- [x] Complete full 8-stage `fprintd-enroll` (all 8/8 stages passed).
+- [ ] Successful completion exit and `fprintd-verify` double match.
 
 ## Rollback criteria
 
