@@ -145,6 +145,25 @@ config tables in `.rdata` / `.data`:
 - **Resolution applied:** Streamlined `goodix5e0a_deactivate` to match standard `goodix5xx` behavior: immediately cancels all timeouts, resets driver USB state via `goodix_reset_state`, shuts down TLS, stops read loop, and calls `fpi_image_device_deactivate_complete` synchronously.
 - **Verdict on hardware run 4:** All 8 enrollment stages proven. Teardown fix deployed to complete session exit and persist template.
 
+## Hardware Run 5 (2026-09-04 20:19–20:20, Deployed Driver)
+
+### Journal Evidence
+- **Enrollment completed successfully:** All 8 stages passed and template was committed to `/var/lib/fprint/sastauser/goodixtls5e0a/0/7`.
+- **Verify symptom:** First press returned `Verify result: verify-retry-scan (not done)`, followed by timeout `Verify result: verify-no-match (done)`.
+- **Journal diagnosis:**
+  `Sep 04 20:20:03 sastapc fprintd[61090]: Failed to detect minutiae: No minutiae found`
+  `Sep 04 20:20:03 sastapc fprintd[61090]: verify_cb: result verify-retry-scan`
+  Bozorth3 matcher was never reached! Probe frame extracted 0 minutiae.
+- **Root causes identified:**
+  1. **Missing `FPI_IMAGE_COLORS_INVERTED`:** Capacitive sensor ADC produces higher counts on finger contact (ridges = high ADC ~2800, valleys = low ADC ~600). Without `FPI_IMAGE_COLORS_INVERTED`, normalized image has white ridges on black valleys. NBIS `mindtct` (`detect.c`) explicitly expects 0 = black pixel (ridge) and 255 = white pixel (valley). Looking for ridges in inverted valleys caused minutiae detection to frequently fail.
+  2. **Sub-500 DPI physical sensor area:** Sensor native size is 80x64. With `FPI_IMAGE_PARTIAL`, NBIS trims `PERIMETER_PTS_DISTANCE = 10` pixels from all borders, leaving only 60x44 pixels. Against a 24x24 analysis window (`MAP_WINDOWSIZE_V2 = 24`), an unscaled print has barely 4-5 ridges and easily produces 0 minutiae.
+  3. **Bozorth3 metric scaling:** Bozorth3 distance metric `DM = 125` assumes 500 DPI pixel coordinates. At native 80x64, inter-minutiae distances are compressed by 2x.
+- **Resolution applied:**
+  - Added `FPI_IMAGE_COLORS_INVERTED` flag to `img->flags` so libfprint normalizes ridges to black (0) and valleys to white (255).
+  - Applied 2x bilinear upsampling via `fpi_image_resize (img, 2, 2)` (matching `elanspi`, `aes3k`, `egis0570`, and `vfs7552`), producing 160x128 images at standard 500 DPI ridge frequency.
+  - Enforced empty air rejection gate: `if (active < 64 || range < 8) return NULL;` fallback to 160x128 zero-filled image.
+  - Full rebuild and patch refresh completed. Requires re-enrollment to populate 160x128 gallery templates.
+
 ## Acceptance criteria (deployed driver, hardware only)
 
 - [x] Phase 1 (60s hands off): silent, zero retry spam, MCU stays in hardware interrupt wait.
@@ -157,4 +176,5 @@ config tables in `.rdata` / `.data`:
 ## Rollback criteria
 
 - Any timeout, crash, or session lockup $\rightarrow$ revert to pre-13 commit, paste journal.
+
 

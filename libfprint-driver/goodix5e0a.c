@@ -367,8 +367,8 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 
   if (img == NULL)
     {
-      img = fp_image_new (GOODIX_5E0A_WIDTH, GOODIX_5E0A_HEIGHT);
-      img->flags |= FPI_IMAGE_PARTIAL;
+      img = fp_image_new (GOODIX_5E0A_WIDTH * 2, GOODIX_5E0A_HEIGHT * 2);
+      img->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
     }
 
   fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);
@@ -631,8 +631,11 @@ process_raw_frame (GoodixTls5xxPix * pix)
   const int W = GOODIX_5E0A_WIDTH;   // Native 80
   const int H = GOODIX_5E0A_HEIGHT;  // Native 64
 
+  if (active < 64 || range < 8)
+    return NULL;
+
   FpImage *img = fp_image_new (W, H);
-  img->flags |= FPI_IMAGE_PARTIAL;
+  img->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
 
   for (int r = 0; r < H; ++r)
     {
@@ -644,7 +647,9 @@ process_raw_frame (GoodixTls5xxPix * pix)
         }
     }
 
-  return img;
+  FpImage *scaled = fpi_image_resize (img, 2, 2);
+  g_object_unref (img);
+  return scaled;
 }
 
 static void

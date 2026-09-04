@@ -625,10 +625,10 @@ index a19379c..d7427ea 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..1b8e915
+index 0000000..0c3b85f
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,688 @@
+@@ -0,0 +1,693 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -998,8 +998,8 @@ index 0000000..1b8e915
 +
 +  if (img == NULL)
 +    {
-+      img = fp_image_new (GOODIX_5E0A_WIDTH, GOODIX_5E0A_HEIGHT);
-+      img->flags |= FPI_IMAGE_PARTIAL;
++      img = fp_image_new (GOODIX_5E0A_WIDTH * 2, GOODIX_5E0A_HEIGHT * 2);
++      img->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
 +    }
 +
 +  fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);
@@ -1262,8 +1262,11 @@ index 0000000..1b8e915
 +  const int W = GOODIX_5E0A_WIDTH;   // Native 80
 +  const int H = GOODIX_5E0A_HEIGHT;  // Native 64
 +
++  if (active < 64 || range < 8)
++    return NULL;
++
 +  FpImage *img = fp_image_new (W, H);
-+  img->flags |= FPI_IMAGE_PARTIAL;
++  img->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
 +
 +  for (int r = 0; r < H; ++r)
 +    {
@@ -1275,7 +1278,9 @@ index 0000000..1b8e915
 +        }
 +    }
 +
-+  return img;
++  FpImage *scaled = fpi_image_resize (img, 2, 2);
++  g_object_unref (img);
++  return scaled;
 +}
 +
 +static void

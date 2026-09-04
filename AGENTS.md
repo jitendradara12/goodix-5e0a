@@ -58,7 +58,8 @@ tail -n 20`. Conclude only: confirmed / falsified /
 
 Transport/activation/TLS proven and frozen. Ticket 13 in-progress: All 8 of 8
 enroll stages completed on hardware (`reported 8 of 8 have been completed`).
-Fixed teardown collision: `goodix5e0a_deactivate` is now synchronous and
-cancels in-flight scan state immediately without sending colliding sleep
-commands. Ready for final verified enrollment and double-verify run. Update
-this section on every landing.
+Fixed minutiae extraction & Bozorth3 scaling: added `FPI_IMAGE_COLORS_INVERTED`
+so capacitive ridges (high ADC) map to NBIS black (0), and applied 2x bilinear
+upsampling (`fpi_image_resize` to 160x128) matching standard small-sensor drivers
+(`elanspi`, `aes3k`, `egis0570`). Full package built and patch synced. Ready
+for user deployment, re-enrollment, and verify run. Update this section on every landing.
