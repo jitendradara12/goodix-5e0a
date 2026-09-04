@@ -495,22 +495,6 @@ goodix5e0a_change_state (FpImageDevice *img_dev, FpiImageDeviceState state)
 }
 
 static void
-goodix5e0a_on_sleep_cb (FpDevice *dev, gpointer user_data, GError *error)
-{
-  FpImageDevice *img_dev = FP_IMAGE_DEVICE (dev);
-  if (error)
-    {
-      fp_dbg ("5e0a sleep cmd error: %s", error->message);
-      g_error_free (error);
-    }
-  goodix_reset_state (dev);
-  GError *tls_err = NULL;
-  goodix_shutdown_tls (dev, &tls_err);
-  goodix_stop_read_loop (dev);
-  fpi_image_device_deactivate_complete (img_dev, tls_err);
-}
-
-static void
 goodix5e0a_deactivate (FpImageDevice *img_dev)
 {
   FpDevice *dev = FP_DEVICE (img_dev);
@@ -524,14 +508,11 @@ goodix5e0a_deactivate (FpImageDevice *img_dev)
       self->down_timeout = NULL;
     }
 
-  GoodixCallbackInfo *cb_info = malloc (sizeof (GoodixCallbackInfo));
-  cb_info->callback = G_CALLBACK (goodix5e0a_on_sleep_cb);
-  cb_info->user_data = NULL;
-
-  goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_SLEEP_MODE,
-                        goodix_5e0a_sleep_60, sizeof (goodix_5e0a_sleep_60),
-                        NULL, TRUE, GOODIX_TIMEOUT, FALSE,
-                        goodix_receive_none_tolerant, cb_info);
+  goodix_reset_state (dev);
+  GError *tls_err = NULL;
+  goodix_shutdown_tls (dev, &tls_err);
+  goodix_stop_read_loop (dev);
+  fpi_image_device_deactivate_complete (img_dev, tls_err);
 }
 
 // ---- SCAN SECTION END ----
