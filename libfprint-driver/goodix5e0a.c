@@ -448,21 +448,6 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
           return;
         }
     }
-  else if (action == FPI_DEVICE_ACTION_VERIFY)
-    {
-      guint minutiae_count = goodix5e0a_count_minutiae (img);
-      g_message ("5e0a verify quality check: minutiae_count=%u (floor=%d)",
-                 minutiae_count, GOODIX_5E0A_VERIFY_MIN_MINUTIAE);
-      if (minutiae_count < GOODIX_5E0A_VERIFY_MIN_MINUTIAE)
-        {
-          g_warning ("5e0a verify touch rejected: minutiae_count=%u < %d (press firmer)",
-                     minutiae_count, GOODIX_5E0A_VERIFY_MIN_MINUTIAE);
-          g_object_unref (img);
-          fpi_image_device_retry_scan (FP_IMAGE_DEVICE (dev), FP_DEVICE_RETRY_TOO_SHORT);
-          fpi_ssm_next_state (ssm);
-          return;
-        }
-    }
 
   fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);
   fpi_ssm_next_state (ssm);
