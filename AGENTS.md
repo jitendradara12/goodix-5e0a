@@ -56,7 +56,8 @@ tail -n 20`. Conclude only: confirmed / falsified /
 
 ## Live edge
 
-Transport/activation/TLS proven and frozen. Gating/detection works. No
-Linux capture has verifiably shown ridges — the open ticket holds the single
-active experiment; all else is closed or superseded. Update this section on
-every landing.
+Transport/activation/TLS proven and frozen. Ticket 10 falsified on hardware:
+35B S12 in `0x32` auto-replies on empty air (~10ms) on APP_10036; `05` payload
+returns 7684B pure blanks. Ticket 10 is superseded by Ticket 11 (Active-mode
+capture using `01` payload + internal content-gating to eliminate empty-air
+retries). Update this section on every landing.

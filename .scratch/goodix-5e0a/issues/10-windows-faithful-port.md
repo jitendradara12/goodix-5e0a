@@ -9,7 +9,36 @@ enroll, double verify — no polling, no FDT-mode command, no per-cycle reset.
 **Blocked by:** None — ready now. (Supersedes 08 and 09 with rationale below;
 transport/activation/TLS core stays frozen.)
 
-**Status:** ready-for-agent
+**Status:** superseded by 11 — 35B FDT S12 auto-fires in empty air (`status=0x02 len=20` every 7-8s), falsifying touch-gating on 0x32 for APP_10036. Image payload 05 returned 7684B of pure zeros. Successor: 11 (Active Content Capture).
+
+## Hardware Run Results (2026-09-04 15:22-15:25, deployed driver)
+
+- **Phase 1 (Hands off, 61s: 15:22:45 – 15:23:46):**
+  Auto-fires every 7–8 seconds in empty air:
+  ```
+  Sep 04 15:22:45 sastapc fprintd[32438]: 5e0a D32 reply: status=0x02 len=20
+  Sep 04 15:22:53 sastapc fprintd[32438]: 5e0a D32 reply: status=0x02 len=20
+  Sep 04 15:23:01 sastapc fprintd[32438]: 5e0a D32 reply: status=0x02 len=20
+  Sep 04 15:23:08 sastapc fprintd[32438]: 5e0a D32 reply: status=0x02 len=20
+  Sep 04 15:23:16 sastapc fprintd[32438]: 5e0a D32 reply: status=0x02 len=20
+  Sep 04 15:23:23 sastapc fprintd[32438]: 5e0a D32 reply: status=0x02 len=20
+  Sep 04 15:23:31 sastapc fprintd[32438]: 5e0a D32 reply: status=0x02 len=20
+  Sep 04 15:23:39 sastapc fprintd[32438]: 5e0a D32 reply: status=0x02 len=20
+  Sep 04 15:23:46 sastapc fprintd[32438]: 5e0a D32 reply: status=0x02 len=20
+  ```
+  **Verdict**: FALSIFIED. `0x32` with 35B S12 does *not* block on touch; it returns `0x02` in ~10ms on empty air. It is a mode acknowledgement, not a hardware touch gate. The ~7.5s cycle is driven by the 5000ms `0x34` release timeout.
+
+- **Phase 2 (Touch at 15:24:39):**
+  Finger placed firmly on sensor:
+  ```
+  Sep 04 15:24:39 sastapc fprintd[32438]: 5e0a D32 reply: status=0x02 len=20
+  Sep 04 15:24:39 sastapc fprintd[32438]: 5e0a scan_on_read_img: declen=7684
+  Sep 04 15:24:39 sastapc fprintd[32438]: 5e0a raw first 16 bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  Sep 04 15:24:39 sastapc fprintd[32438]: 5e0a raw_frame: num_px=5120 nonzero=0 min=0 max=0
+  Sep 04 15:24:39 sastapc fprintd[32438]: 5e0a active cols: NONE (all 0)
+  ```
+  **Verdict**: Image payload `05 00 b0 00 b2 00 b0 00 b1 00` returned 7684 bytes of pure `0x00` under firm physical touch.
+  Bypassing register `0x022c` write changed nothing (zeros persist both with `0x030a` and without).
 
 ## Why this replaces everything (do not re-litigate)
 
