@@ -67,33 +67,39 @@ Analysis conducted with `experiments/test_contrast_tuning.c` and `experiments/te
 1. **Explicit NBIS Resolution (`ppmm`):**
    In `process_raw_frame` and fallback in `libfprint-driver/goodix5e0a.c`:
    `scaled->ppmm = 500.0 / 25.4;`
-2. **Contrast Enhancement (`GOODIX_5E0A_CONTRAST_GAIN = 2.5f`):**
+2. **Non-Saturating Direct Residual Contrast Mapping (`GOODIX_5E0A_CONTRAST_GAIN = 1.0f`):**
    In `process_raw_frame`:
    ```c
-   float base = ((residual[i] - residual_min) * 255.0f) / residual_range;
-   int value = (int) roundf (128.0f + (base - 128.0f) * GOODIX_5E0A_CONTRAST_GAIN);
+   int value = (int) roundf (128.0f + residual[i] * GOODIX_5E0A_CONTRAST_GAIN);
    normalized[i] = (guint8) CLAMP (value, 0, 255);
    ```
-3. **Enrollment Quality Gate (`GOODIX_5E0A_ENROLL_MIN_MINUTIAE = 12`):**
+   Replaces the prior `(base - 128.0f) * 2.5f` expansion which saturated ~40% of dynamic range. Direct residual mapping preserves fine ridge endings and bifurcations, yielding Bozorth self-match score 97/12 and minutiae=18 in offline analysis (`experiments/test_filters.c`).
+3. **Elevated Enrollment Quality Gate (`GOODIX_5E0A_ENROLL_MIN_MINUTIAE = 15`):**
    In `goodix5e0a_on_read_img`:
    During `FPI_DEVICE_ACTION_ENROLL`, `goodix5e0a_count_minutiae (img)` runs NBIS `get_minutiae` on the normalized frame.
-   If `minutiae_count < 12`, the stage is rejected with warning:
-   `5e0a enrollment touch rejected: minutiae_count=%u < 12 (press firmer)`
-   The driver calls `fpi_image_device_retry_scan (FP_IMAGE_DEVICE (dev), FP_DEVICE_RETRY_TOO_SHORT);` to prompt the user for a firmer press, avoiding template gallery pollution.
+   If `minutiae_count < 15`, the stage is rejected with warning:
+   `5e0a enrollment touch rejected: minutiae_count=%u < 15 (press firmer)`
+   The driver calls `fpi_image_device_retry_scan (FP_IMAGE_DEVICE (dev), FP_DEVICE_RETRY_TOO_SHORT);` to prompt the user for a firmer press, guaranteeing all 8 enrolled gallery prints have at least 15–20 minutiae.
+4. **Verification Quality Floor (`GOODIX_5E0A_VERIFY_MIN_MINUTIAE = 15`):**
+   In `goodix5e0a_on_read_img`:
+   During `FPI_DEVICE_ACTION_VERIFY`, `goodix5e0a_count_minutiae (img)` checks probe minutiae count.
+   If `minutiae_count < 15`:
+   `5e0a verify touch rejected: minutiae_count=%u < 15 (press firmer)`
+   The driver calls `fpi_image_device_retry_scan (FP_IMAGE_DEVICE (dev), FP_DEVICE_RETRY_TOO_SHORT);` and returns. This prevents faint 14-minutiae touches from immediately failing authentication with `verify-no-match (done)`, allowing the user to press firmly and retry.
 
 ## Verification & Build Log
 
 - **Unit Tests:** `python3 -m unittest tests.tier1_feature.test_f15_unpack_normalize`, `test_f16_demosaicing`, `tests.tier3_combination.test_pairwise_combinations` all passed (40 tests, 0 failures).
 - **Driver Build:** Ninja build successful (`libfprint-drivers.a`, `libfprint-2.so.2.0.0`).
-- **Nix Package Build:** Successful via `nix-build -E 'with import <nixpkgs> {}; callPackage ./libfprint-goodix.nix {}'` (`/nix/store/xq0k94vspkssl1gigyy3siqla1vyy8nf-libfprint-goodix-1.94.5-goodixtls`).
+- **Nix Package Build:** Successful via `nix-build -E 'with import <nixpkgs> {}; callPackage ./libfprint-goodix.nix {}'` (`/nix/store/dh4zriny8dazi7ikwkb972p5g2zc77md-libfprint-goodix-1.94.5-goodixtls`).
 - **Unified Patch:** Staged and synchronized:
   - Repo root: `0001-Add-driver-support-for-Goodix-27c6-5e0a.patch`
   - NixOS module: `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch`
-  - SHA-256: `9c5385c962dd94b9e92fa4337682ced8a774c90c140a3c749017a8c1ebd3426d`
+  - SHA-256: `d66ab5e022f775aef75389755b6185a09a304f4fd98da1fd7886b20c88a528b3`
 
-## Verification Protocol (Hardware Run 15)
+## Verification Protocol (Hardware Run 16)
 
-1. Build and verify unified patch checksum (Done).
+1. Build and verify unified patch checksum (Done: `d66ab5e022f775aef75389755b6185a09a304f4fd98da1fd7886b20c88a528b3`).
 2. Deploy to NixOS (User only):
    ```sh
    cd ~/NixOS-Hyprland && sudo nixos-rebuild switch --flake .# && sudo systemctl restart fprintd
@@ -102,22 +108,19 @@ Analysis conducted with `experiments/test_contrast_tuning.c` and `experiments/te
    ```sh
    fprintd-delete "$USER"
    ```
-4. Phase 1 (Hands off):
-   `echo "hands off $(date -Is)"` for 60s.
-5. Phase 2 (Steady hold):
-   `echo "holding $(date -Is)"` for 60s.
-6. Complete enrollment with firm, steady press:
+4. Complete enrollment with firm, steady press:
    ```sh
    fprintd-enroll
    ```
-   Verify that all 8 stages report `minutiae_count >= 12`.
-7. Verify twice:
+   Verify that all 8 stages report `minutiae_count >= 15`. Any faint touches will be prompted with `press firmer` and retried.
+5. Verify twice consecutively:
    ```sh
    fprintd-verify
    ```
-8. Check journal output:
+   Verify that touches report `verify-match (done)` with Bozorth score $\ge 12$. Any touch with $< 15$ minutiae will prompt retry rather than failing immediately.
+6. Check journal output:
    ```sh
-   journalctl -u fprintd --since "10 min ago" --no-pager | grep -a -E "5e0a wire|5e0a frame|5e0a local|5e0a get_minutiae|5e0a bz3|5e0a enroll|timed out|error|failed|minutiae" | tail -n 40
+   journalctl -u fprintd --since "10 min ago" --no-pager | grep -a -E "5e0a wire|5e0a frame|5e0a local|5e0a get_minutiae|5e0a bz3|5e0a enroll|5e0a verify|timed out|error|failed|minutiae" | tail -n 40
    ```
 
 ## Acceptance Criteria

@@ -448,6 +448,21 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
           return;
         }
     }
+  else if (action == FPI_DEVICE_ACTION_VERIFY)
+    {
+      guint minutiae_count = goodix5e0a_count_minutiae (img);
+      g_message ("5e0a verify quality check: minutiae_count=%u (floor=%d)",
+                 minutiae_count, GOODIX_5E0A_VERIFY_MIN_MINUTIAE);
+      if (minutiae_count < GOODIX_5E0A_VERIFY_MIN_MINUTIAE)
+        {
+          g_warning ("5e0a verify touch rejected: minutiae_count=%u < %d (press firmer)",
+                     minutiae_count, GOODIX_5E0A_VERIFY_MIN_MINUTIAE);
+          g_object_unref (img);
+          fpi_image_device_retry_scan (FP_IMAGE_DEVICE (dev), FP_DEVICE_RETRY_TOO_SHORT);
+          fpi_ssm_next_state (ssm);
+          return;
+        }
+    }
 
   fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);
   fpi_ssm_next_state (ssm);
@@ -732,8 +747,7 @@ process_raw_frame (GoodixTls5xxPix * pix)
   guint8 normalized[GOODIX_5E0A_FRAME_SIZE];
   for (guint i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
     {
-      float base = ((residual[i] - residual_min) * 255.0f) / residual_range;
-      int value = (int) roundf (128.0f + (base - 128.0f) * GOODIX_5E0A_CONTRAST_GAIN);
+      int value = (int) roundf (128.0f + residual[i] * GOODIX_5E0A_CONTRAST_GAIN);
       normalized[i] = (guint8) CLAMP (value, 0, 255);
     }
 
