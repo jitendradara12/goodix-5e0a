@@ -56,9 +56,9 @@ tail -n 20`. Conclude only: confirmed / falsified /
 
 ## Live edge
 
-Transport/activation/TLS proven and frozen. Tickets 10 and 11 superseded
-by Ticket 12 (Sampled touch-gated loop: 0x32 DOWN silently re-issued on 0x80
-idle status, 0x02 triggers immediate 0x20 image capture with 05 payload,
-followed by 34 UP-pair with reply). Driver built, unified patch regenerated,
-Nix package verified. Awaiting hardware verification run. Update this section
-on every landing.
+Transport/activation/TLS proven and frozen. Ticket 12 falsified on hardware:
+D32 in empty air returns `status=0x02 len=20 bytes=[02 00 ff 00 00 00...]`
+in ~10ms (not 0x80); frame reply stays degraded 7684B pure blanks. Binary
+02/80 gating model falsified. Next experiment: Ticket 13 (Provisioning &
+boot-time chip config download from wbdi.dll / OTP-conditioned configuration).
+Update this section on every landing.

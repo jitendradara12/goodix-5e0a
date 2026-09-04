@@ -9,7 +9,38 @@ polling, no fixed sleeps.
 **Blocked by:** None — ready now. (Supersedes 10 and 11, which used the
 wrong gating model and wrong payload. Transport/activation/TLS frozen.)
 
-**Status:** in-progress
+**Status:** closed (falsified on hardware; D32 in empty air returns status=0x02 len=20 bytes=[02 00 ff 00...], not 0x80; image replies remain degraded 7684B blanks)
+
+## Hardware Run Results (2026-09-04 18:17, deployed driver)
+
+- **Phase 1 (Hands off):**
+  The MCU replied immediately (~10ms) to 0x32 with:
+  ```
+  Sep 04 18:17:09 sastapc fprintd[11555]: 5e0a D32 reply: status=0x02 len=20 bytes=[02 00 ff 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ]
+  ```
+  **Findings:**
+  1. `0x32` does *not* reply with `0x80` in empty air. It returns 20 bytes: `02 00 ff 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00`.
+     - Byte 0 is `0x02` (mode status / ACK).
+     - Byte 2 is `0xff` (no touch channels active; in Windows ground truth, touch frames have `0x0f`/`0x1f`/`0x3f` and non-zero 16-bit channel readings in bytes 4-19).
+     - Bytes 4-19 are all zeros (`00 00 ...`).
+  2. Because byte 0 was `0x02`, the touch gate fired immediately on empty air and called `SCAN_5E0A_GET_IMAGE`.
+  3. The image reply was 7684 bytes (80x64), all zeros (`nonzero=0 min=0 max=0`), failing minutiae detection:
+     ```
+     Sep 04 18:17:09 sastapc fprintd[11555]: 5e0a scan_on_read_img: declen=7684
+     Sep 04 18:17:09 sastapc fprintd[11555]: 5e0a raw first 16 bytes: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+     Sep 04 18:17:09 sastapc fprintd[11555]: 5e0a frame stats: active=0, min_v=0, max_v=0, range=1, declen=7684, adj_corr=0.000, all_corr=0.000, dist_corr=0.000
+     Sep 04 18:17:09 sastapc fprintd[11555]: Failed to detect minutiae: No minutiae found
+     ```
+  4. Command collision in UP-pair sequence:
+     ```
+     Sep 04 18:17:14 sastapc fprintd[11555]: 5e0a D34 reply (tolerant): A command is already running: 0x34
+     ```
+     `SCAN_5E0A_FDT_UP_2` attempted to send `0x34` before `SCAN_5E0A_FDT_UP_1` completed its ACK cycle.
+
+**Verdict**: FALSIFIED on hardware.
+- The 02/80 binary gating model is falsified: D32 reply in empty air has `status=0x02` with byte 2 = `0xff` and all channel bytes 0. `0x80` is not emitted on empty air.
+- Reply size remains degraded (7684B pure blanks instead of 10638B content).
+- Suspect (a) / (b) from the open question is now the active blocker: the chip has not been provisioned with the active APP_10036 configuration.
 
 ## Decisive evidence (USBPcap ground truth, do not re-litigate)
 
