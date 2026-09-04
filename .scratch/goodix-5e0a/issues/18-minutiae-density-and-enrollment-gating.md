@@ -2,9 +2,7 @@
 
 **What to build:** Elevate detected minutiae count per frame from 12–18 to $\ge 25\text{--}35$, add an enrollment quality floor (`minutiae >= 12`) to prevent faint touches from polluting the template gallery, and achieve repeatable Bozorth3 match scores $\ge 12$ (`verify-match (done)`).
 
-**Blocked by:** None. Builds on Ticket 17 (wire layout 80x96B, 64x80 natural raster, and 3x3 local contrast proven on hardware; peak Bozorth3 score 6/12).
-
-**Status:** in-progress
+**Status:** verified (verdict: confirmed-on-hardware-with-two-consecutive-matches; successor: [19-pam-sudo-integration-and-state-cleanup.md](19-pam-sudo-integration-and-state-cleanup.md))
 
 ## Goal
 
