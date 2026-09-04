@@ -33,6 +33,8 @@ struct _FpiDeviceGoodixTls5e0a
   FpiDeviceGoodixTls5xx parent;
 
   gboolean session_started;
+  FpiSsm  *scan_ssm;
+  GSource *down_timeout;
 };
 
 G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a, FPI,
@@ -121,7 +123,7 @@ on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
       return;
     }
 
-  fp_dbg ("TLS connection ready! Uploading MCU config (CONFIG_52XD)...");
+  fp_dbg ("TLS connection ready! Uploading MCU config (ChicagoH GF3658 DN3)...");
   goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config,
                                  sizeof (goodix_5e0a_config), NULL,
                                  on_config_uploaded, NULL);
@@ -149,6 +151,8 @@ dev_activate (FpImageDevice *img_dev)
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 
   self->session_started = FALSE;
+  self->scan_ssm = NULL;
+  self->down_timeout = NULL;
 
   fpi_ssm_start (fpi_ssm_new (dev, activate_run_state, ACTIVATE_NUM_STATES),
                  activate_complete);
@@ -239,10 +243,30 @@ goodix5e0a_on_d6_reply (FpDevice *dev, guint8 *data, guint16 len,
   fpi_ssm_next_state (ssm);
 }
 
+static void goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
+                                          gpointer ssm, GError *err);
+
+static void
+goodix5e0a_on_down_poll_timeout (FpDevice *dev, gpointer user_data)
+{
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+  self->down_timeout = NULL;
+
+  FpiSsm *ssm = user_data;
+  if (self->scan_ssm != ssm)
+    return;
+
+  send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN,
+                  goodix_5e0a_down_s12, sizeof (goodix_5e0a_down_s12),
+                  0, goodix5e0a_on_fdt_down_reply, ssm);
+}
+
 static void
 goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
                               gpointer ssm, GError *err)
 {
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
   if (err)
     {
       if (g_error_matches (err, G_IO_ERROR, G_IO_ERROR_CANCELLED))
@@ -259,30 +283,36 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
   g_message ("5e0a D32 reply: status=0x%02x len=%u bytes=[%s]", status, len, hex_str->str);
   g_string_free (hex_str, TRUE);
 
-  if (status == 0x80)
+  guint32 channel_energy = 0;
+  if (len >= 20)
     {
-      /* 0x80 means idle / finger-off. Silently sample DOWN again with same table */
-      send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN,
-                      goodix_5e0a_down_s12, sizeof (goodix_5e0a_down_s12),
-                      0, goodix5e0a_on_fdt_down_reply, ssm);
-      return;
+      for (guint16 i = 4; i < 20; i += 2)
+        channel_energy += (guint32) data[i] | ((guint32) data[i + 1] << 8);
     }
-  else if (status == 0x02)
+
+  /* Gating rule: touch = channel-byte energy (data[2] != 0xff and channel_energy > 0), never byte0 */
+  gboolean touch = (len >= 20 && data[2] != 0xff && channel_energy > 0);
+
+  if (touch)
     {
-      /* Touch confirmed: report finger presence and advance to image capture */
+      if (self->down_timeout)
+        {
+          g_source_destroy (self->down_timeout);
+          self->down_timeout = NULL;
+        }
+      g_message ("5e0a D32 touch confirmed: mask=0x%02x energy=%u", data[2], channel_energy);
       fpi_image_device_report_finger_status (FP_IMAGE_DEVICE (dev), TRUE);
       fpi_ssm_next_state (ssm);
       return;
     }
-  else
+
+  /* No touch (empty air or poor contact): pace re-sampling silently after 50ms */
+  if (self->down_timeout)
     {
-      /* Unexpected status: log warning and re-issue DOWN */
-      g_warning ("5e0a D32 unexpected status 0x%02x, sampling again...", status);
-      send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN,
-                      goodix_5e0a_down_s12, sizeof (goodix_5e0a_down_s12),
-                      0, goodix5e0a_on_fdt_down_reply, ssm);
-      return;
+      g_source_destroy (self->down_timeout);
+      self->down_timeout = NULL;
     }
+  self->down_timeout = fpi_device_add_timeout (dev, 50, goodix5e0a_on_down_poll_timeout, ssm, NULL);
 }
 
 static FpImage * process_raw_frame (GoodixTls5xxPix * pix);
@@ -420,6 +450,14 @@ goodix5e0a_scan_run_state (FpiSsm *ssm, FpDevice *dev)
 static void
 goodix5e0a_scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
 {
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+  self->scan_ssm = NULL;
+  if (self->down_timeout)
+    {
+      g_source_destroy (self->down_timeout);
+      self->down_timeout = NULL;
+    }
+
   if (error)
     {
       fp_err ("5e0a failed to scan: %s (code: %d)", error->message, error->code);
@@ -432,8 +470,15 @@ goodix5e0a_scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
 static void
 goodix5e0a_scan_start (FpDevice *dev)
 {
-  fpi_ssm_start (fpi_ssm_new (dev, goodix5e0a_scan_run_state, SCAN_5E0A_NUM_STATES),
-                 goodix5e0a_scan_complete);
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+  if (self->scan_ssm != NULL)
+    {
+      fp_dbg ("5e0a scan SSM already active, ignoring start request");
+      return;
+    }
+
+  self->scan_ssm = fpi_ssm_new (dev, goodix5e0a_scan_run_state, SCAN_5E0A_NUM_STATES);
+  fpi_ssm_start (self->scan_ssm, goodix5e0a_scan_complete);
 }
 
 static void
@@ -466,6 +511,12 @@ goodix5e0a_deactivate (FpImageDevice *img_dev)
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 
   self->session_started = FALSE;
+  self->scan_ssm = NULL;
+  if (self->down_timeout)
+    {
+      g_source_destroy (self->down_timeout);
+      self->down_timeout = NULL;
+    }
 
   GoodixCallbackInfo *cb_info = malloc (sizeof (GoodixCallbackInfo));
   cb_info->callback = G_CALLBACK (goodix5e0a_on_sleep_cb);
@@ -483,6 +534,8 @@ static void
 fpi_device_goodixtls5e0a_init (FpiDeviceGoodixTls5e0a *self)
 {
   self->session_started = FALSE;
+  self->scan_ssm = NULL;
+  self->down_timeout = NULL;
 }
 
 static FpImage *

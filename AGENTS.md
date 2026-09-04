@@ -56,9 +56,8 @@ tail -n 20`. Conclude only: confirmed / falsified /
 
 ## Live edge
 
-Transport/activation/TLS proven and frozen. Ticket 12 falsified on hardware:
-D32 in empty air returns `status=0x02 len=20 bytes=[02 00 ff 00 00 00...]`
-in ~10ms (not 0x80); frame reply stays degraded 7684B pure blanks. Binary
-02/80 gating model falsified. Next experiment: Ticket 13 (Provisioning &
-boot-time chip config download from wbdi.dll / OTP-conditioned configuration).
-Update this section on every landing.
+Transport/activation/TLS proven and frozen. Ticket 13 in-progress: deployed
+driver updated with true ChicagoH (GF3658 DN3 / APP_10036) configuration blob
+(256B, offset 0x197c50 in wbdi.dll, checksum 0x0e53), channel-byte energy gating
+on D32, 50ms paced silent polling, and scan SSM concurrency guard. Ready for
+hardware verify. Update this section on every landing.
