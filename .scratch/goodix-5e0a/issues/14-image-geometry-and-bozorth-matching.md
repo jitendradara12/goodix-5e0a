@@ -68,15 +68,41 @@ Sep 04 20:40:43 sastapc fprintd[70793]: report_verify_status: result verify-no-m
      - *Branch 1 (Minutiae starvation):* `5e0a minutiae: detected=K` with $K < 10$, or `5e0a bz3 floor tripped: probe_nrows < 10` $\implies$ Next step: isolate 2x upscale vs native and polarity inversion.
      - *Branch 2 (Geometric mismatch):* `5e0a bz3 match: probe_nrows >= 10 gallery[i]_nrows >= 10 score=0/12` $\implies$ Next step: investigate column-major vs row-major transpose or aspect ratio distortion.
 
-2. **Experiment B (Geometry Alignment / Isolation):**
-   - Driven by Experiment A branch selection.
+## Hardware Run 2 (2026-09-04 22:03–22:08, Deployed Driver — Exp B)
 
-3. **Experiment C (Matching Verification):**
-   - Verify `score >= 12` and `verify-match (done)`.
+### Journal Evidence
+- **Enrollment completed 8/8 stages**, but minutiae counts were starved:
+  - Touches registered 0–5 minutiae (only 1 touch registered 14 minutiae).
+- **Verification failure:**
+  ```text
+  Sep 04 22:08:05 sastapc fprintd[95347]: 5e0a frame stats: active=5120, min_v=540, max_v=2668, range=2128, declen=10564, adj_corr=-0.212, all_corr=0.219, dist_corr=0.242 (native 80x64 WxH)
+  Sep 04 22:08:05 sastapc fprintd[95347]: 5e0a scaled image: 160x128 (WxH) flags=0x04 active=5120 range=2128
+  Sep 04 22:08:05 sastapc fprintd[95347]: 5e0a get_minutiae: ret=0 minutiae_count=0 (image 160x128 WxH, scan_time=0.0137s)
+  Sep 04 22:08:05 sastapc fprintd[95347]: Failed to detect minutiae: No minutiae found
+  ```
+- **Flaw identified:**
+  - In `goodix5e0a_decode_frame_strided`, the 10564-byte payload was assumed to consist of 80 columns of 132 bytes with 36 padding bytes per column, mapping 4 consecutive pixels vertically into columns.
+  - This destroyed the true horizontal raster scanlines: consecutive horizontal sensor pixels were written vertically down columns, shredding ridge continuity and producing negative adjacent correlation (`adj_corr = -0.212`) and 0 minutiae.
+
+### Offline Empirical Proof (`experiments/test_bozorth_verify.c` & `experiments/test_roundtrip.c`)
+- Unpacking the first 7680 bytes ($5120 \text{ pixels} \times 1.5$) linearly in row-major order ($W=80, H=64$):
+  - **Bit-exact round-trip:** 0 diffs / 5120 pixels.
+  - **Adjacent column correlation:** jumps from $-0.212$ to **$+0.860$**!
+  - **Minutiae extraction (`mindtct`):** yields **22 minutiae** (well above the $\ge 10$ floor).
+  - **Bozorth3 matching:** achieves **Self-Match Score = 110** and **Probe-Match Score = 89** (well above the match threshold of 12).
+- The remaining 2884 bytes ($10564 - 7680$) in the payload are trailing sensor MCU metadata / padding rows and must simply be ignored.
+
+## Experiment C: Linear Row-Major Unpack ($80 \times 64 \to 160 \times 128$)
+1. Decode the first 7680 bytes linearly in row-major order: `out_row_major[r * 80 + c]`.
+2. Compute min-max normalization over active pixels.
+3. Upscale 2x to $160 \times 128$ via bilinear interpolation with `flags = FPI_IMAGE_COLORS_INVERTED` (omitting `FPI_IMAGE_PARTIAL`).
+4. Set device class dimensions: `img_width = 160, img_height = 128, bz3_threshold = 12`.
 
 ## Acceptance Criteria (Deployed Driver, Hardware Only)
 
-- [ ] Probe and gallery prints both contain $\ge 10$ detected minutiae logged in journal.
-- [ ] `fprintd-verify` achieves score $\ge 12$ against enrolled gallery.
+- [ ] Probe and gallery prints both contain $\ge 10$ detected minutiae logged in journal (predicted: 20–25).
+- [ ] Adjacent column correlation logged $\ge 0.500$ (predicted: ~0.800).
+- [ ] `fprintd-verify` achieves score $\ge 12$ against enrolled gallery (predicted: > 50).
 - [ ] Successful `Verify result: verify-match (done)` on first touch.
+
 

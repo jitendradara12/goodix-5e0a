@@ -318,33 +318,21 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
 static FpImage * process_raw_frame (GoodixTls5xxPix * pix);
 
 static void
-goodix5e0a_decode_frame_strided (GoodixTls5xxPix *out_row_major, const guint8 *data, guint16 len)
+goodix5e0a_decode_frame (GoodixTls5xxPix *out_row_major, const guint8 *data, guint16 len)
 {
-  if (len < GOODIX_5E0A_WIDTH * GOODIX_5E0A_COL_RAW_BYTES)
-    {
-      fp_warn ("5e0a decode: payload too short (%u < %u)",
-               len, GOODIX_5E0A_WIDTH * GOODIX_5E0A_COL_RAW_BYTES);
-      return;
-    }
+  /* Active sensor area is 80x64 (5120 pixels = 7680 bytes, 12-bit packed).
+   * Unpack the first 7680 bytes linearly in row-major order: 64 rows of 80 pixels.
+   * Trailing bytes (10564 - 7680 = 2884) are MCU padding rows/metadata. */
+  guint32 max_bytes = MIN (len, GOODIX_5E0A_ACT_BYTES);
+  GoodixTls5xxPix *pix = out_row_major;
 
-  for (int col = 0; col < GOODIX_5E0A_WIDTH; col++)
+  for (guint32 i = 0; i + 6 <= max_bytes; i += 6)
     {
-      const guint8 *col_data = data + col * GOODIX_5E0A_COL_RAW_BYTES;
-      int row = 0;
-      for (int i = 0; i < GOODIX_5E0A_COL_ACT_BYTES; i += 6)
-        {
-          const guint8 *c = col_data + i;
-          guint16 p0 = ((c[0] & 0x0f) << 8) | c[1];
-          guint16 p1 = (c[3] << 4) | (c[0] >> 4);
-          guint16 p2 = ((c[5] & 0x0f) << 8) | c[2];
-          guint16 p3 = (c[4] << 4) | (c[5] >> 4);
-
-          out_row_major[(row + 0) * GOODIX_5E0A_WIDTH + col] = p0;
-          out_row_major[(row + 1) * GOODIX_5E0A_WIDTH + col] = p1;
-          out_row_major[(row + 2) * GOODIX_5E0A_WIDTH + col] = p2;
-          out_row_major[(row + 3) * GOODIX_5E0A_WIDTH + col] = p3;
-          row += 4;
-        }
+      const guint8 *c = data + i;
+      *pix++ = ((c[0] & 0x0f) << 8) | c[1];
+      *pix++ = (c[3] << 4) | (c[0] >> 4);
+      *pix++ = ((c[5] & 0x0f) << 8) | c[2];
+      *pix++ = (c[4] << 4) | (c[5] >> 4);
     }
 }
 
@@ -374,10 +362,9 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
       fp_info ("5e0a saved /tmp/live_frame.raw (%u bytes)", len);
     }
 
-  /* Decode 10564-byte payload into 80x64 row-major 12-bit pixel buffer,
-   * skipping the 36 padding bytes per 132-byte column. */
+  /* Decode 5120 pixels (7680 bytes) into 80x64 row-major 12-bit pixel buffer. */
   GoodixTls5xxPix *raw_frame = calloc (GOODIX_5E0A_FRAME_SIZE, sizeof (GoodixTls5xxPix));
-  goodix5e0a_decode_frame_strided (raw_frame, data, len);
+  goodix5e0a_decode_frame (raw_frame, data, len);
 
   guint total_nonzero = 0;
   guint16 raw_min = 65535, raw_max = 0;
@@ -390,7 +377,7 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
           if (raw_frame[i] > raw_max) raw_max = raw_frame[i];
         }
     }
-  g_message ("5e0a strided frame: active_px=%u nonzero=%u min=%u max=%u geometry=%dx%d (WxH)",
+  g_message ("5e0a row-major frame: active_px=%u nonzero=%u min=%u max=%u geometry=%dx%d (WxH)",
              GOODIX_5E0A_FRAME_SIZE, total_nonzero, raw_min == 65535 ? 0 : raw_min, raw_max,
              GOODIX_5E0A_WIDTH, GOODIX_5E0A_HEIGHT);
 
@@ -560,8 +547,8 @@ fpi_device_goodixtls5e0a_init (FpiDeviceGoodixTls5e0a *self)
 static FpImage *
 process_raw_frame (GoodixTls5xxPix * pix)
 {
-  const int W = GOODIX_5E0A_WIDTH;             // Native 80
-  const int H = GOODIX_5E0A_HEIGHT;            // Native 64
+  const int W = GOODIX_5E0A_WIDTH;   // Native 80
+  const int H = GOODIX_5E0A_HEIGHT;  // Native 64
   const int dst_w = GOODIX_5E0A_SCALED_WIDTH;  // 160
   const int dst_h = GOODIX_5E0A_SCALED_HEIGHT; // 128
 
