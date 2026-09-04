@@ -625,10 +625,10 @@ index a19379c..d7427ea 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..0c3b85f
+index 0000000..0552196
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,693 @@
+@@ -0,0 +1,700 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -981,17 +981,23 @@ index 0000000..0c3b85f
 +
 +  guint total_nonzero = 0;
 +  guint16 raw_min = 65535, raw_max = 0;
++  guint32 first_nz = 0xFFFFFFFF, last_nz = 0;
 +  for (guint32 i = 0; i < num_pixels; i++)
 +    {
 +      if (raw_frame[i] > 0)
 +        {
 +          total_nonzero++;
++          if (first_nz == 0xFFFFFFFF) first_nz = i;
++          last_nz = i;
 +          if (raw_frame[i] < raw_min) raw_min = raw_frame[i];
 +          if (raw_frame[i] > raw_max) raw_max = raw_frame[i];
 +        }
 +    }
-+  g_message ("5e0a raw_frame: num_px=%u nonzero=%u min=%u max=%u",
-+             num_pixels, total_nonzero, raw_min == 65535 ? 0 : raw_min, raw_max);
++  g_message ("5e0a raw_frame: decoded_px=%u nonzero=%u min=%u max=%u assumed_geometry=%dx%d (WxH)",
++             num_pixels, total_nonzero, raw_min == 65535 ? 0 : raw_min, raw_max,
++             GOODIX_5E0A_WIDTH, GOODIX_5E0A_HEIGHT);
++  g_message ("5e0a raw_frame layout: first_nz=%u last_nz=%u span=%u",
++             first_nz, last_nz, (last_nz >= first_nz) ? (last_nz - first_nz + 1) : 0);
 +
 +  FpImage *img = process_raw_frame (raw_frame);
 +  free (raw_frame);
@@ -1255,12 +1261,12 @@ index 0000000..0c3b85f
 +    g_message ("5e0a active cols: NONE (all 0)");
 +  g_string_free (active_cols, TRUE);
 +
-+  /* Guaranteed journald output without needing debug flags */
-+  g_message ("5e0a frame stats: active=%u, min_v=%u, max_v=%u, range=%u, declen=%u, adj_corr=%.3f, all_corr=%.3f, dist_corr=%.3f",
-+             active, min_v, max_v, range, goodix5e0a_last_declen, mean_adj, mean_all, dist_0_18);
-+
 +  const int W = GOODIX_5E0A_WIDTH;   // Native 80
 +  const int H = GOODIX_5E0A_HEIGHT;  // Native 64
++
++  /* Guaranteed journald output without needing debug flags */
++  g_message ("5e0a frame stats: active=%u, min_v=%u, max_v=%u, range=%u, declen=%u, adj_corr=%.3f, all_corr=%.3f, dist_corr=%.3f (assumed %dx%d WxH)",
++             active, min_v, max_v, range, goodix5e0a_last_declen, mean_adj, mean_all, dist_0_18, W, H);
 +
 +  if (active < 64 || range < 8)
 +    return NULL;
@@ -1279,6 +1285,7 @@ index 0000000..0c3b85f
 +    }
 +
 +  FpImage *scaled = fpi_image_resize (img, 2, 2);
++  g_message ("5e0a scaled image: %dx%d (WxH) flags=0x%02x", scaled->width, scaled->height, scaled->flags);
 +  g_object_unref (img);
 +  return scaled;
 +}
@@ -1930,6 +1937,57 @@ index 215ef53..f32e4f0 100644
    tls_config_ssl (self->ssl_layer);
    SSL_set_fd (self->ssl_layer, self->sock_fd);
  
+diff --git a/libfprint/fp-image.c b/libfprint/fp-image.c
+index 8870cfa..afb6098 100644
+--- a/libfprint/fp-image.c
++++ b/libfprint/fp-image.c
+@@ -312,6 +312,9 @@ fp_image_detect_minutiae_thread_func (GTask        *task,
+   data->binarized = g_steal_pointer (&bdata);
+   data->minutiae = minutiae;
+ 
++  g_message ("5e0a get_minutiae: ret=%d minutiae_count=%d (image %dx%d WxH, scan_time=%.4fs)",
++             r, (minutiae ? minutiae->num : 0), data->width, data->height, g_timer_elapsed (timer, NULL));
++
+   if (r)
+     {
+       fp_err ("get minutiae failed, code %d", r);
+diff --git a/libfprint/fpi-print.c b/libfprint/fpi-print.c
+index 00289b4..867fc02 100644
+--- a/libfprint/fpi-print.c
++++ b/libfprint/fpi-print.c
+@@ -185,6 +185,8 @@ fpi_print_add_from_image (FpPrint *print,
+ 
+   xyt = g_new0 (struct xyt_struct, 1);
+   minutiae_to_xyt (&_minutiae, image->width, image->height, xyt);
++  g_message ("5e0a minutiae added to print: detected=%u (xyt->nrows=%d) on image %dx%d (WxH)",
++             minutiae->len, xyt->nrows, image->width, image->height);
+   g_ptr_array_add (print->prints, xyt);
+ 
+   g_clear_object (&print->image);
+@@ -233,6 +235,8 @@ fpi_print_bz3_match (FpPrint *template, FpPrint *print, gint bz3_threshold, GErr
+ 
+   pstruct = g_ptr_array_index (print->prints, 0);
+   probe_len = bozorth_probe_init (pstruct);
++  g_message ("5e0a bz3 match start: probe_nrows=%d gallery_len=%u (probe_len=%d)",
++             pstruct->nrows, template->prints->len, probe_len);
+ 
+   for (i = 0; i < template->prints->len; i++)
+     {
+@@ -240,7 +244,13 @@ fpi_print_bz3_match (FpPrint *template, FpPrint *print, gint bz3_threshold, GErr
+       gint score;
+       gstruct = g_ptr_array_index (template->prints, i);
+       score = bozorth_to_gallery (probe_len, pstruct, gstruct);
+-      fp_dbg ("score %d/%d", score, bz3_threshold);
++      g_message ("5e0a bz3 match: gallery[%d]_nrows=%d score=%d/%d (probe_nrows=%d)",
++                 i, gstruct->nrows, score, bz3_threshold, pstruct->nrows);
++      if (pstruct->nrows < 10 || gstruct->nrows < 10)
++        {
++          g_message ("5e0a bz3 floor tripped: probe_nrows=%d gallery[%d]_nrows=%d < MIN_COMPUTABLE_BOZORTH_MINUTIAE(10)",
++                     pstruct->nrows, i, gstruct->nrows);
++        }
+ 
+       if (score >= bz3_threshold)
+         return FPI_MATCH_SUCCESS;
 diff --git a/libfprint/fprint-list-udev-hwdb.c b/libfprint/fprint-list-udev-hwdb.c
 index b726b67..9e5680b 100644
 --- a/libfprint/fprint-list-udev-hwdb.c

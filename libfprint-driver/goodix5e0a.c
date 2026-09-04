@@ -350,17 +350,23 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 
   guint total_nonzero = 0;
   guint16 raw_min = 65535, raw_max = 0;
+  guint32 first_nz = 0xFFFFFFFF, last_nz = 0;
   for (guint32 i = 0; i < num_pixels; i++)
     {
       if (raw_frame[i] > 0)
         {
           total_nonzero++;
+          if (first_nz == 0xFFFFFFFF) first_nz = i;
+          last_nz = i;
           if (raw_frame[i] < raw_min) raw_min = raw_frame[i];
           if (raw_frame[i] > raw_max) raw_max = raw_frame[i];
         }
     }
-  g_message ("5e0a raw_frame: num_px=%u nonzero=%u min=%u max=%u",
-             num_pixels, total_nonzero, raw_min == 65535 ? 0 : raw_min, raw_max);
+  g_message ("5e0a raw_frame: decoded_px=%u nonzero=%u min=%u max=%u assumed_geometry=%dx%d (WxH)",
+             num_pixels, total_nonzero, raw_min == 65535 ? 0 : raw_min, raw_max,
+             GOODIX_5E0A_WIDTH, GOODIX_5E0A_HEIGHT);
+  g_message ("5e0a raw_frame layout: first_nz=%u last_nz=%u span=%u",
+             first_nz, last_nz, (last_nz >= first_nz) ? (last_nz - first_nz + 1) : 0);
 
   FpImage *img = process_raw_frame (raw_frame);
   free (raw_frame);
@@ -624,12 +630,12 @@ process_raw_frame (GoodixTls5xxPix * pix)
     g_message ("5e0a active cols: NONE (all 0)");
   g_string_free (active_cols, TRUE);
 
-  /* Guaranteed journald output without needing debug flags */
-  g_message ("5e0a frame stats: active=%u, min_v=%u, max_v=%u, range=%u, declen=%u, adj_corr=%.3f, all_corr=%.3f, dist_corr=%.3f",
-             active, min_v, max_v, range, goodix5e0a_last_declen, mean_adj, mean_all, dist_0_18);
-
   const int W = GOODIX_5E0A_WIDTH;   // Native 80
   const int H = GOODIX_5E0A_HEIGHT;  // Native 64
+
+  /* Guaranteed journald output without needing debug flags */
+  g_message ("5e0a frame stats: active=%u, min_v=%u, max_v=%u, range=%u, declen=%u, adj_corr=%.3f, all_corr=%.3f, dist_corr=%.3f (assumed %dx%d WxH)",
+             active, min_v, max_v, range, goodix5e0a_last_declen, mean_adj, mean_all, dist_0_18, W, H);
 
   if (active < 64 || range < 8)
     return NULL;
@@ -648,6 +654,7 @@ process_raw_frame (GoodixTls5xxPix * pix)
     }
 
   FpImage *scaled = fpi_image_resize (img, 2, 2);
+  g_message ("5e0a scaled image: %dx%d (WxH) flags=0x%02x", scaled->width, scaled->height, scaled->flags);
   g_object_unref (img);
   return scaled;
 }

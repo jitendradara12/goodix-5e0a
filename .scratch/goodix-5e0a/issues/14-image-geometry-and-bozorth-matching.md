@@ -53,22 +53,30 @@ Sep 04 20:40:43 sastapc fprintd[70793]: report_verify_status: result verify-no-m
   With `FPI_IMAGE_COLORS_INVERTED`, high ADC becomes low pixel (black = ridge).
 - If local contrast across the sensor is uneven, global min-max normalization may wash out peripheral ridges.
 
+## Review Directives & Invariants
+- **Never lower NBIS floors or match thresholds:** `MIN_COMPUTABLE_BOZORTH_MINUTIAE = 10` and `bz3_threshold = 12` are invariant biometric standards. If `nrows < 10`, fix content/contrast/pipeline, never constants.
+- **Strict $W \times H$ convention everywhere:** $W = \text{width/columns/horizontal}$ (native 80, scaled 160), $H = \text{height/rows/vertical}$ (native 64, scaled 128). Never invert or mix notations.
+- **One variable per build:** Experiment A changes zero image processing code. It adds diagnostic logging only.
+
 ## Planned Experiments (One Variable Per Build)
 
-1. **Experiment A (Minutiae Diagnostic Logging):**
-   - Add explicit `g_message` logging to report:
-     - `minutiae_count` from `fp_image_detect_minutiae`
-     - Probe minutiae count `pstruct->nrows` and gallery minutiae counts `gstruct->nrows`
-   - Observe live hardware values during `fprintd-enroll` and `fprintd-verify`.
+1. **Experiment A (Minutiae Diagnostic Observability):**
+   - In `goodix5e0a.c`: Log `decoded_px`, `nonzero_px`, `min`, `max`, `assumed_geometry=80x64 (WxH)`, and layout span (`first_nz`, `last_nz`).
+   - In `fp-image.c`: Log `get_minutiae` result and `minutiae_count` for each captured frame.
+   - In `fpi-print.c`: Log `probe_nrows` and `gallery[i]_nrows` during `bz3_match`, with explicit warning if the floor `< 10` is tripped.
+   - **Predicted journal signatures:**
+     - *Branch 1 (Minutiae starvation):* `5e0a minutiae: detected=K` with $K < 10$, or `5e0a bz3 floor tripped: probe_nrows < 10` $\implies$ Next step: isolate 2x upscale vs native and polarity inversion.
+     - *Branch 2 (Geometric mismatch):* `5e0a bz3 match: probe_nrows >= 10 gallery[i]_nrows >= 10 score=0/12` $\implies$ Next step: investigate column-major vs row-major transpose or aspect ratio distortion.
 
-2. **Experiment B (Geometry Alignment):**
-   - Test 64x80 vs 80x64 pixel layout based on diagnostic minutiae counts from Experiment A.
+2. **Experiment B (Geometry Alignment / Isolation):**
+   - Driven by Experiment A branch selection.
 
-3. **Experiment C (Threshold & Matching Verification):**
-   - Once minutiae counts $\ge 10$ are verified across probe and gallery, verify Bozorth3 pairwise edge matching and score progression toward $\ge 12$.
+3. **Experiment C (Matching Verification):**
+   - Verify `score >= 12` and `verify-match (done)`.
 
 ## Acceptance Criteria (Deployed Driver, Hardware Only)
 
 - [ ] Probe and gallery prints both contain $\ge 10$ detected minutiae logged in journal.
 - [ ] `fprintd-verify` achieves score $\ge 12$ against enrolled gallery.
 - [ ] Successful `Verify result: verify-match (done)` on first touch.
+
