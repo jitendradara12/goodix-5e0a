@@ -123,13 +123,26 @@ config tables in `.rdata` / `.data`:
   `fprintd-enroll: Enroll result: enroll-stage-passed`!
 - **Flaw identified:** In `goodix5e0a_on_fdt_up_reply`, `fpi_image_device_report_finger_status(dev, FALSE)` was called before `fpi_ssm_next_state(ssm)`. Libfprint synchronously requested `AWAIT_FINGER_ON`, but the concurrency guard saw the old SSM still active and dropped the new scan request. Patched by clearing `self->scan_ssm = NULL` and completing the SSM before reporting finger off.
 
+## Hardware Run 3 (2026-09-04 19:44–19:46, Deployed Driver)
+
+### Journal Evidence
+- **Multi-stage progress confirmed:** 14 touches processed without a single deadlock or crash!
+- **5 stages passed in rapid succession:**
+  - `Device reported enroll progress, reported 1 of 8 have been completed` (19:45:04)
+  - `Device reported enroll progress, reported 2 of 8 have been completed` (19:45:09)
+  - `Device reported enroll progress, reported 3 of 8 have been completed` (19:45:14)
+  - `Device reported enroll progress, reported 4 of 8 have been completed` (19:45:19)
+  - `Device reported enroll progress, reported 5 of 8 have been completed` (19:45:24)
+- **Minutiae detection bottleneck identified:** `process_raw_frame` was using a legacy 19-column downsampling and horizontal interpolation from ticket 12 (when frames were degraded). Now that all 80 columns have real pixels (`nonzero=5120`), this downsampling was throwing away 75% of horizontal resolution and causing minutiae detection failures when finger angle changed.
+- **Resolution applied:** Mapped all 80 native sensor columns directly into `img->data` at 500 DPI native optical clarity without downsampling or horizontal blur.
+
 ## Acceptance criteria (deployed driver, hardware only)
 
 - [x] Phase 1 (60s hands off): silent, zero retry spam, MCU stays in hardware interrupt wait.
 - [x] Phase 2 (60s press-and-hold): touch triggers instantly on channel energy, advances to GET_IMAGE.
 - [x] Replies grow toward pack10638 / 10564 (`declen=10564` logged in journal).
 - [x] Content frames show non-zero pixels and minutiae count > 0; enroll advances (`enroll-stage-passed`).
-- [ ] Complete full 9-stage `fprintd-enroll` and run `fprintd-verify` twice.
+- [ ] Complete full 8-stage `fprintd-enroll` and run `fprintd-verify` twice.
 
 ## Rollback criteria
 

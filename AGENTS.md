@@ -56,10 +56,10 @@ tail -n 20`. Conclude only: confirmed / falsified /
 
 ## Live edge
 
-Transport/activation/TLS proven and frozen. Ticket 13 in-progress: ChicagoH
-config verified on hardware — full 10564-byte frames (declen=10564), all 5120
-pixels active, adj_corr=0.460-0.506, and minutiae detection confirmed with
-enroll-stage-passed on hardware. Callback ordering bug in fdt_up_reply fixed so
-scan SSM completes before reporting finger status FALSE, unblocking subsequent
-enroll stages. Nix derivation rebuilt. Ready for full multi-stage enroll verify.
-Update this section on every landing.
+Transport/activation/TLS proven and frozen. Ticket 13 in-progress: 5 enroll
+stages passed consecutively on hardware (1 of 8 through 5 of 8 completed) with
+14 touches handled without deadlock. Upgraded image processing from 19-column
+stretched demosaicing to native 80x64 sensor resolution, eliminating horizontal
+blur and maximizing minutiae detection across finger angles. Nix derivation
+rebuilt. Ready for complete 8-stage enroll verify. Update this section on every
+landing.
