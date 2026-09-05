@@ -363,6 +363,8 @@ static void
 goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
                         gpointer ssm, GError *err)
 {
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
   if (err)
     {
       fpi_ssm_mark_failed (ssm, err);
@@ -450,10 +452,21 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
     }
 
   /* In verify mode (and all non-enroll actions), unconditionally pass the captured image
-   * to fpi_image_device_image_captured without calling retry_scan. This prevents premature
-   * deactivation race and D-Bus claim lockups while Bozorth3 evaluates match score. */
+   * to fpi_image_device_image_captured without calling retry_scan. Complete the scan SSM
+   * and report finger release immediately so that libfprint can finish authentication and
+   * deactivate without waiting 2-5 seconds for finger lift polls (Ticket 20 latency fix). */
   fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);
-  fpi_ssm_next_state (ssm);
+
+  if (action != FPI_DEVICE_ACTION_ENROLL)
+    {
+      self->scan_ssm = NULL;
+      fpi_ssm_mark_completed (ssm);
+      fpi_image_device_report_finger_status (FP_IMAGE_DEVICE (dev), FALSE);
+    }
+  else
+    {
+      fpi_ssm_next_state (ssm);
+    }
 }
 
 static void

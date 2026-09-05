@@ -1,53 +1,8 @@
 diff --git a/libfprint/drivers/goodixtls/goodix.c b/libfprint/drivers/goodixtls/goodix.c
-index 236589f..8c3a8c1 100644
+index 2e17de6..8c3a8c1 100644
 --- a/libfprint/drivers/goodixtls/goodix.c
 +++ b/libfprint/drivers/goodixtls/goodix.c
-@@ -109,6 +109,19 @@ goodix_receive_none (FpDevice *dev, guint8 *data, guint16 length,
-   callback (dev, cb_info->user_data, error);
- }
- 
-+void
-+goodix_receive_none_tolerant (FpDevice *dev, guint8 *data, guint16 length,
-+                              gpointer user_data, GError *error)
-+{
-+  g_autofree GoodixCallbackInfo *cb_info = user_data;
-+  GoodixNoneCallback callback = (GoodixNoneCallback) cb_info->callback;
-+
-+  if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT))
-+    g_clear_error (&error); /* ponytail: NOP silence = buffer already empty */
-+
-+  callback (dev, cb_info->user_data, error);
-+}
-+
- void
- goodix_receive_default (FpDevice *dev, guint8 *data, guint16 length,
-                         gpointer user_data, GError *error)
-@@ -398,11 +411,19 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
-       break;
- 
-     case GOODIX_FLAGS_TLS:
--      fp_dbg ("Got TLS msg");
--      goodix_receive_done (dev, payload, payload_len, NULL);
--
--      // TLS message sending it to TLS server.
--      // TODO
-+    case GOODIX_FLAGS_TLS_DATA:
-+      fp_dbg ("Got TLS msg (0x%02x, %u bytes)", flags, payload_len);
-+      if (priv->cmd == GOODIX_CMD_MCU_GET_IMAGE ||
-+          priv->cmd == GOODIX_CMD_REQUEST_TLS_CONNECTION ||
-+          (priv->reply && priv->callback != NULL && priv->cmd == 0))
-+        {
-+          goodix_receive_done (dev, payload, payload_len, NULL);
-+        }
-+      else
-+        {
-+          fp_dbg ("Discarding stale TLS msg (0x%02x, len %u) while waiting for cmd 0x%02x",
-+                  flags, payload_len, priv->cmd);
-+        }
-       break;
- 
-     default:
-@@ -422,9 +443,12 @@ goodix_receive_data_cb (FpiUsbTransfer *transfer, FpDevice *dev,
+@@ -443,9 +443,12 @@ goodix_receive_data_cb (FpiUsbTransfer *transfer, FpDevice *dev,
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
  
@@ -61,81 +16,8 @@ index 236589f..8c3a8c1 100644
        return;
      }
    if (error)
-@@ -464,16 +488,34 @@ goodix_start_read_loop (FpDevice *dev)
-     fpi_device_goodixtls_get_instance_private (self);
- 
-   if (priv->inited)
--    // Already going
-     return;
--  else
--    priv->inited = TRUE;
-+
-   if (g_cancellable_is_cancelled (priv->transfer_cancel_tkn))
-     g_cancellable_reset (priv->transfer_cancel_tkn);
- 
-+  priv->inited = TRUE;
-+  g_clear_pointer (&priv->data, g_free);
-+  priv->length = 0;
-+
-   goodix_receive_data (dev);
- }
- 
-+void
-+goodix_stop_read_loop (FpDevice *dev)
-+{
-+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
-+  FpiDeviceGoodixTlsPrivate *priv =
-+    fpi_device_goodixtls_get_instance_private (self);
-+
-+  fp_dbg ("Stopping read loop");
-+  if (priv->transfer_cancel_tkn)
-+    g_cancellable_cancel (priv->transfer_cancel_tkn);
-+
-+  priv->inited = FALSE;
-+  g_clear_pointer (&priv->data, g_free);
-+  priv->length = 0;
-+}
-+
- void
- goodix_receive_data (FpDevice *dev)
- {
-@@ -563,6 +605,11 @@ goodix_send_protocol (
-       fp_warn ("A command is already running: 0x%02x", priv->cmd);
-       if (free_func)
-         free_func ((void *) payload);
-+      // ponytail: fail loudly so the waiting SSM aborts instead of hanging
-+      GError *collision_error =
-+        g_error_new (G_IO_ERROR, G_IO_ERROR_BUSY,
-+                     "A command is already running: 0x%02x", priv->cmd);
-+      goodix_receive_done (dev, NULL, 0, collision_error);
-       return;
-     }
- 
-@@ -597,6 +644,8 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
-   GoodixNop payload = {.unknown = 0x00000000};
-   GoodixCallbackInfo *cb_info;
- 
-+  /* ponytail: flush, not a handshake — silence is success (see tolerant
-+     receiver); a real ACK is still validated when one arrives. */
-   if (callback)
-     {
-       cb_info = malloc (sizeof (GoodixCallbackInfo));
-@@ -605,23 +654,31 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
-       cb_info->user_data = user_data;
- 
-       goodix_send_protocol (dev, GOODIX_CMD_NOP, (guint8 *) &payload,
--                            sizeof (payload), NULL, FALSE, GOODIX_TIMEOUT, FALSE,
--                            goodix_receive_none, cb_info);
--      goodix_receive_done (dev, NULL, 0, NULL);
-+                            sizeof (payload), NULL, FALSE, GOODIX_NOP_TIMEOUT, FALSE,
-+                            goodix_receive_none_tolerant, cb_info);
-       return;
-     }
- 
-   goodix_send_protocol (dev, GOODIX_CMD_NOP, (guint8 *) &payload, sizeof (payload),
--                        NULL, FALSE, GOODIX_TIMEOUT, FALSE, NULL, NULL);
--  goodix_receive_done (dev, NULL, 0, NULL);
-+                        NULL, FALSE, GOODIX_NOP_TIMEOUT, FALSE, NULL, NULL);
+@@ -660,22 +663,21 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
+                         NULL, FALSE, GOODIX_NOP_TIMEOUT, FALSE, NULL, NULL);
  }
  
 +guint8 goodix5e0a_capture_payload[10] = {0x05, 0x00, 0xb0, 0x00, 0xb2, 0x00, 0xb0, 0x00, 0xb1, 0x00};
@@ -144,669 +26,193 @@ index 236589f..8c3a8c1 100644
  goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,
                             gpointer user_data)
  {
--  GoodixDefault payload = {.unused_flags = 0x01};
    GoodixCallbackInfo *cb_info;
-+  GoodixDefault payload_default = {.unused_flags = 0x01};
-+  guint8 *payload = (guint8 *) &payload_default;
-+  guint16 len = sizeof (payload_default);
-+
-+  if (g_strcmp0 (fp_device_get_driver (dev), "goodixtls5e0a") == 0)
-+    {
+-  /* ponytail: finger-capture bytes per driver_52xd.py:299-302 (trailing 8B match
+-     FDT exposure block); 01 00.. is calibration-only. */
+-  guint8 payload_5e0a[10] = {0x45, 0x03, 0xa7, 0x00, 0xa1, 0x00, 0xa7, 0x00, 0xa3, 0x00};
+   GoodixDefault payload_default = {.unused_flags = 0x01};
+   guint8 *payload = (guint8 *) &payload_default;
+   guint16 len = sizeof (payload_default);
+ 
+   if (g_strcmp0 (fp_device_get_driver (dev), "goodixtls5e0a") == 0)
+     {
+-      payload = payload_5e0a;
+-      len = sizeof (payload_5e0a);
 +      payload = goodix5e0a_capture_payload;
 +      len = sizeof (goodix5e0a_capture_payload);
-+    }
+     }
  
    if (callback)
-     {
-@@ -630,14 +687,14 @@ goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,
-       cb_info->callback = G_CALLBACK (callback);
-       cb_info->user_data = user_data;
- 
--      goodix_send_protocol (dev, GOODIX_CMD_MCU_GET_IMAGE, (guint8 *) &payload,
--                            sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
-+      goodix_send_protocol (dev, GOODIX_CMD_MCU_GET_IMAGE, payload,
-+                            len, NULL, TRUE, GOODIX_TIMEOUT, TRUE,
-                             goodix_receive_default, cb_info);
-       return;
-     }
- 
--  goodix_send_protocol (dev, GOODIX_CMD_MCU_GET_IMAGE, (guint8 *) &payload,
--                        sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
-+  goodix_send_protocol (dev, GOODIX_CMD_MCU_GET_IMAGE, payload,
-+                        len, NULL, TRUE, GOODIX_TIMEOUT, TRUE,
-                         NULL, NULL);
- }
- 
-@@ -648,29 +705,57 @@ goodix_send_mcu_switch_to_fdt_down (FpDevice *dev, const guint8 *mode, guint16 l
-                                     gpointer user_data)
- {
-   GoodixCallbackInfo *cb_info = NULL;
-+  GoodixDefaultCallback cb = NULL;
- 
-+  if (callback)
-+    {
-+      cb_info = malloc (sizeof (GoodixCallbackInfo));
-+      cb_info->callback = G_CALLBACK (callback);
-+      cb_info->user_data = user_data;
-+      cb = goodix_receive_default;
-+    }
- 
--  guint8 * payload = malloc (sizeof (guint8) * (length + 1));
--
--  memcpy (payload + 1, mode, length);
--  payload[0] = 0xc;
--  if (free_func)
--    free_func ((void *) mode);
-+  if (mode && length > 0 && mode[0] == 0x01)
-+    {
-+      guint8 * payload = malloc (sizeof (guint8) * (length + 1));
-+      memcpy (payload + 1, mode, length);
-+      payload[0] = 0xc;
-+      if (free_func)
-+        free_func ((void *) mode);
-+      goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, payload, length + 1,
-+                            free, TRUE, 0, TRUE, cb, cb_info);
-+    }
-+  else
-+    {
-+      goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, mode, length,
-+                            free_func, TRUE, 0, TRUE, cb, cb_info);
-+    }
-+}
- 
--  GoodixDefaultCallback cb = NULL;
-+/* ponytail: 5e0a FDT 00-arm is ACK-only per trace — the MCU never sends a
-+   reply to it, so the blocking helper above would wait forever. Minimal
-+   no-reply DOWN sender for the arm stage only; the 0x01/0x0c legacy prefix
-+   path stays in the blocking helper (511-only). Upgrade path: one shared
-+   FDT sender with a reply flag replacing both helpers. */
-+void
-+goodix_send_mcu_switch_to_fdt_down_noreply (FpDevice *dev, const guint8 *mode,
-+                                            guint16 length, GDestroyNotify free_func,
-+                                            GoodixNoneCallback callback,
-+                                            gpointer user_data)
-+{
-+  GoodixCallbackInfo *cb_info = NULL;
-+  GoodixCmdCallback cb = NULL;
- 
-   if (callback)
-     {
-       cb_info = malloc (sizeof (GoodixCallbackInfo));
--
-       cb_info->callback = G_CALLBACK (callback);
-       cb_info->user_data = user_data;
--      cb = goodix_receive_default;
-+      cb = goodix_receive_none;
-     }
--  goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, payload, length + 1,
--                        free, TRUE, 0, TRUE, cb,
--                        cb_info);
- 
-+  goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, mode, length,
-+                        free_func, TRUE, GOODIX_TIMEOUT, FALSE, cb, cb_info);
- }
- 
- void
-@@ -680,38 +765,41 @@ goodix_send_mcu_switch_to_fdt_up (FpDevice *dev, const guint8 *mode, guint16 len
-                                   gpointer user_data)
- {
-   GoodixCallbackInfo *cb_info = NULL;
--
--  guint8 * payload = malloc (sizeof (guint8) * (length + 1));
--
--  memcpy (payload + 1, mode, length);
--  payload[0] = 0xe;
--  if (free_func)
--    free_func ((void *) mode);
-   GoodixDefaultCallback cb = NULL;
- 
-   if (callback)
-     {
-       cb_info = malloc (sizeof (GoodixCallbackInfo));
--
-       cb_info->callback = G_CALLBACK (callback);
-       cb_info->user_data = user_data;
-       cb = goodix_receive_default;
--
-     }
- 
--  goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP, payload, length + 1,
--                        free, TRUE, 0, TRUE, cb,
--                        cb_info);
-+  if (mode && length > 0 && mode[0] == 0x01)
-+    {
-+      guint8 * payload = malloc (sizeof (guint8) * (length + 1));
-+      memcpy (payload + 1, mode, length);
-+      payload[0] = 0xe;
-+      if (free_func)
-+        free_func ((void *) mode);
-+      goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP, payload, length + 1,
-+                            free, TRUE, 0, TRUE, cb, cb_info);
-+    }
-+  else
-+    {
-+      goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP, mode, length,
-+                            free_func, TRUE, 0, TRUE, cb, cb_info);
-+    }
- }
- 
- void
--goodix_send_mcu_switch_to_fdt_mode (FpDevice *dev, const guint8 *mode, guint16 length,
--                                    GDestroyNotify free_func,
--                                    GoodixDefaultCallback callback,
-+goodix_send_mcu_switch_to_fdt_mode (FpDevice *dev, const guint8 *mode,
-+                                    guint16 length, GDestroyNotify free_func,
-+                                    GoodixNoneCallback callback,
-                                     gpointer user_data)
- {
-   GoodixCallbackInfo *cb_info = NULL;
--  GoodixDefaultCallback cb = NULL;
-+  GoodixCmdCallback cb = NULL;
- 
-   if (free_func)
-     free_func ((void *) mode);
-@@ -722,11 +810,11 @@ goodix_send_mcu_switch_to_fdt_mode (FpDevice *dev, const guint8 *mode, guint16 l
- 
-       cb_info->callback = G_CALLBACK (callback);
-       cb_info->user_data = user_data;
--      cb = goodix_receive_default;
-+      cb = goodix_receive_none;
-     }
- 
-   goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_MODE, mode, length,
--                        NULL, TRUE, 0, TRUE, cb,
-+                        NULL, TRUE, GOODIX_TIMEOUT, FALSE, cb,
-                         cb_info);
- 
- }
-@@ -979,7 +1067,7 @@ goodix_send_query_firmware_version (FpDevice                     *dev,
- }
- 
- void
--goodix_send_query_mcu_state (FpDevice *dev, GoodixDefaultCallback callback,
-+goodix_send_query_mcu_state (FpDevice *dev, GoodixNoneCallback callback,
-                              gpointer user_data)
- {
-   GoodixQueryMcuState payload = {.unused_flags = 0x55};
-@@ -993,13 +1081,13 @@ goodix_send_query_mcu_state (FpDevice *dev, GoodixDefaultCallback callback,
-       cb_info->user_data = user_data;
- 
-       goodix_send_protocol (dev, GOODIX_CMD_QUERY_MCU_STATE, (guint8 *) &payload,
--                            sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
--                            goodix_receive_default, cb_info);
-+                            sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE,
-+                            goodix_receive_none, cb_info);
-       return;
-     }
- 
-   goodix_send_protocol (dev, GOODIX_CMD_QUERY_MCU_STATE, (guint8 *) &payload,
--                        sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE, NULL,
-+                        sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE, NULL,
-                         NULL);
- }
- 
-@@ -1048,13 +1136,86 @@ goodix_send_tls_successfully_established (FpDevice          *dev,
- 
-       goodix_send_protocol (dev, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED,
-                             (guint8 *) &payload, sizeof (payload), NULL, TRUE,
--                            10, FALSE, goodix_receive_none, cb_info);
-+                            2000, TRUE, goodix_receive_none, cb_info);
-       return;
-     }
- 
-   goodix_send_protocol (dev, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED,
-                         (guint8 *) &payload, sizeof (payload), NULL, TRUE,
--                        10, FALSE, NULL, NULL);
-+                        2000, TRUE, NULL, NULL);
-+}
-+
-+void
-+goodix_send_set_drv_state (FpDevice *dev, GoodixNoneCallback cb,
-+                           gpointer ud)
-+{
-+  // ponytail: reuse 2-byte helper for the 01 00 payload (goodix.py:611-622)
-+  GoodixDefault payload = {.unused_flags = 0x01};
-+  GoodixCallbackInfo *cb_info;
-+
-+  if (cb)
-+    {
-+      cb_info = malloc (sizeof (GoodixCallbackInfo));
-+
-+      cb_info->callback = G_CALLBACK (cb);
-+      cb_info->user_data = ud;
-+
-+      goodix_send_protocol (dev, GOODIX_CMD_SET_DRV_STATE, (guint8 *) &payload,
-+                            sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE,
-+                            goodix_receive_none, cb_info);
-+      return;
-+    }
-+
-+  goodix_send_protocol (dev, GOODIX_CMD_SET_DRV_STATE, (guint8 *) &payload,
-+                        sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE,
-+                        NULL, NULL);
-+}
-+
-+void
-+goodix_send_mcu_get_pov_image (FpDevice *dev, GoodixDefaultCallback cb,
-+                               gpointer ud)
-+{
-+  GoodixNone payload = {};
-+  GoodixCallbackInfo *cb_info;
-+
-+  if (cb)
-+    {
-+      cb_info = malloc (sizeof (GoodixCallbackInfo));
-+
-+      cb_info->callback = G_CALLBACK (cb);
-+      cb_info->user_data = ud;
-+
-+      goodix_send_protocol (dev, GOODIX_CMD_MCU_GET_POV_IMAGE,
-+                            (guint8 *) &payload, sizeof (payload), NULL, TRUE,
-+                            GOODIX_TIMEOUT, TRUE, goodix_receive_default,
-+                            cb_info);
-+      return;
-+    }
-+
-+  goodix_send_protocol (dev, GOODIX_CMD_MCU_GET_POV_IMAGE, (guint8 *) &payload,
-+                        sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
-+                        NULL, NULL);
-+}
-+
-+void
-+goodix_send_set_pov_config (FpDevice *dev, const guint8 *cfg, guint16 len,
-+                            GDestroyNotify ff, GoodixNoneCallback cb,
-+                            gpointer ud)
-+{
-+  GoodixCallbackInfo *cb_info = NULL;
-+  GoodixCmdCallback tramp = NULL;
-+
-+  if (cb)
-+    {
-+      cb_info = malloc (sizeof (GoodixCallbackInfo));
-+
-+      cb_info->callback = G_CALLBACK (cb);
-+      cb_info->user_data = ud;
-+      tramp = goodix_receive_none;
-+    }
-+
-+  goodix_send_protocol (dev, GOODIX_CMD_SET_POV_CONFIG, cfg, len, ff, TRUE,
-+                        GOODIX_TIMEOUT, FALSE, tramp, cb_info);
- }
- 
- void
-@@ -1168,6 +1329,8 @@ goodix_dev_init (FpDevice *dev, GError **error)
-   priv->length = 0;
-   priv->transfer_cancel_tkn = g_cancellable_new ();
- 
-+  g_usb_device_reset (fpi_device_get_usb_device (dev), NULL);
-+
-   return g_usb_device_claim_interface (fpi_device_get_usb_device (dev),
-                                        class->interface, 0, error);
- }
-@@ -1182,8 +1345,11 @@ goodix_reset_state (FpDevice *dev)
-     g_clear_pointer (&priv->timeout, g_source_destroy);
-   priv->ack = FALSE;
-   priv->reply = FALSE;
-+  priv->cmd = 0;
-   priv->callback = NULL;
-   priv->user_data = NULL;
-+  g_clear_pointer (&priv->data, g_free);
-+  priv->length = 0;
- }
- 
- gboolean
-@@ -1403,10 +1569,10 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
-   FpiDeviceGoodixTlsPrivate *priv =
-     fpi_device_goodixtls_get_instance_private (self);
-   g_assert (priv->tls_hop == NULL);
--  priv->tls_hop = malloc (sizeof (GoodixTlsServer));
-+  priv->tls_hop = g_new0 (GoodixTlsServer, 1);
- 
-   if (!priv->tls_ready_callback)
--    priv->tls_ready_callback = malloc (sizeof (GoodixCallbackInfo));
-+    priv->tls_ready_callback = g_new0 (GoodixCallbackInfo, 1);
-   priv->tls_ready_callback->callback = G_CALLBACK (callback);
-   priv->tls_ready_callback->user_data = user_data;
-   GoodixTlsServer *s = priv->tls_hop;
-@@ -1443,7 +1609,6 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
-                                 guint16 length, gpointer user_data,
-                                 GError *error)
- {
--
-   GoodixCallbackInfo *cb_info = user_data;
-   GoodixImageCallback callback = (GoodixImageCallback) cb_info->callback;
- 
-@@ -1457,9 +1622,30 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
-   FpiDeviceGoodixTlsPrivate *priv =
-     fpi_device_goodixtls_get_instance_private (self);
- 
--  goodix_tls_client_write (priv->tls_hop, data, length);
-+  guint8 *tls_data = data;
-+  guint16 tls_len = length;
-+
-+  if (length > 9 && data[0] == 0x00 && data[1] == 0x20)
-+    {
-+      tls_data = data + 9;
-+      tls_len = length - 9;
-+    }
-+  else if (length > 5 && data[0] != 0x17)
-+    {
-+      for (guint16 i = 0; i + 5 < length; i++)
-+        {
-+          if (data[i] == 0x17 && data[i + 1] == 0x03 && data[i + 2] == 0x03)
-+            {
-+              tls_data = data + i;
-+              tls_len = length - i;
-+              break;
-+            }
-+        }
-+    }
-+
-+  goodix_tls_client_write (priv->tls_hop, tls_data, tls_len);
- 
--  const guint16 size = -1;
-+  guint32 size = 65535;
-   guint8 *buff = malloc (size);
-   GError *err = NULL;
-   int read_size = goodix_tls_server_read (priv->tls_hop, buff, size, &err);
-@@ -1467,6 +1653,7 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
-   if (read_size <= 0)
-     {
-       callback (dev, NULL, 0, cb_info->user_data, err);
-+      free (buff);
-       g_free (cb_info);
-       return;
-     }
-diff --git a/libfprint/drivers/goodixtls/goodix.h b/libfprint/drivers/goodixtls/goodix.h
-index 08bc254..16b7613 100644
---- a/libfprint/drivers/goodixtls/goodix.h
-+++ b/libfprint/drivers/goodixtls/goodix.h
-@@ -25,6 +25,10 @@
- // 1 seconds USB timeout
- #define GOODIX_TIMEOUT (1000)
- 
-+/* ponytail: NOP is a flush — the MCU is routinely silent on it (reference
-+   tolerates no-reply as success), so it gets a short window, not the full. */
-+#define GOODIX_NOP_TIMEOUT (200)
-+
- G_DECLARE_DERIVABLE_TYPE (FpiDeviceGoodixTls, fpi_device_goodixtls, FPI,
-                           DEVICE_GOODIXTLS, FpImageDevice)
- 
-@@ -127,6 +131,12 @@ void goodix_receive_none (FpDevice *dev,
-                           gpointer  user_data,
-                           GError   *error);
- 
-+void goodix_receive_none_tolerant (FpDevice *dev,
-+                                   guint8   *data,
-+                                   guint16   length,
-+                                   gpointer  user_data,
-+                                   GError   *error);
-+
- void goodix_receive_default (FpDevice *dev,
-                              guint8   *data,
-                              guint16   length,
-@@ -183,6 +193,7 @@ void goodix_receive_data (FpDevice *dev);
-  * @param dev
-  */
- void goodix_start_read_loop (FpDevice *dev);
-+void goodix_stop_read_loop (FpDevice *dev);
- // ---- GOODIX RECEIVE SECTION END ----
- 
- // -----------------------------------------------------------------------------
-@@ -290,6 +301,13 @@ void goodix_send_mcu_switch_to_fdt_down (FpDevice             *dev,
-                                          GoodixDefaultCallback callback,
-                                          gpointer              user_data);
- 
-+void goodix_send_mcu_switch_to_fdt_down_noreply (FpDevice          *dev,
-+                                                 const guint8     *mode,
-+                                                 guint16           length,
-+                                                 GDestroyNotify    free_func,
-+                                                 GoodixNoneCallback callback,
-+                                                 gpointer          user_data);
-+
- 
- /**
-  * @brief Tell the device we want to wait for the user to lift their finger off
-@@ -316,12 +334,12 @@ void goodix_send_mcu_switch_to_fdt_up (FpDevice             *dev,
-  * @param callback
-  * @param user_data
-  */
--void goodix_send_mcu_switch_to_fdt_mode (FpDevice             *dev,
--                                         const guint8        * mode,
--                                         guint16               length,
--                                         GDestroyNotify        free_func,
--                                         GoodixDefaultCallback callback,
--                                         gpointer              user_data);
-+void goodix_send_mcu_switch_to_fdt_mode (FpDevice          *dev,
-+                                         const guint8     * mode,
-+                                         guint16            length,
-+                                         GDestroyNotify     free_func,
-+                                         GoodixNoneCallback callback,
-+                                         gpointer           user_data);
- 
- void goodix_send_nav_0 (FpDevice             *dev,
-                         GoodixDefaultCallback callback,
-@@ -412,9 +430,9 @@ void goodix_send_query_firmware_version (FpDevice                     *dev,
-  * @param callback
-  * @param user_data
-  */
--void goodix_send_query_mcu_state (FpDevice             *dev,
--                                  GoodixDefaultCallback callback,
--                                  gpointer              user_data);
-+void goodix_send_query_mcu_state (FpDevice          *dev,
-+                                  GoodixNoneCallback callback,
-+                                  gpointer           user_data);
- 
- /**
-  * @brief Tell the device we want to start talking TLS
-@@ -437,8 +455,23 @@ void goodix_send_request_tls_connection (FpDevice             *dev,
-  * @param user_data
-  */
- void goodix_send_tls_successfully_established (FpDevice          *dev,
--                                               GoodixNoneCallback callback,
--                                               gpointer           user_data);
-+                                                GoodixNoneCallback callback,
-+                                                gpointer           user_data);
-+
-+void goodix_send_set_drv_state (FpDevice          *dev,
-+                                GoodixNoneCallback cb,
-+                                gpointer           ud);
-+
-+void goodix_send_mcu_get_pov_image (FpDevice             *dev,
-+                                    GoodixDefaultCallback cb,
-+                                    gpointer              ud);
-+
-+void goodix_send_set_pov_config (FpDevice          *dev,
-+                                 const guint8     *cfg,
-+                                 guint16           len,
-+                                 GDestroyNotify    ff,
-+                                 GoodixNoneCallback cb,
-+                                 gpointer          ud);
- 
- /**
-  * @brief Set the device preset psk. May not work for all device firmware versions
-diff --git a/libfprint/drivers/goodixtls/goodix511.c b/libfprint/drivers/goodixtls/goodix511.c
-index a19379c..d7427ea 100644
---- a/libfprint/drivers/goodixtls/goodix511.c
-+++ b/libfprint/drivers/goodixtls/goodix511.c
-@@ -310,6 +310,7 @@ fpi_device_goodixtls511_class_init (FpiDeviceGoodixTls511Class * class)
-   xx_cls->psk_len = sizeof (goodix_511_psk_0);
-   xx_cls->firmware_version = GOODIX_511_FIRMWARE_VERSION;
-   xx_cls->reset_number = GOODIX_511_RESET_NUMBER;
-+  xx_cls->has_calibration = TRUE;
- 
-   gx_class->interface = GOODIX_511_INTERFACE;
-   gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
-new file mode 100644
-index 0000000..25c92d5
---- /dev/null
+index 00c1376..65d3dbb 100644
+--- a/libfprint/drivers/goodixtls/goodix5e0a.c
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,862 @@
-+// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
+@@ -1,5 +1,5 @@
+ // Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
+-// Reverse engineered for NixOS
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
-+
-+#include "drivers/goodixtls/goodix5xx.h"
-+#include "fp-device.h"
-+#include "fp-image-device.h"
-+#include "fp-image.h"
-+#include "fpi-assembling.h"
-+#include "fpi-context.h"
-+#include "fpi-image-device.h"
-+#include "fpi-image.h"
-+#include "fpi-ssm.h"
-+#include "glibconfig.h"
-+#include "gusb/gusb-device.h"
-+#include <stdio.h>
-+#include <stdlib.h>
+ 
+ #include "drivers/goodixtls/goodix5xx.h"
+ #include "fp-device.h"
+@@ -14,6 +14,7 @@
+ #include "gusb/gusb-device.h"
+ #include <stdio.h>
+ #include <stdlib.h>
 +#include <math.h>
-+
-+#define FP_COMPONENT "goodixtls5e0a"
-+
-+#include <glib.h>
-+#include <string.h>
-+
-+#include "drivers_api.h"
+ 
+ #define FP_COMPONENT "goodixtls5e0a"
+ 
+@@ -21,13 +22,23 @@
+ #include <string.h>
+ 
+ #include "drivers_api.h"
 +#pragma GCC diagnostic push
 +#pragma GCC diagnostic ignored "-Wredundant-decls"
 +#include "nbis/include/lfs.h"
 +#pragma GCC diagnostic pop
-+#include "goodix.h"
-+#include "goodix_proto.h"
-+#include "goodix5e0a.h"
-+
+ #include "goodix.h"
+ #include "goodix_proto.h"
+ #include "goodix5e0a.h"
+ 
 +guint32 goodix5e0a_last_declen = 0;
 +
-+struct _FpiDeviceGoodixTls5e0a
-+{
-+  FpiDeviceGoodixTls5xx parent;
+ struct _FpiDeviceGoodixTls5e0a
+ {
+   FpiDeviceGoodixTls5xx parent;
 +
 +  gboolean session_started;
 +  FpiSsm  *scan_ssm;
 +  GSource *down_timeout;
-+};
-+
-+G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a, FPI,
-+                      DEVICE_GOODIXTLS5E0A, FpiDeviceGoodixTls5xx);
-+
-+G_DEFINE_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a,
-+               FPI_TYPE_DEVICE_GOODIXTLS5XX);
-+
-+// ---- ACTIVATE SECTION START ----
-+
-+enum activate_states {
-+  ACTIVATE_READ_AND_NOP,
-+  ACTIVATE_RESET,
-+  ACTIVATE_READ_CHIP_ID,
-+  ACTIVATE_CHECK_FW_VER,
-+  ACTIVATE_NUM_STATES,
-+};
-+
-+static void
-+activate_run_state (FpiSsm *ssm, FpDevice *dev)
-+{
-+  switch (fpi_ssm_get_cur_state (ssm))
-+    {
-+    case ACTIVATE_READ_AND_NOP:
-+      goodix_start_read_loop (dev);
-+      goodix_send_nop (dev, goodixtls5xx_check_none, ssm);
-+      break;
-+
-+    case ACTIVATE_RESET:
-+      goodix_send_reset (dev, TRUE, 20, goodixtls5xx_check_reset, ssm);
-+      break;
-+
-+    case ACTIVATE_READ_CHIP_ID:
-+      goodix_send_read_sensor_register (dev, 0x0000, 4, goodixtls5xx_check_none_cmd, ssm);
-+      break;
-+
-+    case ACTIVATE_CHECK_FW_VER:
-+      goodix_send_query_firmware_version (dev, goodixtls5xx_check_firmware_version, ssm);
-+      break;
-+    }
-+}
-+
-+static void
+ };
+ 
+ G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a, FPI,
+@@ -46,11 +57,6 @@ enum activate_states {
+   ACTIVATE_NUM_STATES,
+ };
+ 
+-static void on_config_uploaded (FpDevice *dev, gboolean success,
+-                                gpointer user_data, GError *error);
+-static void on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error);
+-static void on_drv_state_set (FpDevice *dev, gpointer user_data, GError *error);
+-
+ static void
+ activate_run_state (FpiSsm *ssm, FpDevice *dev)
+ {
+@@ -76,60 +82,39 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
+ }
+ 
+ static void
+-on_register_written (FpDevice *dev, gpointer user_data, GError *error)
 +on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
-+{
-+  if (error)
-+    {
+ {
+   if (error)
+     {
+-      fp_err ("failed to write sensor register: %s", error->message);
 +      fp_err ("failed to enable chip: %s (code: %d)", error->message, error->code);
-+      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
-+      return;
-+    }
+       fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
+       return;
+     }
+-  fp_dbg ("Sensor register 0x022c configured! Activation complete and device is ready for scan.");
 +  fp_dbg ("Chip enabled! Activation complete.");
-+  fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), NULL);
-+}
-+
-+static void
+   fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), NULL);
+ }
+ 
+ static void
+-on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
 +on_config_uploaded (FpDevice *dev, gboolean success,
 +                    gpointer user_data, GError *error)
-+{
-+  if (error)
-+    {
+ {
+   if (error)
+     {
+-      fp_err ("failed to enable chip: %s", error->message);
 +      fp_err ("failed to upload MCU config: %s (code: %d)", error->message, error->code);
-+      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
-+      return;
-+    }
+       fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
+       return;
+     }
+-  fp_dbg ("Chip enabled! Configuring sensor register 0x022c...");
+-  goodix_send_write_sensor_register (dev, GOODIX_5E0A_REG_GAIN_EXPOSURE,
+-                                     GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL,
+-                                     on_register_written, NULL);
+-}
+-
+-static void
+-on_drv_state_set (FpDevice *dev, gpointer user_data, GError *error)
+-{
+-  if (error)
 +  if (!success)
-+    {
+     {
+-      fp_err ("failed to set drv state: %s", error->message);
+-      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
 +      fpi_image_device_activate_complete (
 +        FP_IMAGE_DEVICE (dev),
 +        g_error_new (FP_DEVICE_ERROR, FP_DEVICE_ERROR_PROTO,
 +                     "failed to upload mcu config"));
-+      return;
-+    }
-+
+       return;
+     }
+-  /* ponytail: POV check (0xd2/0xac) skipped — test_touch_sensor proves touch
+-     works without it; add only if a Windows trace shows it required. */
+-  fp_dbg ("Driver state set! Enabling chip...");
+-  goodix_send_enable_chip (dev, TRUE, on_chip_enabled, NULL);
+-}
+ 
+-static void
+-on_config_uploaded (FpDevice *dev, gboolean success,
+-                    gpointer user_data, GError *error)
+-{
+-  if (error || !success)
+-    {
+-      fp_err ("failed to upload MCU config");
+-      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
+-      return;
+-    }
+-  fp_dbg ("MCU config uploaded successfully after TLS! Setting drv state...");
+-  goodix_send_set_drv_state (dev, on_drv_state_set, NULL);
 +  fp_dbg ("MCU config uploaded successfully after TLS! Enabling chip...");
 +  goodix_send_enable_chip (dev, TRUE, on_chip_enabled, NULL);
-+}
-+
-+static void
-+on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
-+{
-+  if (error)
-+    {
+ }
+ 
+ static void
+@@ -137,13 +122,12 @@ on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
+ {
+   if (error)
+     {
+-      fp_err ("failed during TLS activation: %s (code: %d)", error->message,
+-              error->code);
 +      fp_err ("failed during TLS activation: %s (code: %d)", error->message, error->code);
-+      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
-+      return;
-+    }
-+
+       fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
+       return;
+     }
+ 
+-  fp_dbg ("TLS connection ready! Uploading MCU config (CONFIG_52XD)...");
 +  fp_dbg ("TLS connection ready! Uploading MCU config (ChicagoH GF3658 DN3)...");
-+  goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config,
-+                                 sizeof (goodix_5e0a_config), NULL,
-+                                 on_config_uploaded, NULL);
-+}
-+
-+static void
-+activate_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
-+{
-+  G_DEBUG_HERE ();
-+  if (!error)
-+    {
-+      goodix_tls_init (dev, on_tls_activation_complete, NULL);
-+    }
-+  else
-+    {
+   goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config,
+                                  sizeof (goodix_5e0a_config), NULL,
+                                  on_config_uploaded, NULL);
+@@ -159,8 +143,7 @@ activate_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
+     }
+   else
+     {
+-      fp_err ("failed during activation: %s (code: %d)", error->message,
+-              error->code);
 +      fp_err ("failed during activation: %s (code: %d)", error->message, error->code);
-+      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
-+    }
-+}
-+
-+static void
-+dev_activate (FpImageDevice *img_dev)
-+{
-+  FpDevice *dev = FP_DEVICE (img_dev);
+       fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
+     }
+ }
+@@ -169,70 +152,532 @@ static void
+ dev_activate (FpImageDevice *img_dev)
+ {
+   FpDevice *dev = FP_DEVICE (img_dev);
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 +
 +  self->session_started = FALSE;
 +  self->scan_ssm = NULL;
 +  self->down_timeout = NULL;
-+
-+  fpi_ssm_start (fpi_ssm_new (dev, activate_run_state, ACTIVATE_NUM_STATES),
-+                 activate_complete);
-+}
-+
+ 
+   fpi_ssm_start (fpi_ssm_new (dev, activate_run_state, ACTIVATE_NUM_STATES),
+                  activate_complete);
+ }
+ 
+-// ---- DEV SECTION START ----
 +// ---- ACTIVATE SECTION END ----
 +
 +// -----------------------------------------------------------------------------
@@ -823,8 +229,9 @@ index 0000000..25c92d5
 +  SCAN_5E0A_FDT_UP_2,
 +  SCAN_5E0A_NUM_STATES,
 +};
-+
-+static void
+ 
+ static void
+-fpi_device_goodixtls5e0a_init (FpiDeviceGoodixTls5e0a *self)
 +send_cmd_noreply (FpDevice *dev, guint8 cmd, const guint8 *payload, guint16 len,
 +                  GoodixNoneCallback cb, gpointer user_data)
 +{
@@ -1008,6 +415,8 @@ index 0000000..25c92d5
 +goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 +                        gpointer ssm, GError *err)
 +{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
 +  if (err)
 +    {
 +      fpi_ssm_mark_failed (ssm, err);
@@ -1095,16 +504,27 @@ index 0000000..25c92d5
 +    }
 +
 +  /* In verify mode (and all non-enroll actions), unconditionally pass the captured image
-+   * to fpi_image_device_image_captured without calling retry_scan. This prevents premature
-+   * deactivation race and D-Bus claim lockups while Bozorth3 evaluates match score. */
++   * to fpi_image_device_image_captured without calling retry_scan. Complete the scan SSM
++   * and report finger release immediately so that libfprint can finish authentication and
++   * deactivate without waiting 2-5 seconds for finger lift polls (Ticket 20 latency fix). */
 +  fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);
-+  fpi_ssm_next_state (ssm);
++
++  if (action != FPI_DEVICE_ACTION_ENROLL)
++    {
++      self->scan_ssm = NULL;
++      fpi_ssm_mark_completed (ssm);
++      fpi_image_device_report_finger_status (FP_IMAGE_DEVICE (dev), FALSE);
++    }
++  else
++    {
++      fpi_ssm_next_state (ssm);
++    }
 +}
 +
 +static void
 +goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
 +                            gpointer ssm, GError *err)
-+{
+ {
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 +
 +  if (err)
@@ -1123,11 +543,14 @@ index 0000000..25c92d5
 +  self->scan_ssm = NULL;
 +  fpi_ssm_next_state (ssm);
 +  fpi_image_device_report_finger_status (FP_IMAGE_DEVICE (dev), FALSE);
-+}
-+
+ }
+ 
+-static GoodixTls5xxMcuConfig
+-get_mcu_config (void)
 +static void
 +goodix5e0a_scan_run_state (FpiSsm *ssm, FpDevice *dev)
-+{
+ {
+-  GoodixTls5xxMcuConfig cfg;
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 +
 +  switch (fpi_ssm_get_cur_state (ssm))
@@ -1137,7 +560,11 @@ index 0000000..25c92d5
 +                        goodix_5e0a_query_ae, sizeof (goodix_5e0a_query_ae),
 +                        goodix5e0a_step_cb, ssm);
 +      break;
-+
+ 
+-  cfg.free_fn = NULL;
+-  cfg.data = goodix_5e0a_fdt_mode;
+-  cfg.data_len = sizeof (goodix_5e0a_fdt_mode);
+-  return cfg;
 +    case SCAN_5E0A_SESSION_D6:
 +      if (self->session_started)
 +        {
@@ -1177,11 +604,14 @@ index 0000000..25c92d5
 +                      5000, goodix5e0a_on_fdt_up_reply, ssm);
 +      break;
 +    }
-+}
-+
+ }
+ 
+-static GoodixTls5xxMcuConfig
+-get_fdt_down_config (void)
 +static void
 +goodix5e0a_scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
-+{
+ {
+-  GoodixTls5xxMcuConfig cfg;
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 +  self->scan_ssm = NULL;
 +  if (self->down_timeout)
@@ -1189,7 +619,11 @@ index 0000000..25c92d5
 +      g_source_destroy (self->down_timeout);
 +      self->down_timeout = NULL;
 +    }
-+
+ 
+-  cfg.free_fn = NULL;
+-  cfg.data = goodix_5e0a_fdt_down;
+-  cfg.data_len = sizeof (goodix_5e0a_fdt_down);
+-  return cfg;
 +  if (error)
 +    {
 +      fp_err ("5e0a failed to scan: %s (code: %d)", error->message, error->code);
@@ -1197,18 +631,25 @@ index 0000000..25c92d5
 +      return;
 +    }
 +  fp_dbg ("5e0a finished scan stage");
-+}
-+
+ }
+ 
+-static GoodixTls5xxMcuConfig
+-get_fdt_up_config (void)
 +static void
 +goodix5e0a_scan_start (FpDevice *dev)
-+{
+ {
+-  GoodixTls5xxMcuConfig cfg;
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 +  if (self->scan_ssm != NULL)
 +    {
 +      fp_dbg ("5e0a scan SSM already active, ignoring start request");
 +      return;
 +    }
-+
+ 
+-  cfg.free_fn = NULL;
+-  cfg.data = goodix_5e0a_fdt_up;
+-  cfg.data_len = sizeof (goodix_5e0a_fdt_up);
+-  return cfg;
 +  self->scan_ssm = fpi_ssm_new (dev, goodix5e0a_scan_run_state, SCAN_5E0A_NUM_STATES);
 +  fpi_ssm_start (self->scan_ssm, goodix5e0a_scan_complete);
 +}
@@ -1292,36 +733,44 @@ index 0000000..25c92d5
 +
 +  double denominator = sqrt (variance_a * variance_b);
 +  return denominator > 1e-6 ? covariance / denominator : 0.0;
-+}
-+
-+static FpImage *
-+process_raw_frame (GoodixTls5xxPix * pix)
-+{
+ }
+ 
+-/* Geometry: 19-col 4k+3 sampling + bilinear upscale kept as-is.
+- * ponytail: ceiling — dense_19x64.pgm (19x64) vs windows_unpacked.pgm (80x64)
+- * neither proves nor refutes 4k+3 (interp of dense != windows, mean abs diff
+- * ~44, different captures); leave algorithm alone until a same-capture PGM
+- * pair exists for a real diff. */
+ static FpImage *
+ process_raw_frame (GoodixTls5xxPix * pix)
+ {
+-  guint16 samples[19][GOODIX_5E0A_HEIGHT];
 +  const int W = GOODIX_5E0A_WIDTH;
 +  const int H = GOODIX_5E0A_HEIGHT;
 +  const int dst_w = GOODIX_5E0A_SCALED_WIDTH;
 +  const int dst_h = GOODIX_5E0A_SCALED_HEIGHT;
-+
-+  guint16 min_v = 65535, max_v = 0;
-+  guint active = 0;
+ 
+   guint16 min_v = 65535, max_v = 0;
+   guint active = 0;
+-  for (int k = 0; k < 19; ++k)
 +
 +  for (int r = 0; r < H; ++r)
-+    {
+     {
+-      int col = 4 * k + 3;
+-      for (int r = 0; r < GOODIX_5E0A_HEIGHT; ++r)
 +      for (int c = 0; c < W; ++c)
-+        {
+         {
+-          guint16 v = pix[col * GOODIX_5E0A_HEIGHT + r];
+-          samples[k][r] = v;
 +          guint16 v = pix[r * W + c];
-+          if (v > 30)
-+            {
-+              active++;
-+              if (v < min_v) min_v = v;
-+              if (v > max_v) max_v = v;
-+            }
-+        }
-+    }
-+
-+  if (min_v == 65535) min_v = 0;
-+  guint16 range = (max_v > min_v) ? (max_v - min_v) : 1;
-+
+           if (v > 30)
+             {
+               active++;
+@@ -245,64 +690,148 @@ process_raw_frame (GoodixTls5xxPix * pix)
+   if (min_v == 65535) min_v = 0;
+   guint16 range = (max_v > min_v) ? (max_v - min_v) : 1;
+ 
+-  const int W = GOODIX_5E0A_WIDTH * 2;   // 160
+-  const int H = GOODIX_5E0A_HEIGHT * 2;  // 128
 +  double horizontal_corr = goodix5e0a_axis_correlation (pix, W, H, 1, 0);
 +  double vertical_corr = goodix5e0a_axis_correlation (pix, W, H, 0, 1);
 +  double horizontal_lag4_corr = goodix5e0a_axis_correlation (pix, W, H, 4, 0);
@@ -1345,8 +794,14 @@ index 0000000..25c92d5
 +  g_message ("5e0a frame stats: active=%u, min_v=%u, max_v=%u, range=%u, declen=%u, h_corr=%.3f, v_corr=%.3f, h_lag4_corr=%.3f (native %dx%d WxH)",
 +             active, min_v, max_v, range, goodix5e0a_last_declen,
 +             horizontal_corr, vertical_corr, horizontal_lag4_corr, W, H);
-+
-+  if (active < 64 || range < 8)
+ 
+-  /* B9-air: empty-air frames must NOT full-range stretch to fake ridges.
+-   * ponytail: ceiling — bar (64 samples / range 8) grounded only on
+-   * fingerprint.pgm (697 active, range 356) vs clear-0.pgm (0 active);
+-   * re-tune against windows_unpacked.pgm before raising. Dim, not NULL:
+-   * 511's crop_frame never returns NULL and scan_on_read_img passes img
+-   * straight to fpi_image_device_image_captured, so NULL is unverified. */
+   if (active < 64 || range < 8)
 +    return NULL;
 +
 +  /* Remove the slowly varying pressure/offset field before global scaling.
@@ -1356,7 +811,11 @@ index 0000000..25c92d5
 +  float residual_min = G_MAXFLOAT;
 +  float residual_max = -G_MAXFLOAT;
 +  for (int y = 0; y < H; y++)
-+    {
+     {
+-      FpImage *dim = fp_image_new (W, H);
+-      dim->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
+-      memset (dim->data, 0, W * H);
+-      return dim;
 +      for (int x = 0; x < W; x++)
 +        {
 +          guint32 local_sum = 0;
@@ -1373,28 +832,56 @@ index 0000000..25c92d5
 +          residual_min = MIN (residual_min, value);
 +          residual_max = MAX (residual_max, value);
 +        }
-+    }
-+
+     }
+ 
+-  FpImage *img = fp_image_new (W, H);
+-  img->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;
 +  float residual_range = residual_max - residual_min;
 +  g_message ("5e0a local contrast: min=%.2f max=%.2f range=%.2f window=3x3 gain=%.2f",
 +             residual_min, residual_max, residual_range, GOODIX_5E0A_CONTRAST_GAIN);
 +  if (residual_range < 1.0f)
 +    return NULL;
-+
+ 
+-  for (int r = 0; r < H; ++r)
 +  guint8 normalized[GOODIX_5E0A_FRAME_SIZE];
 +  for (guint i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
-+    {
+     {
+-      float orig_r = (float) r / 2.0f;
+-      int r0 = (int) orig_r;
+-      int r1 = (r0 + 1 < GOODIX_5E0A_HEIGHT) ? r0 + 1 : r0;
+-      float r_frac = orig_r - (float) r0;
 +      int value = (int) roundf (128.0f + residual[i] * GOODIX_5E0A_CONTRAST_GAIN);
 +      normalized[i] = (guint8) CLAMP (value, 0, 255);
 +    }
-+
+ 
+-      for (int c = 0; c < W; ++c)
+-        {
+-          float orig_c = (float) c / 2.0f;
+-          float pos = (orig_c - 3.0f) / 4.0f;
+-          float val;
 +  /* Create the scaled 128x160 image directly via bilinear upscaling.
 +   * Use FPI_IMAGE_COLORS_INVERTED for capacitive ridges (high ADC = black).
 +   * Omit FPI_IMAGE_PARTIAL so remove_perimeter_pts=0 retains edge minutiae. */
 +  FpImage *scaled = fp_image_new (dst_w, dst_h);
 +  scaled->flags = FPI_IMAGE_COLORS_INVERTED;
 +  scaled->ppmm = 500.0 / 25.4;
-+
+ 
+-          if (pos <= 0.0f)
+-            {
+-              val = (float) samples[0][r0] * (1.0f - r_frac) + (float) samples[0][r1] * r_frac;
+-            }
+-          else if (pos >= 18.0f)
+-            {
+-              val = (float) samples[18][r0] * (1.0f - r_frac) + (float) samples[18][r1] * r_frac;
+-            }
+-          else
+-            {
+-              int k = (int) pos;
+-              float c_frac = pos - (float) k;
+-              float top = (float) samples[k][r0] * (1.0f - c_frac) + (float) samples[k + 1][r0] * c_frac;
+-              float bot = (float) samples[k][r1] * (1.0f - c_frac) + (float) samples[k + 1][r1] * c_frac;
+-              val = top * (1.0f - r_frac) + bot * r_frac;
+-            }
 +  for (int y = 0; y < dst_h; y++)
 +    {
 +      float src_y = (y + 0.5f) * 0.5f - 0.5f;
@@ -1402,7 +889,11 @@ index 0000000..25c92d5
 +      int y0 = (int) src_y;
 +      int y1 = (y0 + 1 < H) ? y0 + 1 : y0;
 +      float y_frac = src_y - (float) y0;
-+
+ 
+-          int norm = (int) (((val - (float) min_v) * 255.0f) / (float) range);
+-          if (norm < 0) norm = 0;
+-          if (norm > 255) norm = 255;
+-          img->data[r * W + c] = (guint8) norm;
 +      for (int x = 0; x < dst_w; x++)
 +        {
 +          float src_x = (x + 0.5f) * 0.5f - 0.5f;
@@ -1416,9 +907,10 @@ index 0000000..25c92d5
 +          float val = top * (1.0f - y_frac) + bot * y_frac;
 +          int norm = (int) roundf (val);
 +          scaled->data[y * dst_w + x] = (guint8) CLAMP (norm, 0, 255);
-+        }
-+    }
-+
+         }
+     }
+ 
+-  return img;
 +  g_message ("5e0a scaled image: %dx%d (WxH) flags=0x%02x active=%u range=%u ppmm=%.3f",
 +             scaled->width, scaled->height, scaled->flags, active, range, scaled->ppmm);
 +  return scaled;
@@ -1464,73 +956,54 @@ index 0000000..25c92d5
 +  if (bdata) g_free (bdata);
 +
 +  return count;
-+}
-+
-+static void
-+fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
-+{
-+  FpiDeviceGoodixTlsClass * gx_class = FPI_DEVICE_GOODIXTLS_CLASS (class);
-+  FpDeviceClass * dev_class = FP_DEVICE_CLASS (class);
-+  FpImageDeviceClass * img_dev_class = FP_IMAGE_DEVICE_CLASS (class);
-+  FpiDeviceGoodixTls5xxClass * xx_cls = FPI_DEVICE_GOODIXTLS5XX_CLASS (class);
-+
-+  xx_cls->process_raw_frame = process_raw_frame;
-+  xx_cls->scan_height = GOODIX_5E0A_HEIGHT;
-+  xx_cls->scan_width = GOODIX_5E0A_WIDTH;
-+  xx_cls->psk = goodix_5e0a_psk;
-+  xx_cls->psk_flags = GOODIX_5E0A_PSK_FLAGS;
-+  xx_cls->psk_len = sizeof (goodix_5e0a_psk);
-+  xx_cls->firmware_version = GOODIX_5E0A_FIRMWARE_VERSION;
-+  xx_cls->reset_number = GOODIX_5E0A_RESET_NUMBER;
-+  xx_cls->has_calibration = FALSE;
-+
-+  gx_class->interface = GOODIX_5E0A_INTERFACE;
-+  gx_class->ep_in = GOODIX_5E0A_EP_IN;
-+  gx_class->ep_out = GOODIX_5E0A_EP_OUT;
-+
-+  dev_class->id = "goodixtls5e0a";
-+  dev_class->full_name = "Goodix TLS Fingerprint Sensor 5e0a";
-+  dev_class->type = FP_DEVICE_TYPE_USB;
-+  dev_class->id_table = goodix_5e0a_id_table;
-+  dev_class->nr_enroll_stages = 8;
-+  dev_class->scan_type = FP_SCAN_TYPE_PRESS;
-+  dev_class->temp_hot_seconds = -1; // Disable thermal watchdog
-+
-+  img_dev_class->activate = dev_activate;
+ }
+ 
+ static void
+@@ -313,9 +842,6 @@ fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
+   FpImageDeviceClass * img_dev_class = FP_IMAGE_DEVICE_CLASS (class);
+   FpiDeviceGoodixTls5xxClass * xx_cls = FPI_DEVICE_GOODIXTLS5XX_CLASS (class);
+ 
+-  xx_cls->get_mcu_cfg = get_mcu_config;
+-  xx_cls->get_fdt_down_cfg = get_fdt_down_config;
+-  xx_cls->get_fdt_up_cfg = get_fdt_up_config;
+   xx_cls->process_raw_frame = process_raw_frame;
+   xx_cls->scan_height = GOODIX_5E0A_HEIGHT;
+   xx_cls->scan_width = GOODIX_5E0A_WIDTH;
+@@ -339,11 +865,11 @@ fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
+   dev_class->temp_hot_seconds = -1; // Disable thermal watchdog
+ 
+   img_dev_class->activate = dev_activate;
+-  /* ponytail: ceiling — bz3_threshold kept at 12 (511 uses 24); no
+-   * windows_unpacked.pgm vs clear-0.pgm minutiae validation yet, do not tune. */
 +  img_dev_class->change_state = goodix5e0a_change_state;
 +  img_dev_class->deactivate = goodix5e0a_deactivate;
-+  img_dev_class->bz3_threshold = 12;
+   img_dev_class->bz3_threshold = 12;
+-  img_dev_class->img_width = GOODIX_5E0A_WIDTH * 2;
+-  img_dev_class->img_height = GOODIX_5E0A_HEIGHT * 2;
 +  img_dev_class->img_width = GOODIX_5E0A_SCALED_WIDTH;
 +  img_dev_class->img_height = GOODIX_5E0A_SCALED_HEIGHT;
-+
-+  fpi_device_class_auto_initialize_features (dev_class);
-+}
+ 
+   fpi_device_class_auto_initialize_features (dev_class);
+ }
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.h b/libfprint/drivers/goodixtls/goodix5e0a.h
-new file mode 100644
-index 0000000..0044fa9
---- /dev/null
+index 0a16db7..0044fa9 100644
+--- a/libfprint/drivers/goodixtls/goodix5e0a.h
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.h
-@@ -0,0 +1,109 @@
-+// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
-+// Reverse engineered for NixOS
-+
-+#pragma once
-+
-+#define GOODIX_5E0A_INTERFACE (0)
-+#define GOODIX_5E0A_EP_IN (0x3 | FPI_USB_ENDPOINT_IN)
-+#define GOODIX_5E0A_EP_OUT (0x1 | FPI_USB_ENDPOINT_OUT)
-+
-+#define GOODIX_5E0A_FIRMWARE_VERSION ("GFUSB_GM168SEC_APP_10036")
-+#define GOODIX_5E0A_PSK_FLAGS (0xbb020001)
-+#define GOODIX_5E0A_RESET_NUMBER (2048)
-+
+@@ -11,11 +11,22 @@
+ #define GOODIX_5E0A_PSK_FLAGS (0xbb020001)
+ #define GOODIX_5E0A_RESET_NUMBER (2048)
+ 
+-#define GOODIX_5E0A_WIDTH (80)
+-#define GOODIX_5E0A_HEIGHT (64)
+-#define GOODIX_5E0A_SCAN_WIDTH (80)
+-#define GOODIX_5E0A_SCAN_HEIGHT (64)
 +#define GOODIX_5E0A_WIDTH (64)
 +#define GOODIX_5E0A_HEIGHT (80)
 +#define GOODIX_5E0A_SCALED_WIDTH (128)
 +#define GOODIX_5E0A_SCALED_HEIGHT (160)
 +#define GOODIX_5E0A_SCAN_WIDTH (64)
 +#define GOODIX_5E0A_SCAN_HEIGHT (80)
-+#define GOODIX_5E0A_FRAME_SIZE (GOODIX_5E0A_WIDTH * GOODIX_5E0A_HEIGHT)
+ #define GOODIX_5E0A_FRAME_SIZE (GOODIX_5E0A_WIDTH * GOODIX_5E0A_HEIGHT)
 +#define GOODIX_5E0A_FRAME_BLOCKS (80)
 +#define GOODIX_5E0A_BLOCK_BYTES (132)
 +#define GOODIX_5E0A_BLOCK_ACTIVE_BYTES (96)
@@ -1540,22 +1013,20 @@ index 0000000..0044fa9
 +#define GOODIX_5E0A_CONTRAST_GAIN (1.0f)
 +#define GOODIX_5E0A_ENROLL_MIN_MINUTIAE (12)
 +
-+
-+// Sensor Analog Front-End (AFE) Gain/Exposure Register Configuration
-+#define GOODIX_5E0A_REG_GAIN_EXPOSURE (0x022c)
-+#define GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL (0x0305)         /* Little-endian 16-bit: \x05\x03 */
-+#define GOODIX_5E0A_REG_GAIN_EXPOSURE_CALIB_VAL (0x030a)   /* Little-endian 16-bit: \x0a\x03 */
-+#define GOODIX_5E0A_REG_GAIN_EXPOSURE_RESET_VAL (0x020a)   /* Little-endian 16-bit: \x0a\x02 */
-+
-+
-+// Active TLS Pre-Shared Key extracted from DPAPI
-+static const guint8 goodix_5e0a_psk[] = {
-+  0xd8, 0x53, 0xad, 0x19, 0x41, 0xb2, 0xdc, 0x53,
-+  0x50, 0xc7, 0x66, 0xcd, 0x72, 0x6e, 0xf7, 0xa5,
-+  0xdf, 0x7d, 0x5f, 0xa3, 0x90, 0x53, 0xbf, 0xac,
-+  0x26, 0x9c, 0xe7, 0x52, 0xd7, 0xa8, 0xb2, 0xab
-+};
-+
+ 
+ // Sensor Analog Front-End (AFE) Gain/Exposure Register Configuration
+ #define GOODIX_5E0A_REG_GAIN_EXPOSURE (0x022c)
+@@ -32,55 +43,65 @@ static const guint8 goodix_5e0a_psk[] = {
+   0x26, 0x9c, 0xe7, 0x52, 0xd7, 0xa8, 0xb2, 0xab
+ };
+ 
+-// ChicagoH 52xD Configuration (256 bytes)
+-static const guint8 goodix_5e0a_config[] = {
+-  0x70, 0x11, 0x60, 0x71, 0x2c, 0x9d, 0x2c, 0xc9, 0x1c, 0xe5, 0x18, 0xfd, 0x00, 0xfd, 0x00, 0xfd,
+-  0x03, 0xba, 0x00, 0x01, 0x80, 0xca, 0x00, 0x08, 0x00, 0x84, 0x00, 0xbe, 0xc3, 0x86, 0x00, 0xb1,
+-  0xb6, 0x88, 0x00, 0xba, 0xba, 0x8a, 0x00, 0xb3, 0xb3, 0x8c, 0x00, 0xbc, 0xbc, 0x8e, 0x00, 0xb1,
+-  0xb1, 0x90, 0x00, 0xbb, 0xbb, 0x92, 0x00, 0xb1, 0xb1, 0x94, 0x00, 0x00, 0x00, 0x96, 0x00, 0x00,
+-  0x00, 0x98, 0x00, 0x00, 0x00, 0x9a, 0x00, 0x00, 0x00, 0xd2, 0x00, 0x00, 0x00, 0xd4, 0x00, 0x00,
 +// ChicagoH GF3658 DN3 Configuration (256 bytes, wbdi.dll offset 0x197c50, checksum 0x0e53)
 +static const guint8 goodix_5e0a_config[256] = {
 +  0xb0, 0x11, 0x60, 0x71, 0x2c, 0x9d, 0x2c, 0xc9, 0x1c, 0xe5, 0x18, 0xfd, 0x00, 0xfd, 0x00, 0xfd,
@@ -1563,9 +1034,17 @@ index 0000000..0044fa9
 +  0xc4, 0x88, 0x00, 0x00, 0xba, 0x8a, 0x00, 0x00, 0xb2, 0x8c, 0x00, 0x00, 0xaa, 0x8e, 0x00, 0x00,
 +  0xc1, 0x90, 0x00, 0xbb, 0xbb, 0x92, 0x00, 0xb1, 0xb1, 0x94, 0x00, 0x00, 0xa8, 0x96, 0x00, 0x00,
 +  0xb6, 0x98, 0x00, 0x00, 0x00, 0x9a, 0x00, 0x00, 0x00, 0xd2, 0x00, 0x00, 0x00, 0xd4, 0x00, 0x00,
-+  0x00, 0xd6, 0x00, 0x00, 0x00, 0xd8, 0x00, 0x00, 0x00, 0x50, 0x00, 0x01, 0x05, 0xd0, 0x00, 0x00,
-+  0x00, 0x70, 0x00, 0x00, 0x00, 0x72, 0x00, 0x78, 0x56, 0x74, 0x00, 0x34, 0x12, 0x20, 0x00, 0x10,
-+  0x40, 0x2a, 0x01, 0x02, 0x04, 0x22, 0x00, 0x01, 0x20, 0x24, 0x00, 0x32, 0x00, 0x80, 0x00, 0x01,
+   0x00, 0xd6, 0x00, 0x00, 0x00, 0xd8, 0x00, 0x00, 0x00, 0x50, 0x00, 0x01, 0x05, 0xd0, 0x00, 0x00,
+   0x00, 0x70, 0x00, 0x00, 0x00, 0x72, 0x00, 0x78, 0x56, 0x74, 0x00, 0x34, 0x12, 0x20, 0x00, 0x10,
+   0x40, 0x2a, 0x01, 0x02, 0x04, 0x22, 0x00, 0x01, 0x20, 0x24, 0x00, 0x32, 0x00, 0x80, 0x00, 0x01,
+-  0x00, 0x5c, 0x00, 0x01, 0x01, 0x56, 0x00, 0x24, 0x20, 0x58, 0x00, 0x01, 0x02, 0x32, 0x00, 0x04,
+-  0x02, 0x66, 0x00, 0x00, 0x02, 0x7c, 0x00, 0x00, 0x58, 0x82, 0x00, 0x7f, 0x08, 0x2a, 0x01, 0x82,
+-  0x07, 0x22, 0x00, 0x01, 0x20, 0x24, 0x00, 0x14, 0x00, 0x80, 0x00, 0x01, 0x40, 0x5c, 0x00, 0xea,
+-  0x00, 0x56, 0x00, 0x06, 0x14, 0x58, 0x00, 0x04, 0x02, 0x32, 0x00, 0x0c, 0x02, 0x66, 0x00, 0x00,
+-  0x02, 0x7c, 0x00, 0x00, 0x58, 0x82, 0x00, 0x80, 0x08, 0x2a, 0x01, 0x08, 0x00, 0x5c, 0x00, 0x01,
+-  0x01, 0x54, 0x00, 0x00, 0x01, 0x62, 0x00, 0x08, 0x04, 0x64, 0x00, 0x10, 0x00, 0x66, 0x00, 0x00,
+-  0x02, 0x7c, 0x00, 0x00, 0x58, 0x2a, 0x01, 0x08, 0x00, 0x5c, 0x00, 0xe8, 0x00, 0x52, 0x00, 0x08,
+-  0x00, 0x54, 0x00, 0x00, 0x01, 0x66, 0x00, 0x00, 0x02, 0x7c, 0x00, 0x00, 0x58, 0x20, 0xc5, 0x0e
 +  0x00, 0x5c, 0x00, 0x80, 0x00, 0x56, 0x00, 0x24, 0x20, 0x58, 0x00, 0x03, 0x02, 0x32, 0x00, 0x0c,
 +  0x02, 0x66, 0x00, 0x03, 0x00, 0x7c, 0x00, 0x00, 0x58, 0x82, 0x00, 0x80, 0x15, 0x2a, 0x01, 0x82,
 +  0x03, 0x22, 0x00, 0x01, 0x20, 0x24, 0x00, 0x14, 0x00, 0x80, 0x00, 0x01, 0x00, 0x5c, 0x00, 0x00,
@@ -1574,8 +1053,14 @@ index 0000000..0044fa9
 +  0x00, 0x54, 0x00, 0x10, 0x01, 0x62, 0x00, 0x04, 0x03, 0x64, 0x00, 0x19, 0x00, 0x66, 0x00, 0x03,
 +  0x00, 0x7c, 0x00, 0x01, 0x58, 0x2a, 0x01, 0x08, 0x00, 0x5c, 0x00, 0x00, 0x01, 0x52, 0x00, 0x08,
 +  0x00, 0x54, 0x00, 0x00, 0x01, 0x66, 0x00, 0x03, 0x00, 0x7c, 0x00, 0x01, 0x58, 0x00, 0x53, 0x0e
-+};
-+
+ };
+ 
+-// 27-byte FDT mode sequence
+-static const guint8 goodix_5e0a_fdt_mode[] = {
+-  0x0d, 0x01, 0x27, 0x01, 0x21, 0x01, 0x27, 0x01,
+-  0x23, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+-  0x00, 0x00, 0x00
 +/* Windows capture ground truth tables (APP_10036, goodix-win.pcapng) */
 +#define GOODIX_CMD_SESSION_D6               (0xd6)
 +#define GOODIX_CMD_MCU_SWITCH_TO_SLEEP_MODE (0x60)
@@ -1588,8 +1073,15 @@ index 0000000..0044fa9
 +/* Exact 10-byte image capture payload: 05 00 b0 00 b2 00 b0 00 b1 00 (37/37 identical in capture) */
 +static const guint8 goodix_5e0a_img_payload[10] = {
 +  0x05, 0x00, 0xb0, 0x00, 0xb2, 0x00, 0xb0, 0x00, 0xb1, 0x00
-+};
-+
+ };
+ 
+-// 39-byte FDT down touch detection sequence
+-static const guint8 goodix_5e0a_fdt_down[] = {
+-  0x9c, 0x01, 0x27, 0x01, 0x21, 0x01, 0x27, 0x01,
+-  0x23, 0x01, 0x8d, 0x8d, 0x86, 0x86, 0x97, 0x97,
+-  0x8f, 0x8f, 0x9b, 0x9b, 0x92, 0x92, 0x96, 0x96,
+-  0x8c, 0x8c, 0x01, 0x00, 0x05, 0x03, 0xa7, 0x00,
+-  0xa1, 0x00, 0xa7, 0x00, 0xa3, 0x00, 0x00
 +/* Exact 35-byte steady-state DOWN table S12 (pkts 302/328/406/432/792):
 + * 1c 01 b0 00 b2 00 b0 00 b1 00 + slots [80 b7 80 ce 80 aa 80 be 80 b1 80 c2] + 00 00 00 00 + b0 00 b2 00 b0 00 b1 00 00 */
 +static const guint8 goodix_5e0a_down_s12[35] = {
@@ -1597,8 +1089,15 @@ index 0000000..0044fa9
 +  0x80, 0xb7, 0x80, 0xce, 0x80, 0xaa, 0x80, 0xbe, 0x80, 0xb1, 0x80, 0xc2,
 +  0x00, 0x00, 0x00, 0x00,
 +  0xb0, 0x00, 0xb2, 0x00, 0xb0, 0x00, 0xb1, 0x00, 0x00
-+};
-+
+ };
+ 
+-// 39-byte FDT up touch release sequence (byte 26 is 0x00)
+-static const guint8 goodix_5e0a_fdt_up[] = {
+-  0x9c, 0x01, 0x27, 0x01, 0x21, 0x01, 0x27, 0x01,
+-  0x23, 0x01, 0x8d, 0x8d, 0x86, 0x86, 0x97, 0x97,
+-  0x8f, 0x8f, 0x9b, 0x9b, 0x92, 0x92, 0x96, 0x96,
+-  0x8c, 0x8c, 0x00, 0x00, 0x05, 0x03, 0xa7, 0x00,
+-  0xa1, 0x00, 0xa7, 0x00, 0xa3, 0x00, 0x00
 +/* Exact 35-byte DOWN retry table (pkt 114, sent after 0x80 poor contact status):
 + * 1c 01 b0 00 b2 00 b0 00 b1 00 + slots [80 b6 80 ce 80 aa 80 be 80 b2 80 c2] + 00 00 00 00 + b0 00 b2 00 b0 00 b1 00 00 */
 +static const guint8 goodix_5e0a_down_retry[35] = {
@@ -1606,8 +1105,11 @@ index 0000000..0044fa9
 +  0x80, 0xb6, 0x80, 0xce, 0x80, 0xaa, 0x80, 0xbe, 0x80, 0xb2, 0x80, 0xc2,
 +  0x00, 0x00, 0x00, 0x00,
 +  0xb0, 0x00, 0xb2, 0x00, 0xb0, 0x00, 0xb1, 0x00, 0x00
-+};
-+
+ };
+ 
+-// B4 finger-capture 0x20 payload lives in goodix.c payload_5e0a
+-// (45 03 a7 00 a1 00 a7 00 a3 00 per driver_52xd.py:299-302). Not duplicated
+-// here: base (goodix.c) must not include subclass header.
 +/* Exact 35-byte steady-state UP table U01 (pkts 42/50):
 + * 0e 01 b0 00 b2 00 b0 00 b1 00 + slots [80 94 80 c2 80 97 80 b1 80 a5 80 21] + 13 zeros */
 +static const guint8 goodix_5e0a_up_u01[35] = {
@@ -1615,54 +1117,23 @@ index 0000000..0044fa9
 +  0x80, 0x94, 0x80, 0xc2, 0x80, 0x97, 0x80, 0xb1, 0x80, 0xa5, 0x80, 0x21,
 +  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 +};
-+
-+static const FpIdEntry goodix_5e0a_id_table[] = {
-+  {.vid = 0x27c6, .pid = 0x5e0a},
-+  {.vid = 0, .pid = 0, .driver_data = 0},
-+};
+ 
+ static const FpIdEntry goodix_5e0a_id_table[] = {
+   {.vid = 0x27c6, .pid = 0x5e0a},
 diff --git a/libfprint/drivers/goodixtls/goodix5xx.c b/libfprint/drivers/goodixtls/goodix5xx.c
-index a75d28b..d6e7746 100644
+index 6156cfe..d6e7746 100644
 --- a/libfprint/drivers/goodixtls/goodix5xx.c
 +++ b/libfprint/drivers/goodixtls/goodix5xx.c
-@@ -27,6 +27,9 @@
- #include "drivers_api.h"
- #include "goodix.h"
+@@ -29,6 +29,8 @@
  #include <stdio.h>
-+#include <string.h>
-+
-+extern guint32 goodix5e0a_last_declen;
+ #include <string.h>
  
++extern guint32 goodix5e0a_last_declen;
++
  
  typedef struct
-@@ -50,6 +53,7 @@ enum SCAN_STAGES {
-   SCAN_STAGE_QUERY_MCU,
-   SCAN_STAGE_SWITCH_TO_FDT_MODE,
-   SCAN_STAGE_CALIBRATE,
-+  SCAN_STAGE_SWITCH_TO_FDT_DOWN_ARM,
-   SCAN_STAGE_SWITCH_TO_FDT_DOWN,
-   SCAN_STAGE_GET_IMG,
-   SCAN_STAGE_SWITCH_TO_FTD_UP,
-@@ -85,7 +89,18 @@ static void on_calibrate_scan(FpDevice* dev, guint8* data, guint16 len, gpointer
- static void calibrate_run(FpiSsm* ssm, FpDevice* dev) {
-   switch (fpi_ssm_get_cur_state(ssm)) {
-     case CALIBRATION_STAGE_FDT_UP:
--      send_switch_mode(dev, ssm, goodix_send_mcu_switch_to_fdt_up);
-+      {
-+        FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
-+        if (cls->get_fdt_up_cfg)
-+          {
-+            GoodixTls5xxMcuConfig cfg = cls->get_fdt_up_cfg ();
-+            goodix_send_mcu_switch_to_fdt_up (dev, cfg.data, cfg.data_len, cfg.free_fn, goodixtls5xx_check_none_cmd, ssm);
-+          }
-+        else
-+          {
-+            send_switch_mode (dev, ssm, goodix_send_mcu_switch_to_fdt_up);
-+          }
-+      }
-       break;
-     case CALIBRATION_STAGE_NAV0:
-       goodix_send_nav_0(dev, goodixtls5xx_check_none_cmd, ssm);
-@@ -330,60 +345,91 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
+ {
+@@ -343,6 +345,17 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
    FpiDeviceGoodixTls5xx* self = FPI_DEVICE_GOODIXTLS5XX(dev);
    FpiDeviceGoodixTls5xxPrivate* priv = fpi_device_goodixtls5xx_get_instance_private(self);
    FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
@@ -1680,44 +1151,10 @@ index a75d28b..d6e7746 100644
  
    GoodixTls5xxPix * raw_frame = calloc (cls->scan_width * cls->scan_height, sizeof (GoodixTls5xxPix));
    goodixtls5xx_decode_frame (raw_frame, len, data);
--  linear_subtract_inplace(raw_frame, priv->calibration_img, cls->scan_width * cls->scan_height);
--  guint8 * squashed = calloc (cls->scan_height * cls->scan_width, 1);
--  goodixtls5xx_squash_frame_linear (raw_frame, squashed, cls->scan_height * cls->scan_width);
-+  if (priv->calibration_img)
-+    linear_subtract_inplace(raw_frame, priv->calibration_img, cls->scan_width * cls->scan_height);
-+
-+  FpImage * img = NULL;
-+  if (cls->process_raw_frame)
-+    {
-+      img = cls->process_raw_frame (raw_frame);
-+    }
-+  else if (cls->process_frame)
-+    {
-+      guint8 * squashed = calloc (cls->scan_height * cls->scan_width, 1);
-+      goodixtls5xx_squash_frame_linear (raw_frame, squashed, cls->scan_height * cls->scan_width);
-+      img = cls->process_frame (squashed);
-+      free (squashed);
-+    }
-   free (raw_frame);
--  FpImage * img = cls->process_frame (squashed);
--  free(squashed);
- 
-   fpi_image_device_image_captured (img_dev, img);
- 
+@@ -368,19 +381,17 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
    fpi_ssm_next_state (ssm);
  }
  
--static void
--query_mcu_state_cb (FpDevice * dev, guchar * mcu_state, guint16 len,
--                    gpointer ssm, GError * error)
--{
--  if (error)
--    {
--      fpi_ssm_mark_failed (ssm, error);
--      return;
--    }
--  fpi_ssm_next_state (ssm);
--}
 -
  static void
  scan_get_img (FpDevice * dev, FpiSsm * ssm)
@@ -1735,100 +1172,94 @@ index a75d28b..d6e7746 100644
  
    switch (fpi_ssm_get_cur_state (ssm))
      {
-     case SCAN_STAGE_QUERY_MCU:
--      goodix_send_query_mcu_state (dev, query_mcu_state_cb, ssm);
-+      goodix_send_query_mcu_state (dev, goodixtls5xx_check_none, ssm);
+@@ -389,7 +400,6 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
        break;
      case SCAN_STAGE_SWITCH_TO_FDT_MODE:
--      send_switch_mode (dev, ssm, goodix_send_mcu_switch_to_fdt_mode);
-+      {
-+        GoodixTls5xxMcuConfig cfg = cls->get_mcu_cfg ();
-+        goodix_send_mcu_switch_to_fdt_mode (dev, cfg.data, cfg.data_len, cfg.free_fn, goodixtls5xx_check_none, ssm);
-+      }
-       break;
+       {
+-        FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
+         GoodixTls5xxMcuConfig cfg = cls->get_mcu_cfg ();
+         goodix_send_mcu_switch_to_fdt_mode (dev, cfg.data, cfg.data_len, cfg.free_fn, goodixtls5xx_check_none, ssm);
+       }
+@@ -397,53 +407,19 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
  
      case SCAN_STAGE_CALIBRATE:
--      do_calibration(dev, ssm);
-+      {
-+        if (cls->has_calibration)
-+          do_calibration (dev, ssm);
-+        else
-+          fpi_ssm_next_state (ssm);
-+      }
-+      break;
+       {
+-        FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
+         if (cls->has_calibration)
+           do_calibration (dev, ssm);
+         else
+           fpi_ssm_next_state (ssm);
+       }
+       break;
+-     /* ponytail: B5 arming order per driver_52xd.py:269-283 — 00-arm then
+-        01-wait. The 00-arm is a stack copy of the 01-wait table with byte 26
+-        cleared (no new heap helper; payload is memcpy'd synchronously by
+-        goodix_send_protocol so the stack buffer is safe). The arm is ACK-only
+-        (trace never shows a reply to it), so it uses the noreply sender;
+-        the 01-wait below stays blocking.
+-        ponytail ceiling: no sleep/query between arm and wait —
+-        goodix_send_query_mcu_state sends fixed 0x55 (goodix.c) vs the trace
+-        3-byte 00/01 payloads (driver_52xd.py:265-267), and the idle helper
+-        is 0x70 vs trace sleep; needs payload-plumbed transport helpers.
+-        Existing SCAN_STAGE_QUERY_MCU covers the pre-FDT query slot. */
 +
-+    case SCAN_STAGE_SWITCH_TO_FDT_DOWN_ARM:
+     case SCAN_STAGE_SWITCH_TO_FDT_DOWN_ARM:
+-      {
+-        FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
+-        if (cls->get_fdt_down_cfg)
+-          {
+-            GoodixTls5xxMcuConfig cfg = cls->get_fdt_down_cfg ();
+-            if (cfg.data && cfg.data_len > 26 && cfg.data_len <= 64)
+-              {
+-                guint8 arm[64];
+-                memcpy (arm, cfg.data, cfg.data_len);
+-                arm[26] = 0x00;
+-                goodix_send_mcu_switch_to_fdt_down_noreply (dev, arm, cfg.data_len, NULL, goodixtls5xx_check_none, ssm);
+-              }
+-            else
+-              {
+-                fpi_ssm_next_state (ssm);
+-              }
+-          }
+-        else
+-          {
+-            /* ponytail: 511 has no DOWN table; keep its legacy single-wait. */
+-            fpi_ssm_next_state (ssm);
+-          }
+-      }
 +      fpi_ssm_next_state (ssm);
        break;
-+
+ 
      case SCAN_STAGE_SWITCH_TO_FDT_DOWN:
--      send_switch_mode (dev, ssm, goodix_send_mcu_switch_to_fdt_down );
-+      {
-+        if (cls->get_fdt_down_cfg)
-+          {
-+            GoodixTls5xxMcuConfig cfg = cls->get_fdt_down_cfg ();
-+            goodix_send_mcu_switch_to_fdt_down (dev, cfg.data, cfg.data_len, cfg.free_fn, goodixtls5xx_check_none_cmd, ssm);
-+          }
-+        else
-+          {
-+            send_switch_mode (dev, ssm, goodix_send_mcu_switch_to_fdt_down);
-+          }
-+      }
+       {
+-        FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
+         if (cls->get_fdt_down_cfg)
+           {
+             GoodixTls5xxMcuConfig cfg = cls->get_fdt_down_cfg ();
+@@ -461,22 +437,8 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
+       scan_get_img (dev, ssm);
        break;
  
-     case SCAN_STAGE_GET_IMG:
-@@ -392,7 +438,31 @@ scan_run_state (FpiSsm * ssm, FpDevice * dev)
-       break;
- 
+-    /* ponytail: B6 post-finger release is FDT_MODE 0d..8d 27B
+-       (driver_52xd.py:285-295), not 0x34 — the 9c..00 UP vector was DOWN
+-       with byte 26 flipped and has no trace source. The post-finger bytes
+-       are derived from get_mcu_cfg with the 8d-block (16B at offset 10)
+-       patched from the DOWN table, last byte 00 (the no-reply half, which
+-       matches goodix_send_mcu_switch_to_fdt_mode's reply=FALSE semantics).
+-       Only one stage is used (fewer stages wins); the 01/blocking half
+-       needs reply=True support in the fdt_mode helper. Upgrade path: a
+-       real 5e0a capture table in goodix5e0a.h.
+-       ponytail: B3 — no POV/drv_state wiring here. It belongs to
+-       activation (goodix5e0a.c, owned by the 5e0a agent); the transport
+-       signatures are absent from goodix.h and has_calibration is FALSE
+-       for 5e0a so the calibration sub-SSM is skipped. */
      case SCAN_STAGE_SWITCH_TO_FTD_UP:
--      send_switch_mode (dev, ssm, goodix_send_mcu_switch_to_fdt_up );
-+      {
-+        if (cls->get_mcu_cfg && cls->get_fdt_down_cfg)
-+          {
-+            GoodixTls5xxMcuConfig mode = cls->get_mcu_cfg ();
-+            GoodixTls5xxMcuConfig down = cls->get_fdt_down_cfg ();
-+            if (mode.data && down.data && mode.data_len == 27 && down.data_len >= 27)
-+              {
-+                guint8 post[27];
-+                memcpy (post, mode.data, sizeof (post));
-+                memcpy (post + 10, down.data + 10, 16);
-+                post[26] = 0x00;
-+                goodix_send_mcu_switch_to_fdt_mode (dev, post, sizeof (post), NULL, goodixtls5xx_check_none, ssm);
-+                break;
-+              }
-+          }
-+        if (cls->get_fdt_up_cfg)
-+          {
-+            GoodixTls5xxMcuConfig cfg = cls->get_fdt_up_cfg ();
-+            goodix_send_mcu_switch_to_fdt_up (dev, cfg.data, cfg.data_len, cfg.free_fn, goodixtls5xx_check_none_cmd, ssm);
-+          }
-+        else
-+          {
-+            send_switch_mode (dev, ssm, goodix_send_mcu_switch_to_fdt_up);
-+          }
-+      }
-       break;
- 
-     case SCAN_STAGE_SWITCH_TO_FTD_DONE:
-@@ -425,8 +495,16 @@ void
- goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const guint8 *raw_frame)
- {
-   GoodixTls5xxPix *pix = frame;
-+  guint32 start = 0;
-+  guint32 end = (frame_size >= 4) ? (frame_size - 4) : frame_size;
- 
--  for (int i = 8; i != frame_size - 5; i += 6)
-+  if (frame_size >= 13 && (frame_size - 13) % 6 == 0)
-+    {
-+      start = 8;
-+      end = frame_size - 5;
-+    }
-+
-+  for (guint32 i = start; i + 6 <= end; i += 6)
-     {
-       const guint8 *chunk = raw_frame + i;
-       *pix++ = ((chunk[0] & 0xf) << 8) + chunk[1];
-@@ -436,43 +514,6 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const gu
+       {
+-        FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
+         if (cls->get_mcu_cfg && cls->get_fdt_down_cfg)
+           {
+             GoodixTls5xxMcuConfig mode = cls->get_mcu_cfg ();
+@@ -552,43 +514,6 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 frame_size, const gu
      }
  }
  
@@ -1872,57 +1303,11 @@ index a75d28b..d6e7746 100644
  static void
  dev_change_state (FpImageDevice * img_dev, FpiImageDeviceState state)
  {
-@@ -523,6 +564,7 @@ dev_deactivate (FpImageDevice *img_dev)
- 
-   if (cls->reset_state)
-     cls->reset_state (dev);
-+  goodix_stop_read_loop (dev);
-   fpi_image_device_deactivate_complete (img_dev, error);
- }
- 
-@@ -550,6 +592,8 @@ void
- fpi_device_goodixtls5xx_class_init (FpiDeviceGoodixTls5xxClass * self)
- {
-   self->get_mcu_cfg = NULL;
-+  self->get_fdt_down_cfg = NULL;
-+  self->get_fdt_up_cfg = NULL;
-   self->process_frame = NULL;
-   self->scan_height = 0;
-   self->scan_width = 0;
 diff --git a/libfprint/drivers/goodixtls/goodix5xx.h b/libfprint/drivers/goodixtls/goodix5xx.h
-index 855996e..306857e 100644
+index 7245877..306857e 100644
 --- a/libfprint/drivers/goodixtls/goodix5xx.h
 +++ b/libfprint/drivers/goodixtls/goodix5xx.h
-@@ -60,7 +60,8 @@ typedef struct
-   unsigned char * data;
- } GoodixTls5xxImage;
- 
--typedef FpImage *(*GoodixTls5xxProcessFrameFn)(guint8 * pix);
-+typedef FpImage *(*GoodixTls5xxProcessFrameFn)(guint8 * frame);
-+typedef FpImage *(*GoodixTls5xxProcessRawFrameFn)(GoodixTls5xxPix * frame);
- typedef GoodixTls5xxMcuConfig (*GoodixTls5xxGetMcuFn)(void);
- typedef void (*GoodixTls5xxResetStateFn)(FpDevice *);
- 
-@@ -69,7 +70,10 @@ struct _FpiDeviceGoodixTls5xxClass
-   FpiDeviceGoodixTlsClass    parent;
- 
-   GoodixTls5xxGetMcuFn       get_mcu_cfg; ///< provide the mcu config before fdt commands
-+  GoodixTls5xxGetMcuFn       get_fdt_down_cfg;
-+  GoodixTls5xxGetMcuFn       get_fdt_up_cfg;
-   GoodixTls5xxProcessFrameFn process_frame; ///< process a frame after it is decoded (e.g. crop it)
-+  GoodixTls5xxProcessRawFrameFn process_raw_frame; ///< process raw 12-bit ADC frame directly
-   GoodixTls5xxResetStateFn   reset_state; ///< callback to reset the state, may be NULL
- 
-   guint16                    scan_width; ///< width of the raw scanner image
-@@ -83,6 +87,7 @@ struct _FpiDeviceGoodixTls5xxClass
-   const guint8 * psk;
- 
-   int            reset_number; ///< only needed if goodixtls5xx_check_reset() is used
-+  gboolean       has_calibration; ///< TRUE if device requires calibration step (e.g. 511)
- };
- 
- /**
-@@ -228,17 +233,6 @@ void goodixtls5xx_decode_frame (GoodixTls5xxPix * frame,
+@@ -233,17 +233,6 @@ void goodixtls5xx_decode_frame (GoodixTls5xxPix * frame,
   */
  void goodixtls5xx_init_tls (FpDevice * dev);
  
@@ -1940,190 +1325,6 @@ index 855996e..306857e 100644
  /**
   * @brief Squashes the 2 byte pixels of a raw frame into the 1 byte pixels used
   * by libfprint.
-diff --git a/libfprint/drivers/goodixtls/goodix_proto.h b/libfprint/drivers/goodixtls/goodix_proto.h
-index 3b7316f..8f55c8e 100644
---- a/libfprint/drivers/goodixtls/goodix_proto.h
-+++ b/libfprint/drivers/goodixtls/goodix_proto.h
-@@ -27,6 +27,7 @@
- 
- #define GOODIX_FLAGS_MSG_PROTOCOL (0xa0)
- #define GOODIX_FLAGS_TLS (0xb0)
-+#define GOODIX_FLAGS_TLS_DATA (0xb2)
- 
- #define GOODIX_CMD_NOP (0x00)
- #define GOODIX_CMD_MCU_GET_IMAGE (0x20)
-@@ -43,9 +44,12 @@
- #define GOODIX_CMD_RESET (0xa2)
- #define GOODIX_CMD_READ_OTP (0xa6)
- #define GOODIX_CMD_FIRMWARE_VERSION (0xa8)
-+#define GOODIX_CMD_SET_POV_CONFIG (0xac)
- #define GOODIX_CMD_QUERY_MCU_STATE (0xae)
- #define GOODIX_CMD_ACK (0xb0)
-+#define GOODIX_CMD_SET_DRV_STATE (0xc4)
- #define GOODIX_CMD_REQUEST_TLS_CONNECTION (0xd0)
-+#define GOODIX_CMD_MCU_GET_POV_IMAGE (0xd2)
- #define GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED (0xd4)
- #define GOODIX_CMD_PRESET_PSK_WRITE (0xe0)
- #define GOODIX_CMD_PRESET_PSK_READ (0xe4)
-diff --git a/libfprint/drivers/goodixtls/goodixtls.c b/libfprint/drivers/goodixtls/goodixtls.c
-index 215ef53..f32e4f0 100644
---- a/libfprint/drivers/goodixtls/goodixtls.c
-+++ b/libfprint/drivers/goodixtls/goodixtls.c
-@@ -42,23 +42,42 @@
- static GError *
- err_from_ssl (void)
- {
--  GError *err = malloc (sizeof (GError));
-   unsigned long code = ERR_get_error ();
--
--  err->code = code;
-   const char *msg = ERR_reason_error_string (code);
- 
--  err->message = malloc (strlen (msg));
--  strcpy (err->message, msg);
--  return err;
-+  return g_error_new (FP_DEVICE_ERROR, FP_DEVICE_ERROR_GENERAL,
-+                      "SSL error (0x%lx): %s", code, msg ? msg : "unknown SSL error");
- }
- 
-+#include "goodix5xx.h"
-+
- static unsigned int
- tls_server_psk_server_callback (SSL           *ssl,
-                                 const char    *identity,
-                                 unsigned char *psk,
-                                 unsigned int   max_psk_len)
- {
-+  GoodixTlsServer *server = SSL_get_app_data (ssl);
-+  if (server && server->user_data)
-+    {
-+      FpDevice *dev = FP_DEVICE (server->user_data);
-+      if (FPI_IS_DEVICE_GOODIXTLS5XX (dev))
-+        {
-+          FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
-+          if (cls && cls->psk && cls->psk_len > 0)
-+            {
-+              if (cls->psk_len > max_psk_len)
-+                {
-+                  fp_err ("max psk length (%d) too short (needs %d)", max_psk_len, cls->psk_len);
-+                  return 0;
-+                }
-+              memcpy (psk, cls->psk, cls->psk_len);
-+              fp_dbg ("Using device-specific PSK (%d bytes)", cls->psk_len);
-+              return cls->psk_len;
-+            }
-+        }
-+    }
-+
-   const int len = 32;
- 
-   fp_dbg ("PSK WANTED %d", max_psk_len);
-@@ -151,14 +170,47 @@ goodix_tls_init_serve (void *me)
- gboolean
- goodix_tls_server_deinit (GoodixTlsServer *self, GError **error)
- {
--  SSL_shutdown (self->ssl_layer);
--  SSL_free (self->ssl_layer);
-+  if (!self)
-+    return TRUE;
-+
-+  /* First shutdown both socket descriptors.
-+   * This immediately unblocks any thread in SSL_accept() or read() with EOF. */
-+  if (self->client_fd >= 0)
-+    shutdown (self->client_fd, SHUT_RDWR);
-+  if (self->sock_fd >= 0)
-+    shutdown (self->sock_fd, SHUT_RDWR);
-+
-+  /* Now join the serve thread which unblocks instantly */
-+  if (self->serve_thread)
-+    {
-+      pthread_join (self->serve_thread, NULL);
-+      self->serve_thread = 0;
-+    }
-+
-+  /* Close file descriptors after the worker thread has safely exited */
-+  if (self->client_fd >= 0)
-+    {
-+      close (self->client_fd);
-+      self->client_fd = -1;
-+    }
-+  if (self->sock_fd >= 0)
-+    {
-+      close (self->sock_fd);
-+      self->sock_fd = -1;
-+    }
- 
--  close (self->client_fd);
--  close (self->sock_fd);
-+  if (self->ssl_layer)
-+    {
-+      SSL_shutdown (self->ssl_layer);
-+      SSL_free (self->ssl_layer);
-+      self->ssl_layer = NULL;
-+    }
- 
--  SSL_CTX_free (self->ssl_ctx);
--  pthread_join (self->serve_thread, NULL);
-+  if (self->ssl_ctx)
-+    {
-+      SSL_CTX_free (self->ssl_ctx);
-+      self->ssl_ctx = NULL;
-+    }
- 
-   return TRUE;
- }
-@@ -166,32 +218,41 @@ goodix_tls_server_deinit (GoodixTlsServer *self, GError **error)
- gboolean
- goodix_tls_server_init (GoodixTlsServer *self, GError **error)
- {
-+  self->sock_fd = -1;
-+  self->client_fd = -1;
-+  self->serve_thread = 0;
-+  self->ssl_layer = NULL;
-+  self->ssl_ctx = NULL;
-+
-   SSL_load_error_strings ();
-   OpenSSL_add_ssl_algorithms ();
-   SSL_library_init ();
-   self->ssl_ctx = tls_server_create_ctx ();
-+  if (self->ssl_ctx == NULL)
-+    {
-+      fp_dbg ("Unable to create TLS server context\n");
-+      *error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL, "Unable to "
-+                                                                  "create TLS "
-+                                                                  "server "
-+                                                                  "context");
-+      return FALSE;
-+    }
-   tls_server_config_ctx (self->ssl_ctx);
- 
--  int socks[2] = {0, 0};
-+  int socks[2] = {-1, -1};
-   if (socketpair (AF_UNIX, SOCK_STREAM, 0, socks) != 0)
-     {
-       g_set_error (error, G_FILE_ERROR, errno,
-                    "failed to create socket pair: %s", strerror (errno));
-+      SSL_CTX_free (self->ssl_ctx);
-+      self->ssl_ctx = NULL;
-       return FALSE;
-     }
-   self->sock_fd = socks[0];
-   self->client_fd = socks[1];
- 
--  if (self->ssl_ctx == NULL)
--    {
--      fp_dbg ("Unable to create TLS server context\n");
--      *error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL, "Unable to "
--                                                                  "create TLS "
--                                                                  "server "
--                                                                  "context");
--      return FALSE;
--    }
-   self->ssl_layer = SSL_new (self->ssl_ctx);
-+  SSL_set_app_data (self->ssl_layer, self);
-   tls_config_ssl (self->ssl_layer);
-   SSL_set_fd (self->ssl_layer, self->sock_fd);
- 
 diff --git a/libfprint/fp-image.c b/libfprint/fp-image.c
 index 8870cfa..afb6098 100644
 --- a/libfprint/fp-image.c
@@ -2175,48 +1376,3 @@ index 00289b4..867fc02 100644
  
        if (score >= bz3_threshold)
          return FPI_MATCH_SUCCESS;
-diff --git a/libfprint/fprint-list-udev-hwdb.c b/libfprint/fprint-list-udev-hwdb.c
-index b726b67..9e5680b 100644
---- a/libfprint/fprint-list-udev-hwdb.c
-+++ b/libfprint/fprint-list-udev-hwdb.c
-@@ -117,7 +117,6 @@ static const FpIdEntry whitelist_id_table[] = {
-   { .vid = 0x27c6, .pid = 0x55a4 },
-   { .vid = 0x27c6, .pid = 0x55b4 },
-   { .vid = 0x27c6, .pid = 0x5740 },
--  { .vid = 0x27c6, .pid = 0x5e0a },
-   { .vid = 0x27c6, .pid = 0x581a },
-   { .vid = 0x2808, .pid = 0x9338 },
-   { .vid = 0x2808, .pid = 0x93a9 },
-diff --git a/libfprint/meson.build b/libfprint/meson.build
-index 6df412a..a5c9cb0 100644
---- a/libfprint/meson.build
-+++ b/libfprint/meson.build
-@@ -141,6 +141,8 @@ driver_sources = {
-         [ 'drivers/goodixmoc/goodix.c', 'drivers/goodixmoc/goodix_proto.c' ],
-     'goodixtls511' :
-         [ 'drivers/goodixtls/goodix511.c' ],
-+    'goodixtls5e0a' :
-+        [ 'drivers/goodixtls/goodix5e0a.c' ],
-     'fpcmoc' :
-         [ 'drivers/fpcmoc/fpc.c' ],
- }
-diff --git a/meson.build b/meson.build
-index fa27507..5cbde2e 100644
---- a/meson.build
-+++ b/meson.build
-@@ -125,6 +125,7 @@ default_drivers = [
-     'upekts',
-     'goodixmoc',
-     'goodixtls511',
-+    'goodixtls5e0a',
-     'nb1010',
-     'fpcmoc',
- 
-@@ -160,6 +161,7 @@ driver_helper_mapping = {
-     'uru4000' : [ 'nss' ],
-     'elanspi' : [ 'udev' ],
-     'goodixtls511' : [ 'goodixtls' ],
-+    'goodixtls5e0a' : [ 'goodixtls' ],
-     'virtual_image'          : [ 'virtual' ],
-     'virtual_device'         : [ 'virtual' ],
-     'virtual_device_storage' : [ 'virtual' ],
