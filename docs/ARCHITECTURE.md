@@ -1,40 +1,57 @@
 # Architecture (final goal, stated first)
 
-This driver is a **host-image `libfprint` driver**: the sensor streams encrypted
-frames over bulk USB, the driver decrypts, decodes, and normalizes them into
-grayscale images, and the in-tree NBIS extractor plus Bozorth3 matcher decides.
-There is no on-chip template storage, no on-chip enroll, and no on-chip match.
-Read `docs/adr/0001-host-image-matching.md` before touching the match path.
+Host-image `libfprint` driver: the sensor streams encrypted frames over bulk
+USB, the driver decrypts, decodes, and normalizes them into grayscale images,
+and the in-tree NBIS extractor plus Bozorth3 matcher decides. No on-chip
+template storage, enroll, or match.
 
 ## Pipeline
 
 1. **Transport**: bulk endpoints, interface 0; flush-tolerant NOP, reset,
-   chip-ID read, OTP priming, firmware check, ChicagoH provisioning, chip
-   enable, then TLS 1.2 PSK session (`TLS_PSK_WITH_AES_128_CBC_SHA256`).
-2. **Touch gating**: sampled finger-down replies; touch if and only if the
-   channel byte is live and channel energy is positive — never the status
-   byte. Idle replies re-sample on a short silent timer. See
-   `docs/adr/0003-sampled-touch-gating.md`.
+   chip-ID read, OTP priming (`0xa6`), firmware check, ChicagoH provisioning,
+   chip enable, then TLS 1.2 PSK session (`TLS_PSK_WITH_AES_128_CBC_SHA256`).
+2. **Touch gating**: sampled finger-down replies; touch iff the channel byte
+   is live and channel energy is positive — never the status byte. Idle
+   replies re-sample on a short silent timer.
 3. **Capture**: full decrypted wire frame per touch; empty air stays silent
    and never becomes a template.
 4. **Decode**: strip the active prefix of each of the eighty blocks, discard
    deterministic zero padding and footer, unpack 12-bit words in block order
-   into the natural raster. See `docs/adr/0002-canonical-wire-layout.md`.
-5. **Image**: local-mean residual flattening, direct mid-gray contrast mapping
-   at unity gain, 2x bilinear upscale to 128x160, inverted polarity for
-   capacitive ridges, explicit 500 DPI resolution.
+   into the native 64x80 raster.
+5. **Image**: 3x3 local-mean residual flattening, direct mid-gray contrast
+   mapping at unity gain, 2x bilinear upscale to 128x160, inverted polarity
+   for capacitive ridges, explicit 500 DPI resolution.
 6. **Match (host)**: NBIS minutiae extraction; enrollment admits only touches
-   clearing the enrollment floor (faint touches retry with a firmer-press
-   prompt); verification forwards every capture to the matcher; match
-   threshold twelve with the in-tree floor of ten.
+   clearing the enrollment floor of twelve (faint touches retry with a
+   firmer-press prompt); verification forwards every capture to the matcher;
+   match threshold twelve with the in-tree floor of ten.
+
+## Decisions
+
+- **Host matching, not match-on-chip**: the firmware exposes capture and
+  finger-detect primitives only — no store, enroll, or match — and a custom
+  matcher would be a second invention to sell upstream alongside the driver.
+  The MR argues an image driver with software matching and brings
+  pixel-compared capture tests, not storage-protocol tests.
+- **Canonical wire layout**: eighty blocks of 96 active bytes plus 36 zero-pad
+  bytes with a short footer, decoded in block order. Contiguous unpack
+  swallowed pads as pixels; strided-transpose sliced scanlines, inverted
+  correlation, and zeroed minutiae; sibling-family geometries sheared
+  scanlines. Any geometry change needs correlation plus minutiae evidence
+  against this baseline, never visual inspection.
+- **Sampled gating, not a blocking wait**: the MCU answers in milliseconds
+  even on empty air, so a blocking wait fires on stale data or hangs on the
+  first collision; the status byte cannot separate idle air from poor
+  contact. Cancellation disarms the re-sample timer and the scan state
+  machine together; latency work builds on prompt capture, not on removing a
+  wait that never existed.
 
 ## Frozen (do not re-litigate without journal-backed reason)
 
 - USB transport shape, reset phasing, TLS-PSK negotiation, ChicagoH
   provisioning blob and checksum, firmware identity, PSK flags.
 - Channel-energy gating rule; silence on empty air.
-- Canonical wire layout (active prefix per block, zero padding, footer) and
-  natural raster geometry with inverted polarity.
+- Canonical wire layout and native raster geometry with inverted polarity.
 - Synchronous teardown: reset state, shut down TLS, stop the read loop,
   complete immediately.
 - Class shape: image device, press scan type, eight enrollment stages,
@@ -42,27 +59,27 @@ Read `docs/adr/0001-host-image-matching.md` before touching the match path.
 
 ## Active (the only legal workfront)
 
-- Hardware verification of PAM/sudo lifecycle and sub-300ms instant release
-  (tickets 19, 20 — implemented, awaiting hardware verdicts).
-- Transport memory-hygiene validation run, compile-link isolation of shared
-  code from model-specific symbols, base runtime hardening, per-frame debug
-  dump removal (tickets 21–24).
-- Upstream packaging: patch split into logical commits, Meson and device-table
-  wiring, `umockdev` replay coverage; see `docs/UPSTREAM.md`.
+- Tickets 19–20: PAM/sudo lifecycle and sub-300ms instant release
+  (implemented, awaiting hardware verdicts).
+- Tickets 21–24: transport memory hygiene, compile-link isolation, base
+  runtime hardening, per-frame debug dump removal.
+- Upstream packing: logical commits, Meson and device-table wiring,
+  `umockdev` replay coverage; see `docs/UPSTREAM.md`.
 
 ## Retired (must not be followed)
 
 - Blocking finger-down wait, status-byte gating, `01`-first capture payload,
   contiguous first-bytes decode, strided column extraction with transpose,
   sibling-family geometries, POV handshake requirement, verify-path retry
-  scans. Each was superseded or falsified with hardware evidence; the ticket
-  chain `14 → 15 → 16 → 17 → 18` records the sequence. Superseded tickets
-  read like live instructions — check the `Status` header before acting.
+  scans. The ticket chain `14 → 15 → 16 → 17 → 18` records the sequence.
+  Superseded tickets read like live instructions — check the `Status` header
+  before acting.
 
 ## Errata (traps for future readers)
 
-- The OTP priming command is `0xa6`, not `0x94` (`0x94` is the powerdown-scan
-  frequency command). Some progress notes say `0x94`; the code is correct.
+- The OTP priming command is `0xa6`, not `0x94` (`0x94` is the
+  powerdown-scan frequency command). Some progress notes say `0x94`; the code
+  is correct.
 - Native geometry is 64 wide by 80 tall; early notes using 80x64 describe the
   falsified transpose era.
 - Test-suite totals drift across notes (375 / 385 / 387). Recount from the
@@ -77,7 +94,7 @@ Read `docs/adr/0001-host-image-matching.md` before touching the match path.
 
 ## Evidence hierarchy
 
-Journal lines and packet numbers beat prose. This file, `README.md`, and
-`docs/PROGRESS.md` are claims; `journalctl -u fprintd` output, `umockdev`
-traces, and the hermetic test suite are evidence. `README.md` is
-aspirational by policy (`AGENTS.md`); trust it last.
+Journal lines and packet numbers beat prose. This file and `README.md` are
+claims; `journalctl -u fprintd` output, `umockdev` traces, and the hermetic
+suite are evidence. `README.md` is aspirational by policy (`AGENTS.md`);
+trust it last.

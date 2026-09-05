@@ -23,64 +23,65 @@ the merge actually requires.
 
 ## Solution
 
-Publish a small trusted foundation: a project glossary, three decision
-records, a final-goal-first architecture note, an upstream roadmap, and a
-gap adjudication — then keep them current as the merge workfront moves.
-Future work cites the foundation instead of re-deriving it.
+Publish a small trusted foundation: a final-goal-first architecture note,
+an upstream roadmap, and a gap adjudication — then keep them current as the
+merge workfront moves. Future work cites the foundation instead of
+re-deriving it.
 
 ## User Stories
 
-1. As a new contributor, I want one glossary for sensor terms, so that I never confuse the wire frame with the processed image.
-2. As a new contributor, I want the driver classification stated first, so that I never design on-chip storage the firmware lacks.
-3. As a driver author, I want the frozen behaviors listed, so that I never re-litigate proven transport or gating without new hardware evidence.
-4. As a driver author, I want retired approaches named, so that I never reimplement a falsified decoder or payload.
-5. As a driver author, I want the active workfront listed, so that I pick up only unblocked merge work.
-6. As a reviewer, I want each early gap adjudicated, so that I can see at a glance what is fixed, retired, or still open.
-7. As a reviewer, I want known documentation traps corrected in one place, so that wrong command numbers and geometries stop spreading.
-8. As an enrolled user, I want enrollment to advance only on real touch, so that empty air never creates a gallery entry.
-9. As an enrolled user, I want faint touches retried with guidance, so that weak captures never pollute my gallery.
-10. As an enrolled user, I want verification to match on a firm first touch, so that login feels instant.
-11. As an enrolled user, I want repeated verifications to succeed without daemon restarts, so that daily auth is reliable.
-12. As a PAM user, I want exclusive device claims to release cleanly, so that sudo never reports an already-claimed device.
-13. As a PAM user, I want cancelled prompts to free the sensor immediately, so that the next authentication starts fresh.
-14. As a laptop owner, I want suspend and resume to re-initialize the sensor, so that the first login after sleep works.
-15. As a laptop owner, I want stalled hardware to fail gracefully, so that a login prompt never hangs indefinitely.
-16. As a downstream packager, I want the driver behind a clean build option, so that single-driver and all-driver builds both link.
-17. As a downstream packager, I want device ids generated into system rules, so that no hand-written rules drift.
-18. As an upstream maintainer, I want replay traces for every core operation, so that I can test without owning the laptop.
-19. As an upstream maintainer, I want warning-clean builds under the project style checker, so that CI stays green.
-20. As an upstream maintainer, I want a plain-language derivation statement, so that I can confirm the work is clean-room.
-21. As a future agent, I want evidence ranked above prose, so that journals and traces settle every dispute.
+1. As a driver author, I want frozen behaviors, retired approaches, and each
+   early gap adjudicated in one place, so that I never re-litigate proven
+   transport, reimplement a falsified decoder, or quote a wrong command
+   byte or geometry.
+2. As an enrolled user, I want enrollment to advance only on real touch and
+   faint touches retried with guidance, so that empty air and weak captures
+   never create a gallery entry.
+3. As an enrolled user, I want verification to match on a firm first touch
+   and repeat without daemon restarts, so that login feels instant and
+   daily auth is reliable.
+4. As a PAM user, I want exclusive device claims to release cleanly and
+   cancelled prompts to free the sensor immediately, so that sudo never
+   reports an already-claimed device.
+5. As a laptop owner, I want suspend/resume to re-initialize the sensor and
+   stalled hardware to fail gracefully, so that post-sleep login works and
+   a prompt never hangs indefinitely.
+6. As a downstream packager, I want clean build flavors and generated
+   device ids and system rules, so that single-driver and all-driver builds
+   link and no hand-written rules drift.
+7. As an upstream maintainer, I want replay traces for every core operation,
+   warning-clean builds under the project style checker, and a plain-language
+   clean-room derivation statement, so that I can test without owning the
+   laptop and confirm the work merges cleanly.
+8. As a future agent, I want evidence ranked above prose, so that journals
+   and traces settle every dispute.
 
 ## Implementation Decisions
 
-- The driver is classified as a host-image device with press scan type,
-  eight enrollment stages, and host minutiae matching; no on-chip storage,
-  enroll, or match interfaces exist.
+- The driver is a host-image device with press scan type, eight enrollment
+  stages, and host minutiae matching; match threshold twelve with the
+  in-tree floor of ten; no on-chip storage, enroll, or match exists.
 - The touch gate is sampled channel energy with silent re-polling on idle;
   the status byte is never a gate input and no blocking wait is assumed.
 - The wire layout is eighty padded blocks plus a footer decoded in order
-  into the natural raster; contiguous-dump and transposed-column decoders
+  into the native raster; contiguous-dump and transposed-column decoders
   are recorded as falsified alternatives.
 - The image module flattens local offset, maps contrast directly around
   mid-gray at unity gain, upscales twofold with inverted capacitive
   polarity, and tags explicit high resolution; the enrollment floor admits
   only sufficiently detailed touches.
-- The transport module owns flush-tolerant startup, reset, identification,
-  OTP priming, provisioning, chip enable, and the encrypted session; the
-  activation and scan state machines are separate modules with a
-  concurrency guard and joint timer cleanup on teardown.
+- The transport module owns flush-tolerant startup through the encrypted
+  session; the activation and scan state machines are separate modules with
+  a concurrency guard and joint timer cleanup on teardown.
 - The test harness keeps its synthetic protocol mocks for regression but
   they are explicitly not verification evidence and not upstream replay
-  coverage; the new replay module records real USB traffic per core
-  operation.
+  coverage; the replay module records real USB traffic per core operation.
 - Packaging keeps the downstream overlay intact while the upstream
   submission is split into logical commits for transport, driver,
   recordings, and device-table wiring.
-- The foundation documents are the glossary, three decision records
-  (host matching, wire layout, sampled gating), the architecture note, the
-  upstream roadmap, and this ticket; the old research-only gap list stays
-  immutable history with a pointer to its adjudication.
+- The foundation documents are the architecture note, the upstream roadmap,
+  the gap adjudication, and this ticket; the old research-only gap list
+  stays immutable history with a pointer to its adjudication.
 
 ## Testing Decisions
 
@@ -106,10 +107,9 @@ Future work cites the foundation instead of re-deriving it.
 
 ## Further Notes
 
-- Foundation files: project glossary at the repo root, decision records
-  under the architecture-docs directory, architecture and upstream notes
-  alongside progress notes, gap adjudication alongside the frozen gap
-  list, and this ticket in the file-based issue tracker.
+- Foundation files: the architecture and upstream notes alongside the
+  progress notes, the gap adjudication alongside the frozen gap list, and
+  this ticket in the file-based issue tracker.
 - Keep exactly one active workfront list; when tickets 19–24 move, update
   the architecture note in the same change.
 - If upstream guidance shifts (style checker, harness layout, secret

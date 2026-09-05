@@ -13,7 +13,7 @@ deactivate, change-state — and report captures for the in-tree matcher.
 Reference shapes: `egis0570`, `vfs5011` upstream; counter-precedent: all
 upstream Goodix drivers are match-on-chip (`goodixmoc`) with on-chip storage
 semantics this sensor lacks, so the MR must argue the image classification
-explicitly (see `docs/adr/0001-host-image-matching.md`).
+explicitly.
 
 - Internal device API: `libfprint/drivers_api.h`
 - Image device API: `libfprint/fp-image-device.h`, `libfprint/fpi-image-device.h`
