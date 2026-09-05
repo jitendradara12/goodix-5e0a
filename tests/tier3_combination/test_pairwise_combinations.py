@@ -6,6 +6,7 @@ Cross-feature interaction tests validating state machines, protocol lifecycles, 
 import unittest
 import struct
 import socket
+from tests.repo_paths import repo
 from tests.test_utils import (
     MockGoodixMCU, encode_pack, encode_protocol, decode_pack, decode_protocol,
     decode_12bit_frame, decode_chicagoh_frame, pack_12bit_frame, squash_frame_linear,
@@ -256,7 +257,7 @@ class TestPairwiseCombinations(unittest.TestCase):
     # Pairwise 17: Driver Class Inheritance + Auto-feature initialization
     def test_pair_17_driver_class_inheritance(self):
         """Pair 17: Subclassing verification and auto feature init."""
-        with open("/home/sastauser/code/temp/goodix/libfprint-driver/goodix5e0a.c", "r") as f:
+        with open(repo("libfprint-driver", "goodix5e0a.c"), "r") as f:
             content = f.read()
         self.assertIn("G_DEFINE_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a,", content)
         self.assertIn("FPI_TYPE_DEVICE_GOODIXTLS5XX", content)
@@ -265,7 +266,7 @@ class TestPairwiseCombinations(unittest.TestCase):
     # Pairwise 18: Patch evaluation + Derivation compilation + Udev rules generation
     def test_pair_18_patch_and_nixos_module_integrity(self):
         """Pair 18: Patch consistency with NixOS derivation configuration."""
-        with open("/home/sastauser/code/temp/goodix/libfprint-goodix.nix", "r") as f:
+        with open(repo("libfprint-goodix.nix"), "r") as f:
             nix_content = f.read()
         self.assertIn("0001-Add-driver-support-for-Goodix-27c6-5e0a.patch", nix_content)
         self.assertIn("-Ddrivers=goodixtls5e0a", nix_content)

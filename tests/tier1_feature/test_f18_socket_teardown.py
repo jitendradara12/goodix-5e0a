@@ -4,11 +4,12 @@ Requirements: shutdown(fd, SHUT_RDWR) before thread join to prevent PAM hangs.
 """
 
 import unittest
+from tests.repo_paths import repo
 
 class TestF18SocketTeardown(unittest.TestCase):
 
     def setUp(self):
-        self.goodixtls_c_path = "/home/sastauser/code/temp/goodix/libfprint-driver/goodixtls.c"
+        self.goodixtls_c_path = repo("libfprint-driver", "goodixtls.c")
 
     def test_shutdown_shut_rdwr_before_thread_join(self):
         """Verify shutdown(fd, SHUT_RDWR) is called on client socket to break blocking read/write."""

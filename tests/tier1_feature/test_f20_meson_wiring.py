@@ -5,7 +5,11 @@ Requirements: Wire goodixtls5e0a into meson.build and libfprint/meson.build.
 
 import unittest
 import os
+from tests.repo_paths import BUILD_TREE
 
+BUILD_TREE_MISSING = "deployed build tree /tmp/libfprint-goodix absent"
+
+@unittest.skipUnless(BUILD_TREE.is_dir(), BUILD_TREE_MISSING)
 class TestF20MesonWiring(unittest.TestCase):
 
     def setUp(self):

@@ -4,11 +4,12 @@ Requirements: Use g_cancellable_cancel and g_cancellable_reset to prevent uncanc
 """
 
 import unittest
+from tests.repo_paths import repo
 
 class TestF17USBCancel(unittest.TestCase):
 
     def setUp(self):
-        self.goodix_c_path = "/home/sastauser/code/temp/goodix/libfprint-driver/goodix.c"
+        self.goodix_c_path = repo("libfprint-driver", "goodix.c")
 
     def test_transfer_cancellable_cancel_called_on_deactivate(self):
         """Verify g_cancellable_cancel is invoked in goodix_stop_read_loop to abort in-flight URBs."""

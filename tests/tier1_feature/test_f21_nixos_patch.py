@@ -6,12 +6,15 @@ Requirements: Create clean unified patch and integrate into /home/sastauser/NixO
 import unittest
 import os
 import subprocess
+from tests.repo_paths import repo, NIXOS_MODULE_DIR
+
+NIXOS_TREE_MISSING = "external NixOS flake tree absent"
 
 class TestF21NixOSPatch(unittest.TestCase):
 
     def setUp(self):
-        self.patch_path = "/home/sastauser/code/temp/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch"
-        self.nix_module_dir = "/home/sastauser/NixOS-Hyprland/modules/goodix"
+        self.patch_path = repo("0001-Add-driver-support-for-Goodix-27c6-5e0a.patch")
+        self.nix_module_dir = str(NIXOS_MODULE_DIR)
 
     def test_patch_file_exists(self):
         """Verify unified patch file exists and is non-empty."""
@@ -28,12 +31,14 @@ class TestF21NixOSPatch(unittest.TestCase):
         self.assertIn("libfprint/drivers/goodixtls/goodix5xx.c", content)
         self.assertIn("libfprint/drivers/goodixtls/goodixtls.c", content)
 
+    @unittest.skipUnless(NIXOS_MODULE_DIR.is_dir(), NIXOS_TREE_MISSING)
     def test_nixos_module_files_present(self):
         """Verify NixOS module tree in /home/sastauser/NixOS-Hyprland/modules/goodix."""
         self.assertTrue(os.path.isfile(os.path.join(self.nix_module_dir, "default.nix")))
         self.assertTrue(os.path.isfile(os.path.join(self.nix_module_dir, "libfprint-goodix.nix")))
         self.assertTrue(os.path.isfile(os.path.join(self.nix_module_dir, "0001-Add-driver-support-for-Goodix-27c6-5e0a.patch")))
 
+    @unittest.skipUnless(NIXOS_MODULE_DIR.is_dir(), NIXOS_TREE_MISSING)
     def test_udev_rules_in_nixos_module(self):
         """Verify udev rules grant MODE=0666 and TAG+=uaccess for 27c6:5e0a."""
         with open(os.path.join(self.nix_module_dir, "default.nix"), "r") as f:
@@ -43,6 +48,7 @@ class TestF21NixOSPatch(unittest.TestCase):
         self.assertIn('MODE="0666"', content)
         self.assertIn('TAG+="uaccess"', content)
 
+    @unittest.skipUnless(NIXOS_MODULE_DIR.is_dir(), NIXOS_TREE_MISSING)
     def test_pam_services_enabled(self):
         """Verify PAM services (sudo, login, hyprlock, swaylock, sddm) have fprintAuth enabled."""
         with open(os.path.join(self.nix_module_dir, "default.nix"), "r") as f:

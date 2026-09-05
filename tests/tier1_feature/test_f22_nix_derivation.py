@@ -4,21 +4,24 @@ Requirements: Verify clean compilation of libfprint-goodix and fprintd override 
 """
 
 import unittest
+import shutil
 import subprocess
 import os
+from tests.repo_paths import repo, REPO_ROOT
 
 class TestF22NixDerivation(unittest.TestCase):
 
     def setUp(self):
-        self.derivation_file = "/home/sastauser/code/temp/goodix/libfprint-goodix.nix"
+        self.derivation_file = repo("libfprint-goodix.nix")
 
+    @unittest.skipUnless(shutil.which("nix-instantiate"), "nix-instantiate not installed")
     def test_nix_derivation_evaluates_cleanly(self):
         """Verify nix-instantiate --eval successfully evaluates libfprint-goodix derivation."""
         cmd = [
             "nix-instantiate", "--eval",
             "-E", "let pkgs = import <nixpkgs> {}; in pkgs.callPackage ./libfprint-goodix.nix {}"
         ]
-        result = subprocess.run(cmd, cwd="/home/sastauser/code/temp/goodix", capture_output=True, text=True)
+        result = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, f"Nix evaluation failed: {result.stderr}")
         self.assertIn("libfprint-goodix", result.stdout)
 
@@ -44,7 +47,7 @@ class TestF22NixDerivation(unittest.TestCase):
 
     def test_fprintd_override_in_nixos_module(self):
         """Verify default.nix overrides fprintd with libfprint-goodix package."""
-        with open("/home/sastauser/code/temp/goodix/nixos-module.nix", "r") as f:
+        with open(repo("nixos-module.nix"), "r") as f:
             content = f.read()
         self.assertIn("services.fprintd", content)
 

@@ -7,6 +7,7 @@ Empirically verifies that FpiDeviceGoodixTls5xx base class correctly executes al
 import unittest
 import os
 import re
+from tests.repo_paths import repo
 from tests.test_utils import (
     MockGoodixMCU,
     CANONICAL_FDT_MODE,
@@ -44,10 +45,10 @@ from tests.test_utils import (
 class TestM2BaseContract7Stages(unittest.TestCase):
 
     def setUp(self):
-        self.driver_c_path = "/tmp/libfprint-goodix/libfprint/drivers/goodixtls/goodix5e0a.c"
-        self.driver_h_path = "/tmp/libfprint-goodix/libfprint/drivers/goodixtls/goodix5e0a.h"
-        self.base_c_path = "/tmp/libfprint-goodix/libfprint/drivers/goodixtls/goodix5xx.c"
-        self.base_h_path = "/tmp/libfprint-goodix/libfprint/drivers/goodixtls/goodix5xx.h"
+        self.driver_c_path = repo("libfprint-driver", "goodix5e0a.c")
+        self.driver_h_path = repo("libfprint-driver", "goodix5e0a.h")
+        self.base_c_path = repo("libfprint-driver", "goodix5xx.c")
+        self.base_h_path = repo("libfprint-driver", "goodix5xx.h")
 
         with open(self.driver_c_path, "r") as f:
             self.c_code = f.read()

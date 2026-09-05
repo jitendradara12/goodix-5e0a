@@ -120,7 +120,7 @@ class TestMilestone1Payloads(unittest.TestCase):
         expected_payload = bytes([0x01] + [0x00] * 9)
         self.assertEqual(len(expected_payload), 10)
         # Verify it is wired in goodix.c:goodix_send_mcu_get_image
-        with open("/home/sastauser/code/temp/goodix/libfprint-driver/goodix.c", "r") as f:
+        with open(str(REPO_ROOT / "libfprint-driver" / "goodix.c"), "r") as f:
             c_code = f.read()
         if "payload_5e0a" in c_code:
             self.assertIn("payload_5e0a[10] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}", c_code)

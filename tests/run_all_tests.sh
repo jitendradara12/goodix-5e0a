@@ -85,11 +85,15 @@ if [ -f "/tmp/libfprint-goodix/build/build.ninja" ]; then
 fi
 
 
-echo -n "Evaluating libfprint-goodix Nix derivation... "
-nix-instantiate --eval -E "let pkgs = import <nixpkgs> {}; in pkgs.callPackage ${ROOT_DIR}/libfprint-goodix.nix {}" > /dev/null 2>&1 && echo -e "${GREEN}OK${NC}" || (echo -e "${RED}FAIL${NC}" && exit 1)
+if ! command -v nix-instantiate >/dev/null 2>&1; then
+    echo -e "${YELLOW}SKIP nix pre-flight (nix-instantiate not installed, non-fatal)${NC}"
+else
+    echo -n "Evaluating libfprint-goodix Nix derivation... "
+    nix-instantiate --eval -E "let pkgs = import <nixpkgs> {}; in pkgs.callPackage ${ROOT_DIR}/libfprint-goodix.nix {}" > /dev/null 2>&1 && echo -e "${GREEN}OK${NC}" || (echo -e "${RED}FAIL${NC}" && exit 1)
 
-echo -n "Evaluating NixOS module configuration... "
-nix-instantiate --parse "${ROOT_DIR}/nixos-module.nix" > /dev/null 2>&1 && echo -e "${GREEN}OK${NC}" || (echo -e "${RED}FAIL${NC}" && exit 1)
+    echo -n "Evaluating NixOS module configuration... "
+    nix-instantiate --parse "${ROOT_DIR}/nixos-module.nix" > /dev/null 2>&1 && echo -e "${GREEN}OK${NC}" || (echo -e "${RED}FAIL${NC}" && exit 1)
+fi
 
 echo ""
 

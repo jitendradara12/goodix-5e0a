@@ -9,10 +9,10 @@ A reverse-engineered Linux driver for the **Goodix 27c6:5e0a** fingerprint scann
 - **Native `libfprint` Integration**: Clean subclass of `FpiDeviceGoodixTls5xx` adhering to minimal, event-driven design principles.
 - **Hardware FDT Touch & Release**: Uses hardware capacitive Finger Detection Trigger (`0x32` FDT DOWN, `0x34` FDT UP) with zero CPU-hogging polling loops.
 - **TLS 1.2 PSK Encryption**: Implements the on-wire `TLS_PSK_WITH_AES_128_CBC_SHA256` protocol required by Goodix secure firmware.
-- **NIST NBIS Minutiae Verification**: Extracts 15–16 robust minutiae per finger scan and passes Bozorth3 biometric match validation with a score of 44 (threshold: 12–20).
+- **NIST NBIS Minutiae Verification**: Extracts 23–25 minutiae per finger scan on hardware and passes Bozorth3 biometric match validation with scores of 13–15 (threshold: 12). See ticket 19 for the hardware run log.
 - **Empty-Air Rejection Gate**: Prevents capturing ambient thermal noise into templates when the sensor is touched lightly or untouched.
 - **Multi-Run PAM Stability**: Deterministic teardown and cancellable USB read loops prevent daemon hangs or timeouts across consecutive authentications.
-- **Exhaustive Automated Test Suite**: 352 tests across 5 tiers covering feature isolation, boundaries, pairwise integration, system scenarios, and adversarial fuzzing.
+- **Exhaustive Automated Test Suite**: 375 tests across 5 tiers covering feature isolation, boundaries, pairwise integration, system scenarios, and adversarial fuzzing.
 
 ---
 
@@ -50,11 +50,13 @@ The test suite runs hermetically without requiring hardware access:
 bash tests/run_all_tests.sh
 ```
 
-Or via Python's `unittest`:
+Or a single test from the repo root:
 
 ```bash
-python3 -m unittest discover -s tests -p "test_*.py"
+python3 -m unittest tests.tier1_feature.test_f13_no_polling
 ```
+
+(`discover -s tests` has loader failures; run per-tier or per-module instead.)
 
 ---
 

@@ -4,11 +4,12 @@ Tests socket shutdown safety when descriptors are -1 or already closed.
 """
 
 import unittest
+from tests.repo_paths import repo
 
 class TestB24NonblockingBounds(unittest.TestCase):
 
     def setUp(self):
-        self.goodixtls_c = "/home/sastauser/code/temp/goodix/libfprint-driver/goodixtls.c"
+        self.goodixtls_c = repo("libfprint-driver", "goodixtls.c")
 
     def test_shutdown_checks_client_fd_validity(self):
         """Verify goodix_tls_server_deinit checks if (self->client_fd >= 0) before shutdown."""

@@ -9,9 +9,11 @@ Simulates realistic system-level workloads:
 """
 
 import unittest
+import shutil
 import struct
 import subprocess
 import time
+from tests.repo_paths import repo, REPO_ROOT
 from tests.test_utils import (
     MockGoodixMCU, encode_pack, encode_protocol, decode_pack, decode_protocol,
     decode_12bit_frame, pack_12bit_frame, squash_frame_linear, process_frame_demosaic,
@@ -170,6 +172,7 @@ class TestRealWorldScenarios(unittest.TestCase):
         self._deactivate_device(self.mcu)
 
     # Scenario 5: Hermetic Nix Package Build & Service Configuration Evaluation
+    @unittest.skipUnless(shutil.which("nix-instantiate"), "nix-instantiate not installed")
     def test_scenario_05_nix_package_and_service_evaluation(self):
         """Scenario 5: Evaluates NixOS configuration and libfprint-goodix derivation hermetically.
         """
@@ -178,11 +181,11 @@ class TestRealWorldScenarios(unittest.TestCase):
             "nix-instantiate", "--eval",
             "-E", "let pkgs = import <nixpkgs> {}; in pkgs.callPackage ./libfprint-goodix.nix {}"
         ]
-        res1 = subprocess.run(cmd1, cwd="/home/sastauser/code/temp/goodix", capture_output=True, text=True)
+        res1 = subprocess.run(cmd1, cwd=str(REPO_ROOT), capture_output=True, text=True)
         self.assertEqual(res1.returncode, 0, f"Derivation eval failed: {res1.stderr}")
 
         # 2. Verify nixos-module.nix syntax and attributes
-        with open("/home/sastauser/code/temp/goodix/nixos-module.nix", "r") as f:
+        with open(repo("nixos-module.nix"), "r") as f:
             module_src = f.read()
         self.assertIn("services.fprintd", module_src)
         self.assertIn("services.udev", module_src)
