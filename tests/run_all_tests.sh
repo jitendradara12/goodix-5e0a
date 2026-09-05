@@ -21,6 +21,7 @@ NC='\033[0m' # No Color
 
 TOTAL_PASSED=0
 TOTAL_FAILED=0
+TOTAL_SKIPPED=0
 START_TIME=$(date +%s)
 
 echo -e "${BOLD}${CYAN}==============================================================================${NC}"
@@ -58,6 +59,8 @@ run_tier() {
         fi
         echo -e "${GREEN}✔ ${tier_name} PASSED (${count} tests in ${tier_duration}s)${NC}\n"
         TOTAL_PASSED=$((TOTAL_PASSED + count))
+        local skipped=$(echo "${output}" | grep -oE "OK \(skipped=[0-9]+\)" | grep -oE "[0-9]+" || echo "0")
+        TOTAL_SKIPPED=$((TOTAL_SKIPPED + skipped))
     else
         echo -e "${RED}✖ ${tier_name} FAILED in ${tier_duration}s${NC}"
         echo "${output}"
@@ -114,6 +117,7 @@ echo -e "${BOLD}${CYAN}  Test Execution Summary                                 
 echo -e "${BOLD}${CYAN}==============================================================================${NC}"
 echo -e "Total Tests Passed: ${BOLD}${GREEN}${TOTAL_PASSED}${NC}"
 echo -e "Total Tests Failed: ${BOLD}${RED}${TOTAL_FAILED}${NC}"
+echo -e "Total Tests Skipped (env-gated): ${BOLD}${YELLOW}${TOTAL_SKIPPED}${NC}"
 echo -e "Total Execution Time: ${BOLD}${TOTAL_DURATION}s${NC}"
 
 if [ ${TOTAL_FAILED} -eq 0 ]; then
