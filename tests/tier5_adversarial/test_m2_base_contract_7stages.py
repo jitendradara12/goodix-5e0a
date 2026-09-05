@@ -1,7 +1,7 @@
 """
-Tier 5 Adversarial Stress Test: Base-Class Contract & 7-Stage Scan SSM
+Tier 5 Adversarial Stress Test: Base-Class Contract & Scan SSM Stages
 Empirically verifies that FpiDeviceGoodixTls5xx base class correctly executes all
-7 scan stages when driven by goodix5e0a configuration tables and callbacks.
+8 scan stages (base enum) when driven by goodix5e0a configuration tables and callbacks.
 """
 
 import unittest
@@ -59,12 +59,13 @@ class TestM2BaseContract7Stages(unittest.TestCase):
         with open(self.base_h_path, "r") as f:
             self.base_h = f.read()
 
-    def test_7_scan_stages_definition_in_base_class(self):
-        """Verify the 7 exact scan stages defined in goodix5xx.c enum SCAN_STAGES."""
+    def test_8_scan_stages_definition_in_base_class(self):
+        """Verify the 8 scan stages defined in goodix5xx.c enum SCAN_STAGES (incl. no-op ARM)."""
         expected_stages = [
             "SCAN_STAGE_QUERY_MCU",
             "SCAN_STAGE_SWITCH_TO_FDT_MODE",
             "SCAN_STAGE_CALIBRATE",
+            "SCAN_STAGE_SWITCH_TO_FDT_DOWN_ARM",
             "SCAN_STAGE_SWITCH_TO_FDT_DOWN",
             "SCAN_STAGE_GET_IMG",
             "SCAN_STAGE_SWITCH_TO_FTD_UP",
@@ -73,6 +74,7 @@ class TestM2BaseContract7Stages(unittest.TestCase):
         ]
         for stage in expected_stages:
             self.assertIn(stage, self.base_c)
+        self.assertIn("case SCAN_STAGE_SWITCH_TO_FDT_DOWN_ARM:", self.base_c)
 
     def test_calibration_sub_ssm_stages_in_base_class(self):
         """Verify calibration sub-SSM stages defined in goodix5xx.c."""
