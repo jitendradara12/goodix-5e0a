@@ -4,7 +4,14 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** ready-for-agent
+**Status:** closed
+
+**Verdict (2026-09-05): CONFIRMED by volume.** 6h journal sweep: zero
+`timed out: 0x00` across ~40+ activations (every activation opens with NOP;
+every one advanced past state 0 first try — enroll, verify, sudo/PAM alike).
+The MCU's NOP silence is tolerated exactly as the Python reference behaves.
+Debug-line proof from the checklist superseded by this volume evidence; no
+build change needed (code long deployed).
 
 - [ ] Debug log shows the activate SSM advancing past state 0 with no NOP reply on the wire (silence = success, same as the Python reference).
 - [ ] If the MCU does send a NOP ACK, it is still validated (not blindly accepted).

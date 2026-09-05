@@ -1,6 +1,22 @@
 // Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 // Reverse engineered for NixOS
 
+// Copyright (C) 2026 The libfprint Goodix 5e0a contributors
+
+// This library is free software; you can redistribute it and/or
+// modify it under the terms of the GNU Lesser General Public
+// License as published by the Free Software Foundation; either
+// version 2.1 of the License, or (at your option) any later version.
+
+// This library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+// Lesser General Public License for more details.
+
+// You should have received a copy of the GNU Lesser General Public
+// License along with this library; if not, write to the Free Software
+// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+
 #pragma once
 
 #define GOODIX_5E0A_INTERFACE (0)
@@ -41,6 +57,15 @@ static const guint8 goodix_5e0a_psk[] = {
   0x50, 0xc7, 0x66, 0xcd, 0x72, 0x6e, 0xf7, 0xa5,
   0xdf, 0x7d, 0x5f, 0xa3, 0x90, 0x53, 0xbf, 0xac,
   0x26, 0x9c, 0xe7, 0x52, 0xd7, 0xa8, 0xb2, 0xab
+};
+
+// Factory default observed on cold boot via 0xe4 (ticket 26 experiment 26.1),
+// used only for diagnostic logging, never for TLS.
+static const guint8 goodix_5e0a_psk_default[] = {
+  0x68, 0x77, 0x6f, 0xdc, 0xf6, 0x35, 0x2a, 0x21,
+  0x5c, 0xc1, 0x1c, 0xd5, 0x8d, 0xb2, 0xb3, 0x61,
+  0xeb, 0x95, 0xa5, 0x06, 0xcb, 0x50, 0x3d, 0xa6,
+  0x8f, 0xb0, 0x1a, 0xc1, 0x50, 0x6f, 0xf1, 0xc9
 };
 
 // ChicagoH GF3658 DN3 Configuration (256 bytes, wbdi.dll offset 0x197c50, checksum 0x0e53)

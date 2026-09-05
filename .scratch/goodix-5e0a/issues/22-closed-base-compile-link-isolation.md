@@ -10,7 +10,33 @@ logging (`goodix5e0a.c:372-373`, frame-stats line `:700-701` reads the
 
 **Blocked by:** None (meson builds only — no hardware, no finger, no daemon).
 
-**Status:** ready-for-agent
+**Status:** closed
+
+**Verdict (2026-09-05 18:43–18:44 IST, pid 42120, patch `6d3612ab` which
+contains the 22 deletion): CONFIRMED.** Smoke run shows subclass declen
+observability intact (`5e0a scan_on_read_img: declen=10564` + `5e0a frame
+stats: … declen=10564` every capture) with zero errors — the removed base
+duplicate is not missed. Link fix itself proven by the three meson builds
+(511/all/5e0a clean, pre-fix undefined-reference reproduced).
+
+## Build record (2026-09-05, agent-run, no finger)
+
+- Deleted exactly 5 lines in `goodix5xx.c` (extern decl + blank, write + blank,
+  shared `5e0a scan_on_read_img: declen=` log). `scan_on_read_img` SSM flow
+  untouched (straight-line write+log, no branch/call removed).
+- Pre-fix proof on unedited file, `-Ddrivers=goodixtls511`:
+  `undefined reference to 'goodix5e0a_last_declen'` at link — bug reproduced.
+- Post-fix (scratch dirs under `/tmp`, `-Ddoc=false -Dintrospection=false`):
+  `goodixtls511` [97/97], `all` [143/143], `goodixtls5e0a` [97/97] — all
+  clean. Zero references to the symbol remain in `goodix5xx.c`; subclass copy
+  (`goodix5e0a.c:33` def, `:450-451` write+log, `:789-790` frame-stats read)
+  intact, so 5e0a journal output keeps both declen lines by construction.
+- Patch regen `3a7146aa…` synced repo-root + NixOS module; pins rolled;
+  f25/f27/f05/m1_c1 green. 1 independent review: substantive criteria
+  APPROVE (file hunk exact, SSM flow intact, tests green).
+- Remaining gate: one 5e0a hardware smoke run on the next deploy confirms the
+  journal still shows subclass `:451` declen + `:789` frame-stats lines and
+  the base duplicate is gone (cosmetic; link fix already proven by builds).
 
 ## Settled facts (verified by reading, do not re-litigate)
 1. `goodix5xx.c:32` declares `extern guint32 goodix5e0a_last_declen;` and

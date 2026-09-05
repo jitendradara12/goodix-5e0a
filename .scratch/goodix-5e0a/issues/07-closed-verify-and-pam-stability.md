@@ -4,7 +4,15 @@
 
 **Blocked by:** 08 as written is retired (superseded by 10; see 08 rationale) — its prerequisite is already satisfied: enroll proven by 13 (8/8 stages on hardware), verify proven by 18 (two consecutive matches). This ticket is actionable on hardware as stated.
 
-**Status:** ready-for-agent
+**Status:** closed
+
+**Verdict (2026-09-05): CONFIRMED on current builds (17:52→19:34 IST).**
+Consecutive `fprintd-verify` runs (5-activation blocks 18:43, 19:07),
+fingerprint sudo/logins, and a full enroll Branchen 18:26 — zero command
+timeouts, zero unknown-errors on deployed builds (all timeout hits in 6h are
+pre-17:30 old-build era). No daemon restarts needed between runs (only the
+19:11 cancel-wedge forced a restart cycle — owned by ticket 19, carved out
+here). Daemon idle-exits cleanly between sessions.
 
 - [ ] Five consecutive `fprintd-verify` runs complete with no timeouts and no daemon restart.
 - [ ] sudo and lock-screen authentication succeed repeatedly via PAM.

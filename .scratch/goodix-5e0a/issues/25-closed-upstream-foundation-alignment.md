@@ -8,7 +8,16 @@ definition of done.
 
 **Blocked by:** None (documentation only; no driver edits in this ticket).
 
-**Status:** ready-for-agent
+**Status:** closed
+
+**Verdict (2026-09-05): CONFIRMED — foundation published and current.**
+`docs/ARCHITECTURE.md` (final-goal-first, frozen/active/retired, evidence
+hierarchy), `docs/UPSTREAM.md` (roadmap + replay/style/legal/packing gates),
+`specs/UPSTREAM-GAPS.md` (all nine B-items adjudicated against the tree) all
+present and accurate; old gap list kept immutable with pointer. This change
+brings ARCHITECTURE.md's Active/Frozen sections up to date with the closed
+tickets (19 flake trapped, 20/21–24/26–28 closed). Per the ticket's own Testing
+Decisions, docs need no hardware run.
 
 ## Problem Statement
 

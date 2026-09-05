@@ -65,6 +65,50 @@ Root-cause analysis of system journal logs identified the failure chain:
      - Tier 4 (Application Scenarios): 5 tests passed
      - Tier 5 (Adversarial & Stress): 61 tests passed
 
+## Hardware runs (2026-09-05, agent-pulled journals)
+
+- Phase 3 (normal sudo/fingerprint auth): CONFIRMED repeatedly — multiple
+  unlock cycles 18:43–19:08, clean activations, TLS every time, no claim
+  errors on normal use.
+- Phase 4 cancel→reclaim, run 1 (pid 53623, no debug): single clean Ctrl+C at
+  19:17:41 (`stopping it`), re-claim denied 19:21:22, restart 19:25:24 hit
+  stop-SIGTERM TIMEOUT → SIGKILL 19:26:54 (daemon hung in teardown ~90s).
+  Verdict: WEDGED — claim held + main loop blocked, self-cleared only by kill.
+- Phase 4 cancel→reclaim, run 2 (pid 54248, G_MESSAGES_DEBUG=all): single
+  Ctrl+C → password fallback, immediate re-claim OK (3 match attempts, wrong
+  finger), restart in 3.1s. Verdict: CLEAN.
+- Reading: cancel-release is flaky (1/2), not systematically broken. Prime
+  suspect is a teardown race (cancel landing mid-scan-SSM/dispatch vs clean
+  idle point) — debug timing may mask it. Daemon-side release vs driver
+  deactivate-hang NOT yet discriminated (needs a wedged run WITH debug; run 1
+  had none, run 2 didn't wedge).
+- Next: on any recurrence, enable debug + single-cancel repro + pull full
+  teardown trace before restarting (that localizes driver vs daemon). Do NOT
+  expand driver scope until then.
+
+## Debug trace EXONERATION + debug-correlation lead (2026-09-05 20:04–20:05,
+  pid 12250, G_MESSAGES_DEBUG=all)
+
+Cancel test on a fresh daemon, full quadruple present:
+`Running command` sequence (0x00→…→0xe0→0x90→0xd0→TLS accept done→0xd4→
+0x96→0xae→0xd6→0x32→0x20 all `Completed`) then `Deactivating image device` →
+`Stopping read loop` (driver chain entered) → `Image device deactivation
+completed`, same second. Re-claim worked immediately after. When fprintd
+delivers the cancel, driver teardown is clean and complete — no hang, no
+orphan, no leak observable.
+Correlation across all 5 cancel runs: wedged runs (storm pid 52940, clean
+singles pids 53623/11720 incl. 2× 90s SIGTERM hangs) ALL had debug OFF;
+clean runs (pids 54248/12250) ALL had debug ON. Unbroken 5/5 split — consistent
+with a teardown ordering race that verbose logging masks by timing, NOT with
+a deterministic logic fault (which debug would not cure). Standing plan:
+leave debug ON during normal use until a wedge recurs WITH debug (instant
+localization via the quadruple) or enough clean cancels accumulate to call it
+dormant. No driver change on this evidence (would be guessing).
+
+Postscript 20:05 pid 12250: reclaim sudo → `report_verify_status: result
+verify-match` (20:04:50 cancel had correctly reported no-match).
+Cancel→reclaim→match clean, `deactivation completed` both times.
+
 ## Complete Hardware Verification Protocol (Strict AGENTS.md Compliance)
 
 Per `AGENTS.md`, only the user executes hardware deployment and commands requiring fingers sudo.

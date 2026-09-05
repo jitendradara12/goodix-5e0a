@@ -6,7 +6,48 @@ No hardware specific to 5e0a behavior changes on the verified path.
 
 **Blocked by:** None (hardware verify slots as specified per experiment).
 
-**Status:** ready-for-agent
+**Status:** closed
+
+**Verdict B + C (2026-09-05 18:43–18:44 IST, pid 42120, patch `6d3612ab`):
+BOTH CONFIRMED.** Same run as ticket 24's confirm (combined run, rationale in
+24): 5e0a behavior identical — clean activations, TLS every time, healthy
+frames, no hangs. B's fixed path never fires on 5e0a (511-only, parity fix);
+C's fixed line never executes on 5e0a (`has_calibration=FALSE`, synthetic
+7-vector proof passed). No 5e0a delta possible by construction, none observed.
+
+## Experiment B build record (2026-09-05, +2 lines, review APPROVE)
+
+`tls_activation_complete` error branch now derives `image_dev` (mirroring the
+success line) and calls `fpi_image_device_activate_complete (image_dev,
+error)` before returning. Ownership: forward-once + return, matching
+`goodix5e0a.c:191`, `goodix511.c:213` convention. 5e0a provably unaffected:
+the fixed function is file-static, only called via `goodixtls5xx_init_tls`
+from `goodix511.c:207`; 5e0a wires its own `on_tls_activation_complete`
+(`goodix5e0a.c:218`), which already had this pattern. So the confirm run is
+"normal 5e0a verify behaves byte-identically" — no fault injection needed.
+Patch regen `9d9309e2…` synced + pins rolled. Experiment C NOT in this build
+(per ticket: only after B confirmed).
+
+## Experiment B confirm (2026-09-05 18:26–18:27 IST, pids 26918/27221)
+
+Deployed `9d9309e2` (22+23B), enroll + verifies by user. Journal (agent-pulled):
+5 clean activations, TLS ready every time, full `declen=10564` frames,
+healthy stats (`h_corr 0.938–0.973`, `active=5120`), zero hangs/timeouts/
+failures, scores up to 12/12. Behavior identical to pre-23B as predicted
+(5e0a never takes the fixed path). Verdict: B CONFIRMED. Experiment C next.
+
+## Experiment C build record (2026-09-05, review APPROVE + synthetic proof)
+
+One body line in `linear_subtract_inplace`: floored subtract
+`src[n] = (src[n] > by[n]) ? (src[n] - by[n]) : 0;` (int-domain by promotion,
+no wraparound on any input — proved by cases in review). Dead
+`const guint16 max = -1;` removed same-function (reviewer-ruled part of 23C;
+kills the -Wunused-variable the body fix would otherwise introduce).
+Synthetic proof: throwaway `/tmp` C harness, `gcc -Wall -Wextra`, all 7
+vectors pass new expression, old expression reproduces ticket's broken values
+(65435 / trunc-99 / 65535). 5e0a provably never executes it
+(`has_calibration=FALSE` → guard never taken). Patch regen `6d3612ab…`
+synced + pins rolled.
 
 ## Experiment B: complete activation with error instead of hanging
 - Fact: `tls_activation_complete` (`goodix5xx.c:~570-579`) logs a TLS-leg

@@ -9,7 +9,32 @@
 
 **Blocked by:** None (hardware verify slot; implement + rebuild + redeploy).
 
-**Status:** ready-for-agent
+**Status:** closed
+
+**Verdict (2026-09-05 18:43–18:44 IST, pid 42120, patch `6d3612ab`): CONFIRMED.**
+5 activations, TLS ready every time, zero `saved /dev/shm/live_frame.raw`
+lines (grep-clean), frame stats healthy (`active=5120`, `declen=10564`,
+`h_corr 0.876–0.958`), minutiae 7–16 across touches, zero errors/timeouts.
+Dumps were inert as constructed. Base-class one-shot dump stays for its own
+run if ever wanted.
+
+## Build record (2026-09-05, review APPROVE)
+
+Deleted exactly the 7-line dump block (2 writes + fp_info + if/braces/blank);
+declen + raw-16 logs and all downstream logic intact (verified by full-function
+read; removed `if` had no `else` and defined no variable). Base-class one-shot
+dump (`goodix5xx.c:349/351`) untouched; zero test references dumps.
+Patch regen `c32b77ac…` synced repo-root + NixOS module; pins rolled.
+
+## Combined confirm with 23C (diligence note, user-waived extra cycle)
+
+24's deletion is proven behavior-inert (reviewed pure side-effect removal, no
+test refs) and 23C provably never executes on 5e0a — so one deploy+2-verify
+run confirms both without attribution risk: any 5e0a behavior delta would
+falsify the proofs themselves (revert both, investigate), since neither change
+can cause one by construction. Confirm checklist for that run: `saved
+/dev/shm/live_frame.raw` lines gone, frame stats/minutiae/scores as before,
+zero errors. Patch for the combined run: `6d3612ab…`.
 
 ## Settled facts (do not re-litigate)
 1. Both dump sites are pure side effects: `g_file_set_contents` reads `data`

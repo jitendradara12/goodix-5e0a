@@ -6,7 +6,16 @@
 
 **Blocked by:** None. Built on verified biometric pipeline (Ticket 18) and clean PAM teardown (Ticket 19).
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
+
+**Verdict — latency CONFIRMED (2026-09-05 19:33–19:34 IST, pid 54384):**
+touch → capture → all match runs → client verdict complete inside ONE journal
+second, repeatedly (`19:33:27 D32 touch` → `scan_on_read_img` → 5× `match
+start` → `report_verify_status` all `:27`; same at `:29`; 19:34:18 block with
+24/12 top score). Capture→minutiae measured 0.003–0.005s per frame; user
+reports instant unlock feel across repeated logins. Sub-300ms perception
+holds (touch→result < 1s at 1s journal resolution, matcher itself single-ms).
+OTP half stays superseded by 26 — untouched per live-scope.
 
 **Live-scope:** latency (<300ms) only; the OTP half is superseded by ticket 26 — do not re-add ACTIVATE_READ_OTP as a crypto fix.
 

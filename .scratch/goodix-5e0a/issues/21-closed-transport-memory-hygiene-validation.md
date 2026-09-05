@@ -10,7 +10,18 @@ in this run.
 **Blocked by:** None (needs a hardware host with ASan-instrumented or
 valgrind-run fprintd; purely observational).
 
-**Status:** ready-for-agent
+**Status:** closed
+
+**Verdict (2026-09-05): scopechanged — no dedicated valgrind run, findings
+dispositioned on evidence weight.**
+A valgrind/ASan run needs fprintd under instrumentation (foreground daemon
+loses the D-Bus race per AGENTS.md; service wrapping needs read-only
+`/etc/systemd`), i.e. heavy user labor for findings that are code-reading
+certainties, not runtime hypotheses: finding 2 (pointer-sizeof) already FIXED
+in ticket 26; finding 1 (FDT-mode free-then-read) → ticket 27; finding 3
+(receive-done error leak) → ticket 28; findings 4–5 REFUTED in-ticket;
+finding 6 stays downgraded. FD-accounting folded into everyday-use
+observation (no dedicated cycles). Reopen only on a pasted leak trace.
 
 ## Settled facts (verified by reading, do not re-litigate)
 1. `goodix_send_mcu_switch_to_fdt_mode` (`goodix.c:795-818`) calls

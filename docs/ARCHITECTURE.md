@@ -52,8 +52,10 @@ template storage, enroll, or match.
 
 - USB transport shape, reset phasing, TLS-PSK handshake wiring and cipher,
   ChicagoH provisioning blob and checksum, firmware identity, PSK flags.
-  Live key agreement is NOT frozen: cold boot fails the record MAC
-  (ticket 26, the current workfront).
+  Key agreement: ticket 26 closed (cold-boot MAC failure never reproduced;
+  0xe4-readable slot is not the TLS key, 0xe0 rejected both encodings; read +
+  soft-fail kept as instrumentation). Reopen only on a pasted record-MAC
+  recurrence.
 - Channel-energy gating rule; silence on empty air.
 - Canonical wire layout and native raster geometry with inverted polarity.
 - Synchronous teardown: reset state, shut down TLS, stop the read loop,
@@ -63,12 +65,11 @@ template storage, enroll, or match.
 
 ## Active (the only legal workfront)
 
-- Ticket 26: cold-boot PSK disagreement (TLS is warm-only until key
-  provisioning lands; owns the `0xe0`/`0xe4` experiments).
-- Tickets 19–20: PAM/sudo lifecycle and sub-300ms instant release
-  (implemented, awaiting hardware verdicts).
-- Tickets 21–24: transport memory hygiene, compile-link isolation, base
-  runtime hardening, per-frame debug dump removal.
+- Ticket 19: cancel→reclaim release flakiness (works most runs; one wedged
+  teardown with 90s SIGTERM hang on record — needs a recurrence with debug to
+  localize driver vs daemon; do not expand driver scope until then).
+- Ticket 20: closed (same-second touch→verdict on hardware).
+- Tickets 21–24, 26–28: closed (hygiene fixes shipped; see tickets).
 - Upstream packing: logical commits, Meson and device-table wiring,
   `umockdev` replay coverage; see `docs/UPSTREAM.md`.
 

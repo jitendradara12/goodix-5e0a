@@ -29,8 +29,6 @@
 #include <stdio.h>
 #include <string.h>
 
-extern guint32 goodix5e0a_last_declen;
-
 
 typedef struct
 {
@@ -323,9 +321,8 @@ goodixtls5xx_squash_frame_linear (GoodixTls5xxPix *frame, guint8 *squashed, guin
     }
 }
 static void linear_subtract_inplace(GoodixTls5xxPix* src, GoodixTls5xxPix* by, guint16 len) {
-  const guint16 max = -1;
   for (guint16 n = 0; n != len; ++n) {
-    src[n] = MAX(0, max - ((max - src[n]) - (max - by[n])));
+    src[n] = (src[n] > by[n]) ? (src[n] - by[n]) : 0;
   }
 }
 
@@ -344,9 +341,6 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
   FpiDeviceGoodixTls5xx* self = FPI_DEVICE_GOODIXTLS5XX(dev);
   FpiDeviceGoodixTls5xxPrivate* priv = fpi_device_goodixtls5xx_get_instance_private(self);
   FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
-  goodix5e0a_last_declen = len;
-
-  g_message ("5e0a scan_on_read_img: declen=%u", len);
 
   static gboolean frame_saved = FALSE;
   if (!frame_saved && data && len > 0)
@@ -574,6 +568,8 @@ tls_activation_complete (FpDevice *dev, gpointer user_data,
   if (error)
     {
       fp_err ("failed to complete tls activation: %s", error->message);
+      FpImageDevice *image_dev = FP_IMAGE_DEVICE (dev);
+      fpi_image_device_activate_complete (image_dev, error);
       return;
     }
   FpImageDevice *image_dev = FP_IMAGE_DEVICE (dev);
