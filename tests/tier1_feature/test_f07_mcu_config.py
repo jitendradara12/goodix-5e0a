@@ -45,7 +45,10 @@ class TestF07MCUConfig(unittest.TestCase):
         self.assertEqual(payload[0], CMD_UPLOAD_CONFIG_MCU)
 
     def test_mcu_config_header_and_tail_markers(self):
-        """Verify specific header (0x70, 0x11, 0x60, 0x71) and tail bytes (0x58, 0x20, 0xc5, 0x0e)."""
+        """Verify specific header (0x70, 0x11, 0x60, 0x71) and tail bytes (0x58, 0x20, 0xc5, 0x0e).
+        NOTE: these are the MOCK fixture's markers, distinct from the frozen
+        driver header magic (0xb0, 0x11, 0x60, 0x71, checksum 0x0e53).
+        Pinned here to keep the mock self-consistent, not as hardware truth."""
         self.assertEqual(CANONICAL_CONFIG_52XD[:4], bytes([0x70, 0x11, 0x60, 0x71]))
         self.assertEqual(CANONICAL_CONFIG_52XD[-4:], bytes([0x58, 0x20, 0xc5, 0x0e]))
 

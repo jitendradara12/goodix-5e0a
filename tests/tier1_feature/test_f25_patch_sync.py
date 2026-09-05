@@ -5,6 +5,7 @@ libfprint-driver/ sources, so a driver edit without patch regeneration
 fails loudly instead of shipping stale code to NixOS.
 """
 
+import hashlib
 import os
 import re
 import unittest
@@ -43,8 +44,14 @@ class TestF25PatchSourceSync(unittest.TestCase):
             cls.sections = _split_sections(f.read().splitlines())
 
     # Byte-identical to upstream goodix-fp-linux-dev/libfprint@c343b69
-    # (verified 2026-09-05); pristine files are correctly absent from the patch.
-    PRISTINE_UPSTREAM = {"goodixtls.h", "goodix511.h", "goodix_proto.c"}
+    # (verified 2026-09-05 via byte comparison against raw.githubusercontent);
+    # pristine files are correctly absent from the patch. Hashes pin this so
+    # an edit without patch regeneration fails instead of going unnoticed.
+    PRISTINE_UPSTREAM = {
+        "goodixtls.h": "ffb7ada4a4a320470495d2524841fe1ec8567befae62ebebd294954f9804fbaf",
+        "goodix511.h": "d6039cf218ab7a299b38e3e87de1af952c671fd6519cc58c737d824c4bf0a9c0",
+        "goodix_proto.c": "dd4aad34da3249899dcd595dc6702d1a907cd990f7f987d033b8bb5b031fe72a",
+    }
 
     def test_patch_covers_all_driver_files(self):
         """Every repo driver file must be patched or known-pristine upstream."""
@@ -58,6 +65,16 @@ class TestF25PatchSourceSync(unittest.TestCase):
                     base in patched or base in self.PRISTINE_UPSTREAM,
                     f"{base} is neither in the unified patch nor known-pristine",
                 )
+
+    def test_pristine_files_match_pinned_hashes(self):
+        """Pristine files must still be byte-identical to upstream c343b69."""
+        for base, expected in self.PRISTINE_UPSTREAM.items():
+            with open(repo("libfprint-driver", base), "rb") as f:
+                actual = hashlib.sha256(f.read()).hexdigest()
+            self.assertEqual(
+                actual, expected,
+                f"{base} changed: regenerate the patch or update the pin",
+            )
 
     def test_new_files_match_working_tree_byte_for_byte(self):
         """New-file sections must reconstruct the repo sources exactly."""
