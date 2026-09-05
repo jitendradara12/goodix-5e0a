@@ -50,8 +50,8 @@ class TestRealWorldScenarios(unittest.TestCase):
     # Scenario 1: Multi-stage Enrollment (fprintd-enroll) without false air advances
     def test_scenario_01_multi_stage_enrollment(self):
         """Scenario 1: Simulates an 8-stage fprintd-enroll session.
-        Advances ONLY on genuine touch down and finger up.
-        Rejects advancing on idle / empty air.
+        Drives touch-down / capture / release sequencing per stage.
+        (Idle-air rejection is hardware-side; the mock answers regardless.)
         """
         self._activate_device(self.mcu)
 
@@ -98,7 +98,8 @@ class TestRealWorldScenarios(unittest.TestCase):
     # Scenario 2: Consecutive Sudo PAM Verifications (5x back-to-back fprintd-verify)
     def test_scenario_02_consecutive_pam_verifications(self):
         """Scenario 2: Simulates 5 consecutive PAM authentication verify runs (e.g. repeated sudo commands).
-        Verifies no 0xa2 command timeout, no socket hang, and clean re-initialization per run.
+        Each run re-activates, captures, processes, releases, and tears down cleanly.
+        (Timeout/hang behavior is hardware-side and unmeasured here.)
         """
         for run_idx in range(1, 6):
             # 1. Device activation
@@ -155,7 +156,8 @@ class TestRealWorldScenarios(unittest.TestCase):
     # Scenario 4: Empty Air Finger Touch Rejection (0 false triggers over idle periods)
     def test_scenario_04_empty_air_finger_touch_rejection(self):
         """Scenario 4: Simulates long idle periods where no physical finger touches the sensor.
-        Verifies zero false image acquisitions and zero CPU busy-loops.
+        Verifies the idle query path stays responsive while no image is polled.
+        (Acquisition gating and busy-loop behavior are hardware-side.)
         """
         self._activate_device(self.mcu)
         self.mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_MCU_SWITCH_TO_FDT_MODE, CANONICAL_FDT_MODE)))

@@ -111,10 +111,10 @@ class TestPairwiseCombinations(unittest.TestCase):
 
     # Pairwise 7: Corrupted Packet Header + State Reset + Re-synchronization
     def test_pair_07_corrupted_packet_state_reset_resync(self):
-        """Pair 7: Protocol recovers cleanly when corrupt packet is followed by reset."""
-        # Inject bad packet
+        """Pair 7: Corrupt bytes on the wire are ignored; NOP and reset still succeed after."""
+        # Inject bad packet through the mock (undecodable flags -> empty reply, no state change)
         bad = b"\xff\xff\x00\x00"
-        decode_pack(bad)
+        self.assertEqual(self.mcu.handle_out_packet(bad), b"")
 
         # Recover with NOP and Reset
         nop = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_NOP, b""))
@@ -215,7 +215,7 @@ class TestPairwiseCombinations(unittest.TestCase):
 
     # Pairwise 14: TLS Session Establishment + Frame Request + Socket Teardown
     def test_pair_14_tls_session_frame_socket_teardown(self):
-        """Pair 14: TLS establishment, data capture, and simulated socket shutdown."""
+        """Pair 14: Socket shutdown discipline (SHUT_RDWR then close) as used by the TLS server teardown."""
         s1, s2 = socket.socketpair()
         try:
             # Send mock frame data through socket
@@ -308,7 +308,7 @@ class TestPairwiseCombinations(unittest.TestCase):
 
     # Pairwise 22: TLS Socket creation + Socketpair bi-directional write/read loop
     def test_pair_22_socketpair_bidirectional_traffic(self):
-        """Pair 22: Simulating USB-to-TLS bridge bi-directional traffic flow."""
+        """Pair 22: Socketpair echo sanity for opaque bridge payloads (no USB/TLS stack involved)."""
         s_mcu, s_tls = socket.socketpair()
         try:
             # Client writes MCU packet to TLS
@@ -326,8 +326,7 @@ class TestPairwiseCombinations(unittest.TestCase):
 
     # Pairwise 23: Device Re-open after unexpected close / disconnect
     def test_pair_23_device_reopen_after_disconnect(self):
-        """Pair 23: Disconnect simulator and re-instantiate clean state."""
-        self.mcu.is_connected = False
+        """Pair 23: A freshly re-instantiated mock answers NOP (clean-state recovery)."""
         new_mcu = MockGoodixMCU()
         self.assertTrue(new_mcu.is_connected)
         nop_pkt = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_NOP, b""))
