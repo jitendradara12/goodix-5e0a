@@ -51,6 +51,8 @@ err_from_ssl (void)
 
 #include "goodix5xx.h"
 
+#define GOODIX_TLS_CIPHERS "PSK-AES128-CBC-SHA256:ALL:@SECLEVEL=1"
+
 static unsigned int
 tls_server_psk_server_callback (SSL           *ssl,
                                 const char    *identity,
@@ -72,15 +74,25 @@ tls_server_psk_server_callback (SSL           *ssl,
                   return 0;
                 }
               memcpy (psk, cls->psk, cls->psk_len);
-              fp_dbg ("Using device-specific PSK (%d bytes)", cls->psk_len);
+              g_message ("5e0a PSK callback: using device-specific PSK (%d bytes, identity='%s')",
+                         cls->psk_len, identity ? identity : "");
               return cls->psk_len;
             }
         }
+      else
+        {
+          g_warning ("5e0a PSK callback: dev %p is not GOODIXTLS5XX", dev);
+        }
+    }
+  else
+    {
+      g_warning ("5e0a PSK callback: server (%p) or user_data (%p) is NULL",
+                 server, server ? server->user_data : NULL);
     }
 
   const int len = 32;
 
-  fp_dbg ("PSK WANTED %d", max_psk_len);
+  g_warning ("5e0a PSK callback: fallback to zero PSK (len %d, max %d)", len, max_psk_len);
   if (len > max_psk_len)
     {
       fp_err ("max psk length (%d) too short (needs %d)", max_psk_len, len);
@@ -114,7 +126,7 @@ tls_server_config_ctx (SSL_CTX *ctx)
 {
   SSL_CTX_set_ecdh_auto (ctx, 1);
   SSL_CTX_set_dh_auto (ctx, 1);
-  SSL_CTX_set_cipher_list (ctx, "ALL");
+  SSL_CTX_set_cipher_list (ctx, GOODIX_TLS_CIPHERS);
   SSL_CTX_set_min_proto_version (ctx, TLS1_2_VERSION);
   SSL_CTX_set_max_proto_version (ctx, TLS1_2_VERSION);
   SSL_CTX_set_psk_server_callback (ctx, tls_server_psk_server_callback);
@@ -148,7 +160,7 @@ tls_config_ssl (SSL *ssl)
   SSL_set_min_proto_version (ssl, TLS1_2_VERSION);
   SSL_set_max_proto_version (ssl, TLS1_2_VERSION);
   SSL_set_psk_server_callback (ssl, tls_server_psk_server_callback);
-  SSL_set_cipher_list (ssl, "ALL");
+  SSL_set_cipher_list (ssl, GOODIX_TLS_CIPHERS);
 }
 
 static void *
@@ -161,9 +173,21 @@ goodix_tls_init_serve (void *me)
 
   fp_dbg ("TLS server accept done");
   if (retr <= 0)
-    fp_err ("server ready failed: %s", ERR_reason_error_string (ERR_get_error ()));
+    {
+      unsigned long err_code;
+      while ((err_code = ERR_get_error ()) != 0)
+        {
+          g_warning ("5e0a TLS accept failed: %s (0x%lx, cipher: %s)",
+                     ERR_error_string (err_code, NULL), err_code,
+                     SSL_get_cipher_name (self->ssl_layer));
+        }
+    }
   else
-    fp_dbg ("TLS connection ready");
+    {
+      g_message ("5e0a TLS connection ready (cipher: %s, proto: %s)",
+                 SSL_get_cipher_name (self->ssl_layer),
+                 SSL_get_version (self->ssl_layer));
+    }
   return NULL;
 }
 

@@ -1458,8 +1458,20 @@ static void
 tls_handshake_done (FpiSsm *ssm, FpDevice *dev, GError *error)
 {
   if (error)
-    fp_dbg ("failed to do tls handshake: %s (code: %d)", error->message,
-            error->code);
+    {
+      fp_err ("failed to do tls handshake: %s (code: %d)", error->message,
+              error->code);
+      FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
+      FpiDeviceGoodixTlsPrivate *priv =
+        fpi_device_goodixtls_get_instance_private (self);
+      if (priv->tls_ready_callback)
+        {
+          ((GoodixNoneCallback) priv->tls_ready_callback->callback)(
+            dev, priv->tls_ready_callback->user_data, error);
+          g_clear_pointer (&priv->tls_ready_callback, g_free);
+        }
+      return;
+    }
   goodix_send_tls_successfully_established (
     dev, on_tls_successfully_established, NULL);
 }
