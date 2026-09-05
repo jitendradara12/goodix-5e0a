@@ -17,9 +17,13 @@ class TestF08SensorRegister(unittest.TestCase):
         self.mcu = MockGoodixMCU()
 
     def test_gain_register_address(self):
-        """Verify analog frontend configuration register address is 0x022c."""
-        reg_addr = 0x022C
-        self.assertEqual(reg_addr, 556)
+        """Verify preset register 0x022c dispatches to the gain bytes on read."""
+        read_payload = struct.pack("<BHBB", 0x00, 0x022C, 2, 0x00)
+        read_pkt = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_READ_SENSOR_REGISTER, read_payload))
+        reply = self.mcu.handle_out_packet(read_pkt)
+        ok, _, body, _ = decode_pack(reply)
+        _, _, resp, _, _ = decode_protocol(body)
+        self.assertEqual(resp, CANONICAL_REG_022C_GAIN)
 
     def test_gain_register_write_encoding(self):
         """Verify write register packet (CMD 0x80, multiples=0, addr=0x022c, val=\x05\x03)."""

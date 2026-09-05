@@ -51,7 +51,7 @@ class TestF02NopResetFlush(unittest.TestCase):
         self.assertEqual(counter, RESET_NUMBER)
 
     def test_nop_buffer_flush_silence_is_success(self):
-        """Verify on-wire NOP produces no reply (silence = success / buffer empty)."""
+        """Verify mock NOP produces no reply (silence = success / buffer empty)."""
         packet = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_NOP, b""))
         reply = self.mcu.handle_out_packet(packet)
         # Proven on-wire hardware fact: 5e0a MCU never replies to NOP; silence is success
