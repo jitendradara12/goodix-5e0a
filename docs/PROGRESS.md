@@ -159,14 +159,17 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 | **23** | Base runtime hardening | Activation error completion + `linear_subtract_inplace` arithmetic underflow floor | **Ready for Agent** (Sequenced two-step hardening). |
 | **24** | Remove per-frame debug file dumps | Drop unconditional `/dev/shm` and `/tmp` writes from `goodix5e0a_on_read_img` hot path | **Ready for Agent** (Cleanup for upstream submission). |
 | **25** | Upstream foundation alignment | Documented architecture guide, ADRs (0001-0003), and upstream gap spec | **Closed** (Docs committed on `master`). |
-| **26** | Cold-boot / post-reboot TLS PSK disagreement & provisioning lifecycle | MCU rejects TLS record MAC after power loss; requires host PSK provisioning (`0xe0`) or key query (`0xe4`) | **Ready for Agent** (Post-mortem documented, experimental branches defined). |
+| **26** | Cold-boot / post-reboot TLS PSK disagreement & provisioning lifecycle | MCU rejects TLS record MAC after power loss; requires host PSK provisioning (`0xe0`) or key query (`0xe4`) | **Closed** (Ticket 26.3 provisioning landed). |
+| **33** | Unlock latency: kill per-attempt multipliers | De-duplicated gallery; per-attempt driver cost is ~1s; root-cause promoted to 35 | **Closed** (Dedup confirmed, single-finger variance analyzed). |
+| **34** | Guard stale activation completion after deactivate/release | Shared generation counter across 5 bump sites; drops orphaned TLS completions | **Closed** (Verified: clean hyprlock -> sudo handoff, no stale completions). |
+| **35** | Genuine-pair shortfall diagnosis (scores 9–11 vs 12) | Offline analysis + pressure-stratified enrollment cleared threshold (`score=13/12`) on attempt 1/1 | **Closed** (Hardware verified: 13/12 match, <3s unlock). |
 
 ---
 
 ## 5. Current State & Configuration Summary
 
-- **Active State:** Biometric matching engine (15/12) and sub-300ms verification latency verified; 387-test automated test suite passing (100%); post-reboot cold-boot PSK provisioning tracked in Ticket 26.
-- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `bcbb61834aa95310f2428a3dc46204f4c12ec52146ab241ae23549f3178b11aa`).
+- **Active State:** Biometric matching engine (13-15/12) and sub-300ms verification latency verified; 400-test automated test suite passing (100%); stale activation guard (Ticket 34) and pressure stratification (Ticket 35) verified.
+- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `524318b4b0d445e4ba48e017d9718c36ce645f5c639b58f24b4df2835fe4addc`).
 - **Activation Sequence:** 6-state SSM: NOP -> Reset -> Read Chip ID -> Read OTP -> Query FW Version -> Upload Config -> TLS PSK Handshake -> Enable Chip.
 - **Verify Latency:** Sub-300ms instant unlock via immediate scan SSM completion and finger status reporting.
 - **Frame Decoder:** Strip each 132-byte block's first 96 bytes, discard 36-byte zero pad; unpack sequentially into 5,120 pixels.

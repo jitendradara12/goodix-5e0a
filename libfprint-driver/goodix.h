@@ -549,6 +549,22 @@ gboolean goodix_dev_deinit (FpDevice *dev,
  */
 void goodix_reset_state (FpDevice *dev);
 
+/**
+ * @brief Stale-activation guard generation (ticket 34).
+ *
+ * A single counter bumped on every (re)activation start and every
+ * deactivate/teardown entry. TLS completion callbacks capture the value
+ * when their session's TLS init starts (as the init user_data) and drop
+ * on mismatch without touching hardware or completing activation.
+ * Live sessions always match: no bump happens between a session's TLS
+ * init and its completion.
+ *
+ * @param dev
+ * @return current generation (get) or new generation after bump (bump)
+ */
+guint goodix_activation_gen_get (FpDevice *dev);
+guint goodix_activation_gen_bump (FpDevice *dev);
+
 // ---- DEV SECTION END ----
 
 // -----------------------------------------------------------------------------

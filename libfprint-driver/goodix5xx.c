@@ -547,6 +547,9 @@ dev_deactivate (FpImageDevice *img_dev)
 {
   FpDevice *dev = FP_DEVICE (img_dev);
 
+  /* Ticket 34: orphan any in-flight TLS activation; its completion will drop. */
+  goodix_activation_gen_bump (dev);
+
   goodix_reset_state (dev);
   GError *error = NULL;
 
@@ -565,6 +568,16 @@ static void
 tls_activation_complete (FpDevice *dev, gpointer user_data,
                          GError *error)
 {
+  /* Ticket 34 stale-activation guard: drop orphaned completions without
+   * touching hardware or completing activation. Live sessions always match. */
+  if (GPOINTER_TO_UINT (user_data) != goodix_activation_gen_get (dev))
+    {
+      fp_dbg ("dropping stale TLS activation completion");
+      if (error)
+        g_error_free (error);
+      return;
+    }
+
   if (error)
     {
       fp_err ("failed to complete tls activation: %s", error->message);
@@ -580,7 +593,9 @@ tls_activation_complete (FpDevice *dev, gpointer user_data,
 void
 goodixtls5xx_init_tls (FpDevice * dev)
 {
-  goodix_tls_init (dev, tls_activation_complete, NULL);
+  /* Ticket 34: capture the activation generation for the staleness guard. */
+  goodix_tls_init (dev, tls_activation_complete,
+                   GUINT_TO_POINTER (goodix_activation_gen_get (dev)));
 }
 
 void

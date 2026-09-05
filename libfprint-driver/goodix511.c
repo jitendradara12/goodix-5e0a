@@ -246,6 +246,9 @@ dev_activate (FpImageDevice *img_dev)
 {
   FpDevice *dev = FP_DEVICE (img_dev);
 
+  /* Ticket 34: invalidate any in-flight activation from a previous session. */
+  goodix_activation_gen_bump (dev);
+
   fpi_ssm_start (fpi_ssm_new (dev, activate_run_state, ACTIVATE_NUM_STATES),
                  activate_complete);
 }

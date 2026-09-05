@@ -1,8 +1,20 @@
 diff --git a/libfprint/drivers/goodixtls/goodix.c b/libfprint/drivers/goodixtls/goodix.c
-index 236589f..90abce2 100644
+index 236589f..b5d57e8 100644
 --- a/libfprint/drivers/goodixtls/goodix.c
 +++ b/libfprint/drivers/goodixtls/goodix.c
-@@ -89,7 +89,11 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
+@@ -55,6 +55,11 @@ typedef struct
+ 
+   GoodixCallbackInfo *tls_ready_callback;
+ 
++  /* Ticket 34 stale-activation guard: bumped on every (re)activation start
++   * and every deactivate/teardown entry; TLS completion callbacks capture
++   * it at TLS-init time and drop on mismatch. Zero-initialized. */
++  guint             activation_gen;
++
+   GCancellable       *transfer_cancel_tkn;
+   gboolean            inited;
+ } FpiDeviceGoodixTlsPrivate;
+@@ -89,7 +94,11 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
    gpointer user_data = priv->user_data;
  
    if (!(priv->ack || priv->reply))
@@ -15,7 +27,7 @@ index 236589f..90abce2 100644
  
    goodix_reset_state (dev);
    if (!error)
-@@ -97,6 +101,8 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
+@@ -97,6 +106,8 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
  
    if (callback)
      callback (dev, data, length, user_data, error);
@@ -24,7 +36,7 @@ index 236589f..90abce2 100644
  }
  
  void
-@@ -109,6 +115,19 @@ goodix_receive_none (FpDevice *dev, guint8 *data, guint16 length,
+@@ -109,6 +120,19 @@ goodix_receive_none (FpDevice *dev, guint8 *data, guint16 length,
    callback (dev, cb_info->user_data, error);
  }
  
@@ -44,7 +56,7 @@ index 236589f..90abce2 100644
  void
  goodix_receive_default (FpDevice *dev, guint8 *data, guint16 length,
                          gpointer user_data, GError *error)
-@@ -398,11 +417,19 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
+@@ -398,11 +422,19 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
        break;
  
      case GOODIX_FLAGS_TLS:
@@ -69,7 +81,7 @@ index 236589f..90abce2 100644
        break;
  
      default:
-@@ -422,9 +449,12 @@ goodix_receive_data_cb (FpiUsbTransfer *transfer, FpDevice *dev,
+@@ -422,9 +454,12 @@ goodix_receive_data_cb (FpiUsbTransfer *transfer, FpDevice *dev,
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
  
@@ -83,7 +95,7 @@ index 236589f..90abce2 100644
        return;
      }
    if (error)
-@@ -464,16 +494,34 @@ goodix_start_read_loop (FpDevice *dev)
+@@ -464,16 +499,34 @@ goodix_start_read_loop (FpDevice *dev)
      fpi_device_goodixtls_get_instance_private (self);
  
    if (priv->inited)
@@ -121,7 +133,7 @@ index 236589f..90abce2 100644
  void
  goodix_receive_data (FpDevice *dev)
  {
-@@ -563,6 +611,11 @@ goodix_send_protocol (
+@@ -563,6 +616,11 @@ goodix_send_protocol (
        fp_warn ("A command is already running: 0x%02x", priv->cmd);
        if (free_func)
          free_func ((void *) payload);
@@ -133,7 +145,7 @@ index 236589f..90abce2 100644
        return;
      }
  
-@@ -597,6 +650,8 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
+@@ -597,6 +655,8 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
    GoodixNop payload = {.unknown = 0x00000000};
    GoodixCallbackInfo *cb_info;
  
@@ -142,7 +154,7 @@ index 236589f..90abce2 100644
    if (callback)
      {
        cb_info = malloc (sizeof (GoodixCallbackInfo));
-@@ -605,23 +660,31 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
+@@ -605,23 +665,31 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
        cb_info->user_data = user_data;
  
        goodix_send_protocol (dev, GOODIX_CMD_NOP, (guint8 *) &payload,
@@ -180,7 +192,7 @@ index 236589f..90abce2 100644
  
    if (callback)
      {
-@@ -630,14 +693,14 @@ goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,
+@@ -630,14 +698,14 @@ goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
  
@@ -199,7 +211,7 @@ index 236589f..90abce2 100644
                          NULL, NULL);
  }
  
-@@ -648,29 +711,31 @@ goodix_send_mcu_switch_to_fdt_down (FpDevice *dev, const guint8 *mode, guint16 l
+@@ -648,29 +716,31 @@ goodix_send_mcu_switch_to_fdt_down (FpDevice *dev, const guint8 *mode, guint16 l
                                      gpointer user_data)
  {
    GoodixCallbackInfo *cb_info = NULL;
@@ -244,7 +256,7 @@ index 236589f..90abce2 100644
  }
  
  void
-@@ -680,41 +745,41 @@ goodix_send_mcu_switch_to_fdt_up (FpDevice *dev, const guint8 *mode, guint16 len
+@@ -680,41 +750,41 @@ goodix_send_mcu_switch_to_fdt_up (FpDevice *dev, const guint8 *mode, guint16 len
                                    gpointer user_data)
  {
    GoodixCallbackInfo *cb_info = NULL;
@@ -305,7 +317,7 @@ index 236589f..90abce2 100644
  
    if (callback)
      {
-@@ -722,11 +787,11 @@ goodix_send_mcu_switch_to_fdt_mode (FpDevice *dev, const guint8 *mode, guint16 l
+@@ -722,11 +792,11 @@ goodix_send_mcu_switch_to_fdt_mode (FpDevice *dev, const guint8 *mode, guint16 l
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
@@ -319,7 +331,7 @@ index 236589f..90abce2 100644
                          cb_info);
  
  }
-@@ -979,7 +1044,7 @@ goodix_send_query_firmware_version (FpDevice                     *dev,
+@@ -979,7 +1049,7 @@ goodix_send_query_firmware_version (FpDevice                     *dev,
  }
  
  void
@@ -328,7 +340,7 @@ index 236589f..90abce2 100644
                               gpointer user_data)
  {
    GoodixQueryMcuState payload = {.unused_flags = 0x55};
-@@ -993,13 +1058,13 @@ goodix_send_query_mcu_state (FpDevice *dev, GoodixDefaultCallback callback,
+@@ -993,13 +1063,13 @@ goodix_send_query_mcu_state (FpDevice *dev, GoodixDefaultCallback callback,
        cb_info->user_data = user_data;
  
        goodix_send_protocol (dev, GOODIX_CMD_QUERY_MCU_STATE, (guint8 *) &payload,
@@ -345,7 +357,7 @@ index 236589f..90abce2 100644
                          NULL);
  }
  
-@@ -1048,13 +1113,86 @@ goodix_send_tls_successfully_established (FpDevice          *dev,
+@@ -1048,13 +1118,86 @@ goodix_send_tls_successfully_established (FpDevice          *dev,
  
        goodix_send_protocol (dev, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED,
                              (guint8 *) &payload, sizeof (payload), NULL, TRUE,
@@ -434,7 +446,7 @@ index 236589f..90abce2 100644
  }
  
  void
-@@ -1108,13 +1246,13 @@ goodix_send_preset_psk_write (FpDevice *dev, guint32 flags, guint8 *psk,
+@@ -1108,13 +1251,13 @@ goodix_send_preset_psk_write (FpDevice *dev, guint32 flags, guint8 *psk,
        cb_info->user_data = user_data;
  
        goodix_send_protocol (dev, GOODIX_CMD_PRESET_PSK_WRITE, payload,
@@ -450,7 +462,7 @@ index 236589f..90abce2 100644
                          TRUE, NULL, NULL);
  }
  
-@@ -1145,6 +1283,42 @@ goodix_send_preset_psk_read (FpDevice *dev, guint32 flags, guint16 length,
+@@ -1145,6 +1288,42 @@ goodix_send_preset_psk_read (FpDevice *dev, guint32 flags, guint16 length,
                          NULL);
  }
  
@@ -493,7 +505,7 @@ index 236589f..90abce2 100644
  // ---- GOODIX SEND SECTION END ----
  
  // -----------------------------------------------------------------------------
-@@ -1168,6 +1342,8 @@ goodix_dev_init (FpDevice *dev, GError **error)
+@@ -1168,6 +1347,8 @@ goodix_dev_init (FpDevice *dev, GError **error)
    priv->length = 0;
    priv->transfer_cancel_tkn = g_cancellable_new ();
  
@@ -502,7 +514,7 @@ index 236589f..90abce2 100644
    return g_usb_device_claim_interface (fpi_device_get_usb_device (dev),
                                         class->interface, 0, error);
  }
-@@ -1182,8 +1358,11 @@ goodix_reset_state (FpDevice *dev)
+@@ -1182,8 +1363,32 @@ goodix_reset_state (FpDevice *dev)
      g_clear_pointer (&priv->timeout, g_source_destroy);
    priv->ack = FALSE;
    priv->reply = FALSE;
@@ -511,10 +523,41 @@ index 236589f..90abce2 100644
    priv->user_data = NULL;
 +  g_clear_pointer (&priv->data, g_free);
 +  priv->length = 0;
++}
++
++/* Ticket 34 stale-activation guard (single shared counter; live paths untouched). */
++guint
++goodix_activation_gen_get (FpDevice *dev)
++{
++  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
++  FpiDeviceGoodixTlsPrivate *priv =
++    fpi_device_goodixtls_get_instance_private (self);
++
++  return priv->activation_gen;
++}
++
++guint
++goodix_activation_gen_bump (FpDevice *dev)
++{
++  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
++  FpiDeviceGoodixTlsPrivate *priv =
++    fpi_device_goodixtls_get_instance_private (self);
++
++  return ++priv->activation_gen;
  }
  
  gboolean
-@@ -1292,8 +1471,20 @@ static void
+@@ -1194,6 +1399,9 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
+   FpiDeviceGoodixTlsPrivate *priv =
+     fpi_device_goodixtls_get_instance_private (self);
+ 
++  /* Ticket 34 teardown entry: orphan any in-flight TLS activation. */
++  goodix_activation_gen_bump (dev);
++
+   if (priv->timeout)
+     g_source_destroy (priv->timeout);
+   g_free (priv->data);
+@@ -1292,8 +1500,20 @@ static void
  tls_handshake_done (FpiSsm *ssm, FpDevice *dev, GError *error)
  {
    if (error)
@@ -537,7 +580,7 @@ index 236589f..90abce2 100644
    goodix_send_tls_successfully_established (
      dev, on_tls_successfully_established, NULL);
  }
-@@ -1403,10 +1594,10 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
+@@ -1403,10 +1623,10 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
    g_assert (priv->tls_hop == NULL);
@@ -550,7 +593,7 @@ index 236589f..90abce2 100644
    priv->tls_ready_callback->callback = G_CALLBACK (callback);
    priv->tls_ready_callback->user_data = user_data;
    GoodixTlsServer *s = priv->tls_hop;
-@@ -1443,7 +1634,6 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
+@@ -1443,7 +1663,6 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
                                  guint16 length, gpointer user_data,
                                  GError *error)
  {
@@ -558,7 +601,7 @@ index 236589f..90abce2 100644
    GoodixCallbackInfo *cb_info = user_data;
    GoodixImageCallback callback = (GoodixImageCallback) cb_info->callback;
  
-@@ -1457,9 +1647,30 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
+@@ -1457,9 +1676,30 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
  
@@ -591,7 +634,7 @@ index 236589f..90abce2 100644
    guint8 *buff = malloc (size);
    GError *err = NULL;
    int read_size = goodix_tls_server_read (priv->tls_hop, buff, size, &err);
-@@ -1467,6 +1678,7 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
+@@ -1467,6 +1707,7 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
    if (read_size <= 0)
      {
        callback (dev, NULL, 0, cb_info->user_data, err);
@@ -600,7 +643,7 @@ index 236589f..90abce2 100644
        return;
      }
 diff --git a/libfprint/drivers/goodixtls/goodix.h b/libfprint/drivers/goodixtls/goodix.h
-index 08bc254..2b2e3ea 100644
+index 08bc254..58c3b6a 100644
 --- a/libfprint/drivers/goodixtls/goodix.h
 +++ b/libfprint/drivers/goodixtls/goodix.h
 @@ -25,6 +25,10 @@
@@ -706,8 +749,31 @@ index 08bc254..2b2e3ea 100644
  /**
   * @brief Request the OTP (One Time Password) from the device
   *
+@@ -517,6 +549,22 @@ gboolean goodix_dev_deinit (FpDevice *dev,
+  */
+ void goodix_reset_state (FpDevice *dev);
+ 
++/**
++ * @brief Stale-activation guard generation (ticket 34).
++ *
++ * A single counter bumped on every (re)activation start and every
++ * deactivate/teardown entry. TLS completion callbacks capture the value
++ * when their session's TLS init starts (as the init user_data) and drop
++ * on mismatch without touching hardware or completing activation.
++ * Live sessions always match: no bump happens between a session's TLS
++ * init and its completion.
++ *
++ * @param dev
++ * @return current generation (get) or new generation after bump (bump)
++ */
++guint goodix_activation_gen_get (FpDevice *dev);
++guint goodix_activation_gen_bump (FpDevice *dev);
++
+ // ---- DEV SECTION END ----
+ 
+ // -----------------------------------------------------------------------------
 diff --git a/libfprint/drivers/goodixtls/goodix511.c b/libfprint/drivers/goodixtls/goodix511.c
-index a19379c..d6110dd 100644
+index a19379c..f5e4901 100644
 --- a/libfprint/drivers/goodixtls/goodix511.c
 +++ b/libfprint/drivers/goodixtls/goodix511.c
 @@ -47,14 +47,6 @@
@@ -725,7 +791,17 @@ index a19379c..d6110dd 100644
  
  struct _FpiDeviceGoodixTls511
  {
-@@ -310,6 +302,7 @@ fpi_device_goodixtls511_class_init (FpiDeviceGoodixTls511Class * class)
+@@ -254,6 +246,9 @@ dev_activate (FpImageDevice *img_dev)
+ {
+   FpDevice *dev = FP_DEVICE (img_dev);
+ 
++  /* Ticket 34: invalidate any in-flight activation from a previous session. */
++  goodix_activation_gen_bump (dev);
++
+   fpi_ssm_start (fpi_ssm_new (dev, activate_run_state, ACTIVATE_NUM_STATES),
+                  activate_complete);
+ }
+@@ -310,6 +305,7 @@ fpi_device_goodixtls511_class_init (FpiDeviceGoodixTls511Class * class)
    xx_cls->psk_len = sizeof (goodix_511_psk_0);
    xx_cls->firmware_version = GOODIX_511_FIRMWARE_VERSION;
    xx_cls->reset_number = GOODIX_511_RESET_NUMBER;
@@ -735,10 +811,10 @@ index a19379c..d6110dd 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..6965071
+index 0000000..cf96051
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,964 @@
+@@ -0,0 +1,984 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -955,6 +1031,18 @@ index 0000000..6965071
 +static void
 +on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
 +{
++  /* Ticket 34 stale-activation guard: a deactivate/teardown that landed
++   * while the TLS handshake was in flight bumped the generation, so a
++   * mismatch means this completion is orphaned — drop it without touching
++   * hardware or completing activation. Live sessions always match. */
++  if (GPOINTER_TO_UINT (user_data) != goodix_activation_gen_get (dev))
++    {
++      fp_dbg ("dropping stale TLS activation completion");
++      if (error)
++        g_error_free (error);
++      return;
++    }
++
 +  if (error)
 +    {
 +      fp_err ("failed during TLS activation: %s (code: %d)", error->message, error->code);
@@ -972,7 +1060,9 @@ index 0000000..6965071
 +  G_DEBUG_HERE ();
 +  if (!error)
 +    {
-+      goodix_tls_init (dev, on_tls_activation_complete, NULL);
++      /* Ticket 34: capture the activation generation for the staleness guard. */
++      goodix_tls_init (dev, on_tls_activation_complete,
++                       GUINT_TO_POINTER (goodix_activation_gen_get (dev)));
 +    }
 +  else
 +    {
@@ -986,6 +1076,9 @@ index 0000000..6965071
 +{
 +  FpDevice *dev = FP_DEVICE (img_dev);
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
++  /* Ticket 34: invalidate any in-flight activation from a previous session. */
++  goodix_activation_gen_bump (dev);
 +
 +  self->session_started = FALSE;
 +  self->scan_ssm = NULL;
@@ -1423,6 +1516,9 @@ index 0000000..6965071
 +  FpDevice *dev = FP_DEVICE (img_dev);
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 +
++  /* Ticket 34: orphan any in-flight TLS activation; its completion will drop. */
++  goodix_activation_gen_bump (dev);
++
 +  self->session_started = FALSE;
 +  if (self->down_timeout)
 +    {
@@ -1842,7 +1938,7 @@ index 0000000..bcfd8f8
 +  {.vid = 0, .pid = 0, .driver_data = 0},
 +};
 diff --git a/libfprint/drivers/goodixtls/goodix5xx.c b/libfprint/drivers/goodixtls/goodix5xx.c
-index a75d28b..796b462 100644
+index a75d28b..3c5514c 100644
 --- a/libfprint/drivers/goodixtls/goodix5xx.c
 +++ b/libfprint/drivers/goodixtls/goodix5xx.c
 @@ -27,11 +27,11 @@
@@ -2047,14 +2143,14 @@ index a75d28b..796b462 100644
    GoodixTls5xxPix *pix = frame;
 +  guint32 start = 0;
 +  guint32 end = (frame_size >= 4) ? (frame_size - 4) : frame_size;
-+
+ 
+-  for (int i = 8; i != frame_size - 5; i += 6)
 +  if (frame_size >= 13 && (frame_size - 13) % 6 == 0)
 +    {
 +      start = 8;
 +      end = frame_size - 5;
 +    }
- 
--  for (int i = 8; i != frame_size - 5; i += 6)
++
 +  for (guint32 i = start; i + 6 <= end; i += 6)
      {
        const guint8 *chunk = raw_frame + i;
@@ -2103,7 +2199,17 @@ index a75d28b..796b462 100644
  static void
  dev_change_state (FpImageDevice * img_dev, FpiImageDeviceState state)
  {
-@@ -523,6 +557,7 @@ dev_deactivate (FpImageDevice *img_dev)
+@@ -513,6 +547,9 @@ dev_deactivate (FpImageDevice *img_dev)
+ {
+   FpDevice *dev = FP_DEVICE (img_dev);
+ 
++  /* Ticket 34: orphan any in-flight TLS activation; its completion will drop. */
++  goodix_activation_gen_bump (dev);
++
+   goodix_reset_state (dev);
+   GError *error = NULL;
+ 
+@@ -523,6 +560,7 @@ dev_deactivate (FpImageDevice *img_dev)
  
    if (cls->reset_state)
      cls->reset_state (dev);
@@ -2111,7 +2217,20 @@ index a75d28b..796b462 100644
    fpi_image_device_deactivate_complete (img_dev, error);
  }
  
-@@ -533,6 +568,8 @@ tls_activation_complete (FpDevice *dev, gpointer user_data,
+@@ -530,9 +568,21 @@ static void
+ tls_activation_complete (FpDevice *dev, gpointer user_data,
+                          GError *error)
+ {
++  /* Ticket 34 stale-activation guard: drop orphaned completions without
++   * touching hardware or completing activation. Live sessions always match. */
++  if (GPOINTER_TO_UINT (user_data) != goodix_activation_gen_get (dev))
++    {
++      fp_dbg ("dropping stale TLS activation completion");
++      if (error)
++        g_error_free (error);
++      return;
++    }
++
    if (error)
      {
        fp_err ("failed to complete tls activation: %s", error->message);
@@ -2120,7 +2239,17 @@ index a75d28b..796b462 100644
        return;
      }
    FpImageDevice *image_dev = FP_IMAGE_DEVICE (dev);
-@@ -550,6 +587,8 @@ void
+@@ -543,13 +593,17 @@ tls_activation_complete (FpDevice *dev, gpointer user_data,
+ void
+ goodixtls5xx_init_tls (FpDevice * dev)
+ {
+-  goodix_tls_init (dev, tls_activation_complete, NULL);
++  /* Ticket 34: capture the activation generation for the staleness guard. */
++  goodix_tls_init (dev, tls_activation_complete,
++                   GUINT_TO_POINTER (goodix_activation_gen_get (dev)));
+ }
+ 
+ void
  fpi_device_goodixtls5xx_class_init (FpiDeviceGoodixTls5xxClass * self)
  {
    self->get_mcu_cfg = NULL;
@@ -2129,7 +2258,7 @@ index a75d28b..796b462 100644
    self->process_frame = NULL;
    self->scan_height = 0;
    self->scan_width = 0;
-@@ -568,7 +607,6 @@ fpi_device_goodixtls5xx_init (FpiDeviceGoodixTls5xx * self)
+@@ -568,7 +622,6 @@ fpi_device_goodixtls5xx_init (FpiDeviceGoodixTls5xx * self)
  {
    FpiDeviceGoodixTls5xxPrivate* priv = fpi_device_goodixtls5xx_get_instance_private(self);
    priv->calibration_img = NULL;

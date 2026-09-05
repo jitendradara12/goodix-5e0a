@@ -55,6 +55,11 @@ typedef struct
 
   GoodixCallbackInfo *tls_ready_callback;
 
+  /* Ticket 34 stale-activation guard: bumped on every (re)activation start
+   * and every deactivate/teardown entry; TLS completion callbacks capture
+   * it at TLS-init time and drop on mismatch. Zero-initialized. */
+  guint             activation_gen;
+
   GCancellable       *transfer_cancel_tkn;
   gboolean            inited;
 } FpiDeviceGoodixTlsPrivate;
@@ -1365,6 +1370,27 @@ goodix_reset_state (FpDevice *dev)
   priv->length = 0;
 }
 
+/* Ticket 34 stale-activation guard (single shared counter; live paths untouched). */
+guint
+goodix_activation_gen_get (FpDevice *dev)
+{
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
+  FpiDeviceGoodixTlsPrivate *priv =
+    fpi_device_goodixtls_get_instance_private (self);
+
+  return priv->activation_gen;
+}
+
+guint
+goodix_activation_gen_bump (FpDevice *dev)
+{
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
+  FpiDeviceGoodixTlsPrivate *priv =
+    fpi_device_goodixtls_get_instance_private (self);
+
+  return ++priv->activation_gen;
+}
+
 gboolean
 goodix_dev_deinit (FpDevice *dev, GError **error)
 {
@@ -1372,6 +1398,9 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
   FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS (self);
   FpiDeviceGoodixTlsPrivate *priv =
     fpi_device_goodixtls_get_instance_private (self);
+
+  /* Ticket 34 teardown entry: orphan any in-flight TLS activation. */
+  goodix_activation_gen_bump (dev);
 
   if (priv->timeout)
     g_source_destroy (priv->timeout);

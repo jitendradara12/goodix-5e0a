@@ -214,6 +214,18 @@ on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
 static void
 on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
 {
+  /* Ticket 34 stale-activation guard: a deactivate/teardown that landed
+   * while the TLS handshake was in flight bumped the generation, so a
+   * mismatch means this completion is orphaned — drop it without touching
+   * hardware or completing activation. Live sessions always match. */
+  if (GPOINTER_TO_UINT (user_data) != goodix_activation_gen_get (dev))
+    {
+      fp_dbg ("dropping stale TLS activation completion");
+      if (error)
+        g_error_free (error);
+      return;
+    }
+
   if (error)
     {
       fp_err ("failed during TLS activation: %s (code: %d)", error->message, error->code);
@@ -231,7 +243,9 @@ activate_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
   G_DEBUG_HERE ();
   if (!error)
     {
-      goodix_tls_init (dev, on_tls_activation_complete, NULL);
+      /* Ticket 34: capture the activation generation for the staleness guard. */
+      goodix_tls_init (dev, on_tls_activation_complete,
+                       GUINT_TO_POINTER (goodix_activation_gen_get (dev)));
     }
   else
     {
@@ -245,6 +259,9 @@ dev_activate (FpImageDevice *img_dev)
 {
   FpDevice *dev = FP_DEVICE (img_dev);
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
+  /* Ticket 34: invalidate any in-flight activation from a previous session. */
+  goodix_activation_gen_bump (dev);
 
   self->session_started = FALSE;
   self->scan_ssm = NULL;
@@ -681,6 +698,9 @@ goodix5e0a_deactivate (FpImageDevice *img_dev)
 {
   FpDevice *dev = FP_DEVICE (img_dev);
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
+  /* Ticket 34: orphan any in-flight TLS activation; its completion will drop. */
+  goodix_activation_gen_bump (dev);
 
   self->session_started = FALSE;
   if (self->down_timeout)

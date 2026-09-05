@@ -43,3 +43,4 @@ experiments/test_bozorth
 
 # Internal AI agent workdir
 .agents/
+session-*.md
