@@ -40,6 +40,33 @@ valgrind-run fprintd; purely observational).
 7. Trivia (not worth a frozen-file edit): stray `;` after
    `goodix_send_protocol` failure block (`goodix.c:~638`).
 
+## TLS engine init/teardown observations (`goodixtls.c`, same run covers them)
+8. `goodix_tls_server_init` does not check `SSL_new` (`goodixtls.c:254`)
+   or `pthread_create` (`:259`) — unlike both prior alloc paths in the same
+   function (`:231`, `:243`). On failure init still returns TRUE. Alloc/
+   thread-exhaustion rarity bounds it; a valgrind/fd-exhaustion run is the
+   only honest probe (force via low `ulimit -v` / thread limit if available).
+9. Teardown order in `goodix_tls_server_deinit`: `shutdown` → `join` →
+   `close` → `SSL_shutdown`/`SSL_free` (`:176-213`). `SSL_shutdown` runs
+   after its fd is closed (ordering inversion, return ignored — benign by
+   inspection). f18 test claims (shutdown-before-join, both fds invalidated,
+   double-deinit safe) all verified against this exact sequence.
+10. Adjudicated sound (do not re-litigate): the `shutdown(SHUT_RDWR)` wakeup
+    premise (`:176-177`) holds on Linux AF_UNIX — blocked `recv` returns EOF,
+    `SSL_accept` errors out, the serve thread exits, `join` returns. Serve vs
+    teardown `SSL*`/fd access is strictly sequenced after `join`, so no lock
+    is needed on that pair. pthread_create-failure join hazard is void on
+    glibc (`serve_thread` zeroed at `:223`, untouched on failure → skipped
+    by the `:184` guard; strictly POSIX-unspecified, practically safe).
+
+## Extended validation for the same run
+- FD accounting: record `/proc/self/fd` count (or `ls /proc/<pid>/fd | wc -l`)
+  before the first activation and after each of 3 consecutive
+  activate → verify → deactivate cycles. Predict: returns to baseline
+  every cycle (no fd/SSL/thread leak from init/teardown paths).
+- Confirm branch: valgrind clean + fd count stable + finding-1/2 paths
+  never trigger (no alloc-failure logs); behavior identical to baseline.
+
 ## Predicted signatures
 - Confirm branch (defects real but benign as analyzed): ASan/valgrind run
   shows the FDT-mode UAF read + bounded error leak(s) on collision paths
