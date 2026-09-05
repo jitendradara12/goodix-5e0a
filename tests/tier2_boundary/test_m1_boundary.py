@@ -38,25 +38,15 @@ class TestM1BoundaryConditions(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.header_content = HEADER_PATH.read_text(encoding="utf-8")
-        cls.fdt_down = parse_c_array(cls.header_content, "goodix_5e0a_fdt_down")
-        cls.fdt_up = parse_c_array(cls.header_content, "goodix_5e0a_fdt_up")
-        cls.fdt_mode = parse_c_array(cls.header_content, "goodix_5e0a_fdt_mode")
-        cls.config_52xd = parse_c_array(cls.header_content, "goodix_5e0a_config")
+        cls.down_s12 = parse_c_array(cls.header_content, "goodix_5e0a_down_s12")
+        cls.up_u01 = parse_c_array(cls.header_content, "goodix_5e0a_up_u01")
+        cls.img_payload = parse_c_array(cls.header_content, "goodix_5e0a_img_payload")
+        cls.config_table = parse_c_array(cls.header_content, "goodix_5e0a_config")
         cls.psk = parse_c_array(cls.header_content, "goodix_5e0a_psk")
 
-    def test_fdt_down_truncation_boundaries(self):
-        """Test decoding behavior on all prefix truncations of FDT DOWN packets."""
-        encoded = encode_protocol(CMD_MCU_SWITCH_TO_FDT_DOWN, self.fdt_down, calc_checksum=True, pad_data=False)
-        total_len = len(encoded)  # 3 (header) + 39 (payload) + 1 (checksum) = 43 bytes
-
-        for trunc_len in range(0, total_len):
-            truncated = encoded[:trunc_len]
-            ok, cmd, payload, valid_chk, valid_null = decode_protocol(truncated)
-            self.assertFalse(ok, f"Truncated packet of length {trunc_len}/{total_len} must fail decoding")
-
-    def test_fdt_up_truncation_boundaries(self):
-        """Test decoding behavior on all prefix truncations of FDT UP packets."""
-        encoded = encode_protocol(CMD_MCU_SWITCH_TO_FDT_UP, self.fdt_up, calc_checksum=True, pad_data=False)
+    def test_down_s12_truncation_boundaries(self):
+        """Test decoding behavior on all prefix truncations of DOWN S12 packets."""
+        encoded = encode_protocol(CMD_MCU_SWITCH_TO_FDT_DOWN, self.down_s12, calc_checksum=True, pad_data=False)
         total_len = len(encoded)
 
         for trunc_len in range(0, total_len):
@@ -64,15 +54,26 @@ class TestM1BoundaryConditions(unittest.TestCase):
             ok, cmd, payload, valid_chk, valid_null = decode_protocol(truncated)
             self.assertFalse(ok, f"Truncated packet of length {trunc_len}/{total_len} must fail decoding")
 
-    def test_fdt_mode_truncation_boundaries(self):
-        """Test decoding behavior on all prefix truncations of FDT MODE packets."""
-        encoded = encode_protocol(CMD_MCU_SWITCH_TO_FDT_MODE, self.fdt_mode, calc_checksum=True, pad_data=False)
-        total_len = len(encoded)  # 3 + 27 + 1 = 31 bytes
+    def test_up_u01_truncation_boundaries(self):
+        """Test decoding behavior on all prefix truncations of UP U01 packets."""
+        encoded = encode_protocol(CMD_MCU_SWITCH_TO_FDT_UP, self.up_u01, calc_checksum=True, pad_data=False)
+        total_len = len(encoded)
 
         for trunc_len in range(0, total_len):
             truncated = encoded[:trunc_len]
             ok, cmd, payload, valid_chk, valid_null = decode_protocol(truncated)
             self.assertFalse(ok, f"Truncated packet of length {trunc_len}/{total_len} must fail decoding")
+
+    def test_img_payload_truncation_boundaries(self):
+        """Test decoding behavior on all prefix truncations of image capture payload packets."""
+        encoded = encode_protocol(0x20, self.img_payload, calc_checksum=True, pad_data=False)
+        total_len = len(encoded)
+
+        for trunc_len in range(0, total_len):
+            truncated = encoded[:trunc_len]
+            ok, cmd, payload, valid_chk, valid_null = decode_protocol(truncated)
+            self.assertFalse(ok, f"Truncated packet of length {trunc_len}/{total_len} must fail decoding")
+
 
     def test_zero_length_payload_boundaries(self):
         """Test wire encoding and decoding with empty/0-length payload."""
@@ -98,7 +99,7 @@ class TestM1BoundaryConditions(unittest.TestCase):
     def test_max_uint16_length_overflow_guard(self):
         """Test protocol decoder robustness when length header specifies 0xFFFF (65535)."""
         malicious_hdr = struct.pack("<BH", CMD_MCU_SWITCH_TO_FDT_DOWN, 0xFFFF)
-        malicious_packet = malicious_hdr + self.fdt_down
+        malicious_packet = malicious_hdr + self.down_s12
         ok, cmd, payload, valid_chk, valid_null = decode_protocol(malicious_packet)
         self.assertFalse(ok, "Decoder must reject buffer when wire length exceeds actual received byte count")
 
@@ -112,10 +113,10 @@ class TestM1BoundaryConditions(unittest.TestCase):
     def test_pack_padding_64b_boundary(self):
         """Verify 64-byte USB EP OUT boundary chunking for all M1 payloads."""
         for name, payload in [
-            ("FDT_DOWN", self.fdt_down),
-            ("FDT_UP", self.fdt_up),
-            ("FDT_MODE", self.fdt_mode),
-            ("CONFIG_52XD", self.config_52xd),
+            ("DOWN_S12", self.down_s12),
+            ("UP_U01", self.up_u01),
+            ("IMG_PAYLOAD", self.img_payload),
+            ("CONFIG_TABLE", self.config_table),
             ("PSK", self.psk),
         ]:
             proto = encode_protocol(0x32, payload, calc_checksum=True, pad_data=False)
@@ -124,6 +125,7 @@ class TestM1BoundaryConditions(unittest.TestCase):
                 len(pack) % EP_OUT_CHUNK_SIZE, 0,
                 f"Pack for {name} (len {len(pack)}) must be an exact multiple of {EP_OUT_CHUNK_SIZE} bytes"
             )
+
 
     def test_register_0x022c_boundary_values(self):
         """Verify register 0x022c gain/exposure bounds and value mappings."""

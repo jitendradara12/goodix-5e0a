@@ -87,9 +87,6 @@ class TestM2BaseContract7Stages(unittest.TestCase):
     def test_base_class_vtable_binding_contract(self):
         """Verify goodix5e0a wires all required base class vtable methods."""
         vtable_checks = [
-            "xx_cls->get_mcu_cfg = get_mcu_config;",
-            "xx_cls->get_fdt_down_cfg = get_fdt_down_config;",
-            "xx_cls->get_fdt_up_cfg = get_fdt_up_config;",
             "xx_cls->process_raw_frame = process_raw_frame;",
             "xx_cls->scan_height = GOODIX_5E0A_HEIGHT;",
             "xx_cls->scan_width = GOODIX_5E0A_WIDTH;",
@@ -98,20 +95,36 @@ class TestM2BaseContract7Stages(unittest.TestCase):
             "xx_cls->psk_len = sizeof (goodix_5e0a_psk);",
             "xx_cls->firmware_version = GOODIX_5E0A_FIRMWARE_VERSION;",
             "xx_cls->reset_number = GOODIX_5E0A_RESET_NUMBER;",
+            "xx_cls->has_calibration = FALSE;",
         ]
         for check in vtable_checks:
             self.assertIn(check, self.c_code)
 
-    def test_subclass_does_not_override_change_state(self):
-        """Verify goodix5e0a does NOT override change_state so base class drives scan SSM."""
-        self.assertNotIn("img_dev_class->change_state", self.c_code)
-        self.assertIn("img_cls->change_state = dev_change_state;", self.base_c)
-        self.assertIn("goodixtls5xx_scan_start (FPI_DEVICE_GOODIXTLS5XX (img_dev));", self.base_c)
+    def test_7_stage_scan_ssm_in_goodix5e0a(self):
+        """Verify the 7 exact scan SSM states and callbacks in goodix5e0a.c."""
+        expected_5e0a_stages = [
+            "SCAN_5E0A_SESSION_AE",
+            "SCAN_5E0A_SESSION_D6",
+            "SCAN_5E0A_FDT_DOWN",
+            "SCAN_5E0A_GET_IMAGE",
+            "SCAN_5E0A_FDT_UP_1",
+            "SCAN_5E0A_UP_AE",
+            "SCAN_5E0A_FDT_UP_2",
+            "SCAN_5E0A_NUM_STATES",
+        ]
+        for stage in expected_5e0a_stages:
+            self.assertIn(stage, self.c_code)
+
+        self.assertIn("img_dev_class->change_state = goodix5e0a_change_state;", self.c_code)
+        self.assertIn("goodix5e0a_scan_start (FP_DEVICE (img_dev));", self.c_code)
+        self.assertIn("self->scan_ssm = fpi_ssm_new (dev, goodix5e0a_scan_run_state, SCAN_5E0A_NUM_STATES);", self.c_code)
+        self.assertIn("img_dev_class->deactivate = goodix5e0a_deactivate;", self.c_code)
 
     def test_finger_status_reporting_in_scan_lifecycle(self):
         """Verify finger status reporting occurs at Stage 4 (TRUE) and Stage 6 (FALSE)."""
         self.assertIn("case SCAN_STAGE_GET_IMG:\n      fpi_image_device_report_finger_status (img_dev, TRUE);", self.base_c)
         self.assertIn("case SCAN_STAGE_SWITCH_TO_FTD_DONE:\n      fpi_image_device_report_finger_status (img_dev, FALSE);", self.base_c)
+
 
     def test_fdt_down_and_up_config_payloads(self):
         """Verify FDT DOWN and FDT UP config payloads match canonical hardware specs."""

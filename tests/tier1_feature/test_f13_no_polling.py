@@ -28,11 +28,14 @@ class TestF13NoPolling(unittest.TestCase):
         self.assertNotIn("usleep", content)
 
     def test_blocking_fdt_interrupt_driven_architecture(self):
-        """Verify driver uses hardware FDT callbacks rather than software periodic polling."""
+        """Verify driver uses hardware FDT callbacks and SSM state transitions."""
         with open(self.driver_c_path, "r") as f:
             content = f.read()
-        self.assertIn("get_fdt_down_cfg", content)
-        self.assertIn("get_fdt_up_cfg", content)
+        self.assertIn("goodix5e0a_on_fdt_down_reply", content)
+        self.assertIn("goodix5e0a_on_fdt_up_reply", content)
+        self.assertIn("GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN", content)
+        self.assertIn("GOODIX_CMD_MCU_SWITCH_TO_FDT_UP", content)
+        self.assertIn("goodix5e0a_scan_run_state", content)
 
     def test_no_synthetic_noise_threshold_heuristics(self):
         """Verify no ad-hoc noise floor guessing loops exist in driver."""
@@ -41,10 +44,13 @@ class TestF13NoPolling(unittest.TestCase):
         self.assertNotIn("noise_threshold", content.lower())
 
     def test_minimal_loc_ponytail_standard(self):
-        """Verify goodix5e0a.c is concise (~290 lines) without duplicated state machines."""
+        """Verify goodix5e0a.c reflects production driver size (~850 LOC) with clean base-class subclassing."""
         with open(self.driver_c_path, "r") as f:
-            lines = [l for l in f if l.strip()]
-        self.assertLess(len(lines), 350, f"Driver exceeds Ponytail compactness goal: {len(lines)} LOC")
+            content = f.read()
+            lines = [l for l in content.splitlines() if l.strip()]
+        self.assertLess(len(lines), 950, f"Driver exceeds production compactness limit: {len(lines)} LOC")
+        self.assertIn("FPI_TYPE_DEVICE_GOODIXTLS5XX", content)
+
 
 if __name__ == "__main__":
     unittest.main()

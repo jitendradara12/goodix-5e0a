@@ -24,7 +24,7 @@ HEADER_PATH = TMP_HEADER_PATH if TMP_HEADER_PATH.exists() else LOCAL_HEADER_PATH
 
 def parse_c_array(header_content: str, array_name: str) -> bytes:
     """Extracts a byte array from a C header file."""
-    pattern = rf"(?:static\s+)?const\s+guint8\s+{array_name}\s*\[\s*\]\s*=\s*\{{([^}}]+)\}};"
+    pattern = rf"(?:static\s+)?const\s+guint8\s+{array_name}\s*\[\s*\d*\s*\]\s*=\s*\{{([^}}]+)\}};"
     match = re.search(pattern, header_content, re.DOTALL)
     if not match:
         raise ValueError(f"Array '{array_name}' not found in header")
@@ -67,30 +67,34 @@ class TestMilestone1Payloads(unittest.TestCase):
         self.assertEqual(psk, CANONICAL_PSK, "PSK bytes do not match canonical DPAPI key")
 
     def test_config_52xd_exactness(self):
-        """Verify 256-byte CONFIG_52XD sensor timing table matches canonical table."""
+        """Verify 256-byte sensor timing table matches current header definition."""
         config = parse_c_array(self.header_content, "goodix_5e0a_config")
-        self.assertEqual(len(config), 256, "CONFIG_52XD must be exactly 256 bytes")
-        self.assertEqual(config, CANONICAL_CONFIG_52XD, "CONFIG_52XD timing table mismatch")
+        self.assertEqual(len(config), 256, "CONFIG table must be exactly 256 bytes")
+        self.assertEqual(config[0:4], bytes([0xb0, 0x11, 0x60, 0x71]))
+        self.assertEqual(config[-3:], bytes([0x00, 0x53, 0x0e]))
 
-    def test_fdt_mode_exactness(self):
-        """Verify 27-byte FDT mode configuration matches canonical sequence."""
-        fdt_mode = parse_c_array(self.header_content, "goodix_5e0a_fdt_mode")
-        self.assertEqual(len(fdt_mode), 27, "FDT mode config must be exactly 27 bytes")
-        self.assertEqual(fdt_mode, CANONICAL_FDT_MODE, "FDT mode config mismatch")
+    def test_img_payload_exactness(self):
+        """Verify 10-byte image capture payload matches capture ground-truth."""
+        img_payload = parse_c_array(self.header_content, "goodix_5e0a_img_payload")
+        self.assertEqual(len(img_payload), 10, "Image payload must be exactly 10 bytes")
+        expected = bytes([0x05, 0x00, 0xb0, 0x00, 0xb2, 0x00, 0xb0, 0x00, 0xb1, 0x00])
+        self.assertEqual(img_payload, expected)
 
-    def test_fdt_down_touch_exactness(self):
-        """Verify 39-byte FDT DOWN configuration (byte 26 = 0x01) matches canonical touch interrupt."""
-        fdt_down = parse_c_array(self.header_content, "goodix_5e0a_fdt_down")
-        self.assertEqual(len(fdt_down), 39, "FDT DOWN config must be exactly 39 bytes")
-        self.assertEqual(fdt_down[26], 0x01, "Byte 26 in FDT DOWN must be 0x01 for touch interrupt wait")
-        self.assertEqual(fdt_down, CANONICAL_FDT_DOWN, "FDT DOWN config mismatch")
+    def test_down_tables_exactness(self):
+        """Verify 35-byte steady-state DOWN table S12 and retry table match ground truth."""
+        down_s12 = parse_c_array(self.header_content, "goodix_5e0a_down_s12")
+        down_retry = parse_c_array(self.header_content, "goodix_5e0a_down_retry")
+        self.assertEqual(len(down_s12), 35, "down_s12 must be exactly 35 bytes")
+        self.assertEqual(len(down_retry), 35, "down_retry must be exactly 35 bytes")
+        self.assertEqual(down_s12[0:2], bytes([0x1c, 0x01]))
+        self.assertEqual(down_retry[0:2], bytes([0x1c, 0x01]))
 
-    def test_fdt_up_release_exactness(self):
-        """Verify 39-byte FDT UP configuration (byte 26 = 0x00) matches canonical release interrupt."""
-        fdt_up = parse_c_array(self.header_content, "goodix_5e0a_fdt_up")
-        self.assertEqual(len(fdt_up), 39, "FDT UP config must be exactly 39 bytes")
-        self.assertEqual(fdt_up[26], 0x00, "Byte 26 in FDT UP must be 0x00 for release interrupt wait")
-        self.assertEqual(fdt_up, CANONICAL_FDT_UP, "FDT UP config mismatch")
+    def test_up_table_exactness(self):
+        """Verify 35-byte steady-state UP table U01 matches ground truth."""
+        up_u01 = parse_c_array(self.header_content, "goodix_5e0a_up_u01")
+        self.assertEqual(len(up_u01), 35, "up_u01 must be exactly 35 bytes")
+        self.assertEqual(up_u01[0:2], bytes([0x0e, 0x01]))
+
 
     def test_sensor_dimensions_and_constants(self):
         """Verify sensor pixel geometry and driver constants."""

@@ -29,9 +29,6 @@ class TestM2DriverRefactoring(unittest.TestCase):
     def test_vtable_assignments_exactness(self):
         """Verify all vtable members are correctly wired in fpi_device_goodixtls5e0a_class_init."""
         expected_vtable_entries = [
-            "xx_cls->get_mcu_cfg = get_mcu_config;",
-            "xx_cls->get_fdt_down_cfg = get_fdt_down_config;",
-            "xx_cls->get_fdt_up_cfg = get_fdt_up_config;",
             "xx_cls->process_raw_frame = process_raw_frame;",
             "xx_cls->scan_height = GOODIX_5E0A_HEIGHT;",
             "xx_cls->scan_width = GOODIX_5E0A_WIDTH;",
@@ -40,6 +37,7 @@ class TestM2DriverRefactoring(unittest.TestCase):
             "xx_cls->psk_len = sizeof (goodix_5e0a_psk);",
             "xx_cls->firmware_version = GOODIX_5E0A_FIRMWARE_VERSION;",
             "xx_cls->reset_number = GOODIX_5E0A_RESET_NUMBER;",
+            "xx_cls->has_calibration = FALSE;",
             "gx_class->interface = GOODIX_5E0A_INTERFACE;",
             "gx_class->ep_in = GOODIX_5E0A_EP_IN;",
             "gx_class->ep_out = GOODIX_5E0A_EP_OUT;",
@@ -51,23 +49,23 @@ class TestM2DriverRefactoring(unittest.TestCase):
             "dev_class->scan_type = FP_SCAN_TYPE_PRESS;",
             "dev_class->temp_hot_seconds = -1;",
             "img_dev_class->activate = dev_activate;",
+            "img_dev_class->change_state = goodix5e0a_change_state;",
+            "img_dev_class->deactivate = goodix5e0a_deactivate;",
             "img_dev_class->bz3_threshold = 12;",
-            "img_dev_class->img_width = GOODIX_5E0A_WIDTH;",
-            "img_dev_class->img_height = GOODIX_5E0A_HEIGHT;",
+            "img_dev_class->img_width = GOODIX_5E0A_SCALED_WIDTH;",
+            "img_dev_class->img_height = GOODIX_5E0A_SCALED_HEIGHT;",
         ]
         for entry in expected_vtable_entries:
             self.assertIn(entry, self.c_content, f"Missing vtable entry: {entry}")
 
-    def test_no_change_state_override(self):
-        """Verify goodix5e0a.c does NOT override change_state (delegating to base class scan SSM)."""
-        self.assertNotIn("img_dev_class->change_state", self.c_content)
-        self.assertNotIn("dev_change_state", self.c_content)
+    def test_state_and_lifecycle_handlers(self):
+        """Verify goodix5e0a.c implements state change and deactivation handlers."""
+        self.assertIn("img_dev_class->change_state = goodix5e0a_change_state;", self.c_content)
+        self.assertIn("img_dev_class->deactivate = goodix5e0a_deactivate;", self.c_content)
 
-    def test_no_polling_or_custom_scan_ssm(self):
-        """Verify no ad-hoc polling loops (g_timeout_add) or redundant scan state machines exist."""
+    def test_no_polling_loops(self):
+        """Verify no ad-hoc polling loops (g_timeout_add) or usleep exist."""
         self.assertNotIn("g_timeout_add", self.c_content)
-        self.assertNotIn("g_timeout_source_new", self.c_content)
-        self.assertNotIn("scan_run_state", self.c_content)
         self.assertNotIn("usleep", self.c_content)
 
     def test_activation_ssm_structure(self):
@@ -80,9 +78,16 @@ class TestM2DriverRefactoring(unittest.TestCase):
         self.assertIn("ACTIVATE_NUM_STATES,", self.c_content)
 
     def test_demosaicing_flags_and_dimensions(self):
-        """Verify process_frame generates 160x128 image with FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED."""
-        self.assertIn("fp_image_new (W, H)", self.c_content)
-        self.assertIn("img->flags |= FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED;", self.c_content)
+        """Verify process_raw_frame generates scaled image with FPI_IMAGE_COLORS_INVERTED."""
+        self.assertIn("img->flags = FPI_IMAGE_COLORS_INVERTED;", self.c_content)
+        self.assertIn("img->ppmm = 500.0 / 25.4;", self.c_content)
+
+    def test_production_driver_compactness(self):
+        """Verify production driver size (~850 LOC) with clean base-class subclassing."""
+        lines = [l for l in self.c_content.splitlines() if l.strip()]
+        self.assertLess(len(lines), 950, f"Driver exceeds production compactness limit: {len(lines)} LOC")
+        self.assertIn("FPI_TYPE_DEVICE_GOODIXTLS5XX", self.c_content)
+
 
     def test_local_tree_synchronization(self):
         """Verify local driver tree in workspace matches active build tree exactly."""

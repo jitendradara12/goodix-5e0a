@@ -443,9 +443,12 @@ goodix_receive_data_cb (FpiUsbTransfer *transfer, FpDevice *dev,
   FpiDeviceGoodixTlsPrivate *priv =
     fpi_device_goodixtls_get_instance_private (self);
 
-  if (g_cancellable_is_cancelled (priv->transfer_cancel_tkn))
+  if (g_cancellable_is_cancelled (priv->transfer_cancel_tkn) ||
+      g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
     {
       fp_dbg ("transfer cancelled, aborting read loop...");
+      if (error)
+        g_error_free (error);
       return;
     }
   if (error)

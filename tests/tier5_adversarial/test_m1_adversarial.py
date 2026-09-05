@@ -42,38 +42,32 @@ class TestM1AdversarialHarness(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.header_content = HEADER_PATH.read_text(encoding="utf-8")
-        cls.fdt_down = parse_c_array(cls.header_content, "goodix_5e0a_fdt_down")
-        cls.fdt_up = parse_c_array(cls.header_content, "goodix_5e0a_fdt_up")
-        cls.fdt_mode = parse_c_array(cls.header_content, "goodix_5e0a_fdt_mode")
-        cls.config_52xd = parse_c_array(cls.header_content, "goodix_5e0a_config")
+        cls.down_s12 = parse_c_array(cls.header_content, "goodix_5e0a_down_s12")
+        cls.down_retry = parse_c_array(cls.header_content, "goodix_5e0a_down_retry")
+        cls.up_u01 = parse_c_array(cls.header_content, "goodix_5e0a_up_u01")
+        cls.img_payload = parse_c_array(cls.header_content, "goodix_5e0a_img_payload")
+        cls.config_table = parse_c_array(cls.header_content, "goodix_5e0a_config")
         cls.psk = parse_c_array(cls.header_content, "goodix_5e0a_psk")
 
-    def test_byte_26_strict_distinction_invariant(self):
+    def test_down_and_up_table_properties(self):
         """
-        Adversarially verify that FDT DOWN (0x32) and FDT UP (0x34) differ ONLY at byte 26,
-        and that byte 26 is strictly 0x01 for DOWN and 0x00 for UP.
+        Verify that down_s12, down_retry, and up_u01 are exactly 35 bytes,
+        and down_s12 and down_retry differ only at specific retry slot bytes.
         """
-        self.assertEqual(len(self.fdt_down), 39)
-        self.assertEqual(len(self.fdt_up), 39)
-        self.assertEqual(self.fdt_down[26], 0x01, "FDT DOWN byte 26 must be 0x01 (Touch)")
-        self.assertEqual(self.fdt_up[26], 0x00, "FDT UP byte 26 must be 0x00 (Release)")
+        self.assertEqual(len(self.down_s12), 35)
+        self.assertEqual(len(self.down_retry), 35)
+        self.assertEqual(len(self.up_u01), 35)
 
-        diff_indices = [i for i in range(39) if self.fdt_down[i] != self.fdt_up[i]]
-        self.assertEqual(
-            diff_indices, [26],
-            f"FDT DOWN and FDT UP must differ exclusively at byte 26, found differences at {diff_indices}"
-        )
+        diff_indices = [i for i in range(35) if self.down_s12[i] != self.down_retry[i]]
+        # Diffs at slot bytes 11 and 19
+        self.assertEqual(diff_indices, [11, 19])
 
-        # Verify Hamming distance is exactly 1 bit
-        bit_diff = bin(self.fdt_down[26] ^ self.fdt_up[26]).count("1")
-        self.assertEqual(bit_diff, 1, "Byte 26 hamming distance between DOWN (0x01) and UP (0x00) must be 1")
-
-    def test_fdt_down_exhaustive_bit_flip_checksum_invalidation(self):
+    def test_down_s12_exhaustive_bit_flip_checksum_invalidation(self):
         """
-        Flip every single bit (39 bytes * 8 bits = 312 bit flips) in FDT DOWN payload
+        Flip every single bit in down_s12 payload
         and verify that the wire checksum invalidates in 100% of cases.
         """
-        encoded = encode_protocol(CMD_MCU_SWITCH_TO_FDT_DOWN, self.fdt_down, calc_checksum=True, pad_data=False)
+        encoded = encode_protocol(CMD_MCU_SWITCH_TO_FDT_DOWN, self.down_s12, calc_checksum=True, pad_data=False)
         total_len = len(encoded)
 
         failures = []
@@ -89,15 +83,15 @@ class TestM1AdversarialHarness(unittest.TestCase):
 
         self.assertEqual(
             len(failures), 0,
-            f"Expected 0 false negatives for bit flips in FDT DOWN, but {len(failures)} passed: {failures}"
+            f"Expected 0 false negatives for bit flips in down_s12, but {len(failures)} passed: {failures}"
         )
 
-    def test_fdt_up_exhaustive_bit_flip_checksum_invalidation(self):
+    def test_up_u01_exhaustive_bit_flip_checksum_invalidation(self):
         """
-        Flip every single bit (39 bytes * 8 bits = 312 bit flips) in FDT UP payload
+        Flip every single bit in up_u01 payload
         and verify that the wire checksum invalidates in 100% of cases.
         """
-        encoded = encode_protocol(CMD_MCU_SWITCH_TO_FDT_UP, self.fdt_up, calc_checksum=True, pad_data=False)
+        encoded = encode_protocol(CMD_MCU_SWITCH_TO_FDT_UP, self.up_u01, calc_checksum=True, pad_data=False)
         total_len = len(encoded)
 
         failures = []
@@ -113,15 +107,15 @@ class TestM1AdversarialHarness(unittest.TestCase):
 
         self.assertEqual(
             len(failures), 0,
-            f"Expected 0 false negatives for bit flips in FDT UP, but {len(failures)} passed: {failures}"
+            f"Expected 0 false negatives for bit flips in up_u01, but {len(failures)} passed: {failures}"
         )
 
-    def test_fdt_mode_exhaustive_bit_flip_checksum_invalidation(self):
+    def test_img_payload_exhaustive_bit_flip_checksum_invalidation(self):
         """
-        Flip every single bit (27 bytes * 8 bits = 216 bit flips) in FDT MODE payload
+        Flip every single bit in img_payload
         and verify that the wire checksum invalidates in 100% of cases.
         """
-        encoded = encode_protocol(CMD_MCU_SWITCH_TO_FDT_MODE, self.fdt_mode, calc_checksum=True, pad_data=False)
+        encoded = encode_protocol(0x20, self.img_payload, calc_checksum=True, pad_data=False)
         total_len = len(encoded)
 
         failures = []
@@ -137,15 +131,15 @@ class TestM1AdversarialHarness(unittest.TestCase):
 
         self.assertEqual(
             len(failures), 0,
-            f"Expected 0 false negatives for bit flips in FDT MODE, but {len(failures)} passed: {failures}"
+            f"Expected 0 false negatives for bit flips in img_payload, but {len(failures)} passed: {failures}"
         )
 
-    def test_config_52xd_exhaustive_bit_flip_checksum_invalidation(self):
+    def test_config_table_exhaustive_bit_flip_checksum_invalidation(self):
         """
-        Flip every single bit (256 bytes * 8 bits = 2048 bit flips) in CONFIG_52XD payload
+        Flip every single bit (256 bytes * 8 bits = 2048 bit flips) in config_table payload
         and verify that the wire checksum invalidates in 100% of cases.
         """
-        encoded = encode_protocol(0x90, self.config_52xd, calc_checksum=True, pad_data=False)
+        encoded = encode_protocol(0x90, self.config_table, calc_checksum=True, pad_data=False)
         total_len = len(encoded)
 
         failures = []
@@ -161,7 +155,7 @@ class TestM1AdversarialHarness(unittest.TestCase):
 
         self.assertEqual(
             len(failures), 0,
-            f"Expected 0 false negatives for bit flips in CONFIG_52XD, but {len(failures)} passed: {failures}"
+            f"Expected 0 false negatives for bit flips in config_table, but {len(failures)} passed: {failures}"
         )
 
     def test_psk_key_tamper_detection(self):
@@ -194,9 +188,9 @@ class TestM1AdversarialHarness(unittest.TestCase):
         Exactly 1 value must be accepted, and 255 values must be rejected.
         """
         for name, cmd, payload in [
-            ("FDT_DOWN", CMD_MCU_SWITCH_TO_FDT_DOWN, self.fdt_down),
-            ("FDT_UP", CMD_MCU_SWITCH_TO_FDT_UP, self.fdt_up),
-            ("FDT_MODE", CMD_MCU_SWITCH_TO_FDT_MODE, self.fdt_mode),
+            ("DOWN_S12", CMD_MCU_SWITCH_TO_FDT_DOWN, self.down_s12),
+            ("UP_U01", CMD_MCU_SWITCH_TO_FDT_UP, self.up_u01),
+            ("IMG_PAYLOAD", 0x20, self.img_payload),
         ]:
             encoded = bytearray(encode_protocol(cmd, payload, calc_checksum=True, pad_data=False))
             chk_idx = len(encoded) - 1
@@ -213,6 +207,7 @@ class TestM1AdversarialHarness(unittest.TestCase):
                 accepted_values, [valid_chk_byte],
                 f"{name} checksum sweep failed: accepted {accepted_values}, expected only [{valid_chk_byte}]"
             )
+
 
     def test_checksum_integer_promotion_boundary_analysis(self):
         """

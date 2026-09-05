@@ -449,6 +449,9 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
         }
     }
 
+  /* In verify mode (and all non-enroll actions), unconditionally pass the captured image
+   * to fpi_image_device_image_captured without calling retry_scan. This prevents premature
+   * deactivation race and D-Bus claim lockups while Bozorth3 evaluates match score. */
   fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);
   fpi_ssm_next_state (ssm);
 }
@@ -579,7 +582,11 @@ goodix5e0a_deactivate (FpImageDevice *img_dev)
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 
   self->session_started = FALSE;
-  self->scan_ssm = NULL;
+  if (self->scan_ssm != NULL)
+    {
+      fpi_ssm_free (self->scan_ssm);
+      self->scan_ssm = NULL;
+    }
   if (self->down_timeout)
     {
       g_source_destroy (self->down_timeout);
