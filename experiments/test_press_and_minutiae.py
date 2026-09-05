@@ -1,6 +1,10 @@
+from pathlib import Path
 import sys, socket, subprocess, time
 import goodix_protocol
 sys.modules["protocol"] = goodix_protocol
+vendor_dir = Path(__file__).resolve().parent / "vendor"
+if vendor_dir.exists():
+    sys.path.insert(0, str(vendor_dir))
 sys.path.insert(0, "/tmp/goodix-fp-dump")
 import goodix, tool
 

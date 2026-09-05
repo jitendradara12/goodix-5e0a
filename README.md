@@ -9,7 +9,7 @@ A reverse-engineered Linux driver for the **Goodix 27c6:5e0a** fingerprint scann
 - **Native `libfprint` Integration**: Clean subclass of `FpiDeviceGoodixTls5xx` adhering to minimal, event-driven design principles.
 - **Hardware FDT Touch & Release**: Uses hardware capacitive Finger Detection Trigger (`0x32` FDT DOWN, `0x34` FDT UP) with zero CPU-hogging polling loops.
 - **TLS 1.2 PSK Encryption**: Implements the on-wire `TLS_PSK_WITH_AES_128_CBC_SHA256` protocol required by Goodix secure firmware.
-- **Cold-Boot PSK Reliability**: Restored `ACTIVATE_READ_OTP` stage primes MCU internal registers, ensuring dependable TLS 1.2 PSK negotiation on cold boots, reboots, and resume from deep sleep.
+- **TLS 1.2 PSK Encryption**: Implements the on-wire `TLS_PSK_WITH_AES_128_CBC_SHA256` protocol required by Goodix secure firmware (active key provisioning tracked in Ticket 26).
 - **NIST NBIS Minutiae Verification**: Extracts 23–25 minutiae per finger scan on hardware and passes Bozorth3 biometric match validation with scores of 13–15 (threshold: 12). See tickets 18–20 for hardware run logs.
 - **Sub-300ms Instant Unlock**: Direct SSM completion and immediate finger release reporting on image capture eliminate perceived latency without stalling on finger-lift polling.
 - **Empty-Air Rejection Gate**: Prevents capturing ambient thermal noise into templates when the sensor is touched lightly or untouched.
@@ -40,7 +40,7 @@ goodix/
 ├── experiments/             # Reverse-engineering prototypes and sample data
 ├── specs/                   # Reverse-engineering gap specs (research, read-only)
 ├── docs/                    # Progress & architecture documentation
-├── .scratch/goodix-5e0a/issues/  # Experiment tickets (01–24, status-tracked)
+├── .scratch/goodix-5e0a/issues/  # Experiment tickets (01–26, status-tracked)
 ├── goodix_protocol.py       # Hardware USB bulk transport for experiments
 ├── libfprint-goodix.nix     # Nix package derivation for libfprint with driver
 ├── nixos-module.nix         # NixOS module configuration

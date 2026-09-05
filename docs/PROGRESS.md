@@ -153,19 +153,21 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 | **17** | Canonical block extraction ($80 \times 96\text{B}$) + natural $64 \times 80$ raster + $3 \times 3$ local contrast | `padding_nonzero=0`, `active=5120`, `h_corr=0.944`, `v_corr=0.835`, Bozorth **5/12, 6/12** | **Confirmed** (Wire layout & biometric validity proven; peak score 6/12). |
 | **18** | Minutiae density elevation + Enrollment quality gate + `ppmm=500/25.4` + Direct residual contrast | **Two consecutive verify-match passes (15/12 and 14/12)** | **Verified & Closed** (Biometric consistency target achieved!). |
 | **19** | PAM / Sudo D-Bus lifecycle fix + Full E2E CI Test Suite (385 tests) | **385/385 passing tests across Tiers 1-5; clean deactivation and transfer cancel** | **Verified & Deployed** (D-Bus claim deadlock resolved). |
-| **20** | Verify latency optimization (< 300ms) + Cold-boot `ACTIVATE_READ_OTP` PSK initialization | Scan SSM completes & finger released immediately on capture; OTP read primes MCU for TLS PSK | **Ready for Hardware Verify** (Driver implemented, 385/385 tests green, unified patch synchronized). |
+| **20** | Verify latency optimization (< 300ms) + Scan SSM early completion | Scan SSM completes & finger released immediately on capture | **Verified & Deployed** (Driver implemented, 387/387 tests green, <300ms unlock). |
 | **21** | Transport memory-hygiene validation (ASan/valgrind observational protocol) | Static audit identified UAF read in `switch_to_fdt_mode` & bounded leak in `receive_done` | **Ready for Agent** (Purely observational protocol defined). |
 | **22** | Base/511 compile-link isolation | Remove 5e0a extern symbol decoupling from shared `goodix5xx.c` | **Ready for Agent** (Meson multi-driver build validation). |
 | **23** | Base runtime hardening | Activation error completion + `linear_subtract_inplace` arithmetic underflow floor | **Ready for Agent** (Sequenced two-step hardening). |
 | **24** | Remove per-frame debug file dumps | Drop unconditional `/dev/shm` and `/tmp` writes from `goodix5e0a_on_read_img` hot path | **Ready for Agent** (Cleanup for upstream submission). |
+| **25** | Upstream foundation alignment | Documented architecture guide, ADRs (0001-0003), and upstream gap spec | **Closed** (Docs committed on `master`). |
+| **26** | Cold-boot / post-reboot TLS PSK disagreement & provisioning lifecycle | MCU rejects TLS record MAC after power loss; requires host PSK provisioning (`0xe0`) or key query (`0xe4`) | **Ready for Agent** (Post-mortem documented, experimental branches defined). |
 
 ---
 
 ## 5. Current State & Configuration Summary
 
-- **Active State:** Production-hardened driver verified by 385-test automated suite, sub-300ms verification latency, and cold-boot OTP initialization.
-- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `daf78ffeb739fc1e1a9ec461551b5827da30f490b745ea847c16e3aecaab344d`).
-- **Activation Sequence:** 5-state SSM: NOP -> Reset -> Read Chip ID -> Read OTP (`ACTIVATE_READ_OTP`) -> Query FW Version.
+- **Active State:** Biometric matching engine (15/12) and sub-300ms verification latency verified; 387-test automated test suite passing (100%); post-reboot cold-boot PSK provisioning tracked in Ticket 26.
+- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `c45c688ce60ff6cbf82249542c188ff58993b12eb53d2fafc1f524061c27b6eb`).
+- **Activation Sequence:** 6-state SSM: NOP -> Reset -> Read Chip ID -> Read OTP -> Query FW Version -> Upload Config -> TLS PSK Handshake -> Enable Chip.
 - **Verify Latency:** Sub-300ms instant unlock via immediate scan SSM completion and finger status reporting.
 - **Frame Decoder:** Strip each 132-byte block's first 96 bytes, discard 36-byte zero pad; unpack sequentially into 5,120 pixels.
 - **Dimensions:** Native $64 \times 80$ (WxH), upscaled 2x via bilinear interpolation to $128 \times 160$.

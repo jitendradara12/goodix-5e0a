@@ -1,7 +1,11 @@
+from pathlib import Path
 import sys
 import goodix_protocol
 sys.modules['protocol'] = goodix_protocol
-sys.path.insert(0, '/tmp/goodix-fp-dump')
+vendor_dir = Path(__file__).resolve().parent / "vendor"
+if vendor_dir.exists():
+    sys.path.insert(0, str(vendor_dir))
+sys.path.insert(0, "/tmp/goodix-fp-dump")
 import goodix
 
 device = goodix.Device(0x5e0a, goodix_protocol.USBProtocol)

@@ -70,17 +70,26 @@ There are three possible mechanisms:
 
 ## 4. Planned Experiments
 
-### Experiment 26.1: Probe MCU PSK Status via Python Standalone Harness
-- **Control Test:** Stop `fprintd` (`sudo systemctl stop fprintd`).
-- **Command:** Run `PYTHONPATH=. nix-shell -p python3Packages.pyusb openssl --run "python3 experiments/test_register.py"`.
-- **Predicted Outcomes:**
-  - *Branch A (Read returns key):* If `preset_psk_read(0xbb020001)` succeeds, inspect what 32-byte key the MCU currently holds. If it returns a key different from `d853ad...`, the MCU holds a default or generated key.
-  - *Branch B (Read returns 0 bytes or error):* The MCU requires PSK provisioning via `preset_psk_write(0xbb020001, goodix_5e0a_psk)`.
+### Experiment 26.1: Probe MCU PSK Status via Python Standalone Harness (CONFIRMED ON HARDWARE)
+- **Command:** `PYTHONPATH=. nix-shell -p python3Packages.pyusb --run "python3 experiments/test_register.py"`
+- **Hardware Run Output (2026-09-05 15:43:30 IST):**
+  ```text
+  Reg 0x0000: 03a80025
+  --- Reading PSK status ---
+  preset_psk_read(0xbb020001): success=True, flags=0xbb020001, data=68776fdcf6352a215cc11cd58db2b361eb95a506cb503da68fb01ac1506ff1c9
+  ```
+- **Finding:**
+  - On cold boot, the Goodix 27c6:5e0a MCU returns `flags=0xbb020001` and holds default key `68776fdcf6352a215cc11cd58db2b361eb95a506cb503da68fb01ac1506ff1c9`!
+  - Our driver’s hardcoded key `d853ad1941b2dc5350c766cd726ef7a5df7d5fa39053bfac269ce752d7a8b2ab` disagrees completely with this key, explaining the exact `bad record mac` error during TLS accept.
 
-### Experiment 26.2: Test `preset_psk_write` (`0xe0`) in Activation Sequence
-- If Experiment 26.1 shows the MCU accepts `preset_psk_write`, add `ACTIVATE_WRITE_PSK` (`0xe0`) to `libfprint-driver/goodix5e0a.c` prior to `goodix_tls_init`.
-- **Confirm Signature:** `5e0a TLS connection ready (cipher: PSK-AES128-CBC-SHA256, proto: TLSv1.2)` without `bad record mac`.
-- **Falsify Signature:** MCU rejects `0xe0` or still fails MAC.
+### Experiment 26.2: Test Connecting TLS with the Cold-Boot PSK vs Provisioning
+- **Option 1 (Use Hardware Cold-Boot PSK):**
+  Configure OpenSSL to use `68776fdcf6352a215cc11cd58db2b361eb95a506cb503da68fb01ac1506ff1c9` when `preset_psk_read` reports it.
+- **Option 2 (Provision Windows DPAPI PSK via `0xe0`):**
+  Send `preset_psk_write(0xbb020001, d853ad...)` to the MCU before TLS handshake to restore the working DPAPI key.
+- **Predicted Outcomes:**
+  - *Confirm Signature:* `5e0a TLS connection ready` with zero OpenSSL errors.
+  - *Falsify Signature:* TLS still fails record MAC.
 
 ---
 
