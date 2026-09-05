@@ -103,7 +103,7 @@ echo ""
 # ------------------------------------------------------------------------------
 # Execute All Test Tiers
 # ------------------------------------------------------------------------------
-run_tier "Tier 1 (Feature Coverage)" "${SCRIPT_DIR}/tier1_feature" "24 Driver Features in Isolation"
+run_tier "Tier 1 (Feature Coverage)" "${SCRIPT_DIR}/tier1_feature" "Features F01-F25 plus Milestone Payloads in Isolation"
 run_tier "Tier 2 (Boundary & Corner Cases)" "${SCRIPT_DIR}/tier2_boundary" "Boundary Value & Limit Analysis"
 run_tier "Tier 3 (Pairwise Integration)" "${SCRIPT_DIR}/tier3_combination" "Cross-Feature Combinations & State Transitions"
 run_tier "Tier 4 (Real-World Application Scenarios)" "${SCRIPT_DIR}/tier4_realworld" "PAM Auth, Enrollment & System Scenarios"
