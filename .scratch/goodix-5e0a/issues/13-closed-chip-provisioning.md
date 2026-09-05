@@ -9,7 +9,7 @@ Full enroll + double verify off the back of it.
 **Blocked by:** None — ready now. (Ticket 12 closed-falsified, history kept.)
 
 **Status:** closed (provisioning, gating, full-size frames, and 8/8 enrollment verified on hardware; followed by Ticket 14)
-**Successor:** 14-image-geometry-and-bozorth-matching.md
+**Successor:** 14-superseded-image-geometry-and-bozorth-matching.md
 
 ## Settled facts this ticket builds on (do not re-litigate)
 

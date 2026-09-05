@@ -4,7 +4,7 @@
 
 **Blocked by:** None — builds on Ticket 14 (falsified raw column-major and raw linear truncation; established biometric correlation with scores 3–6/12).
 
-**Status:** superseded (successor: [16-minutiae-stabilization-and-verification.md](16-minutiae-stabilization-and-verification.md))
+**Status:** superseded (successor: [16-superseded-minutiae-stabilization-and-verification.md](16-superseded-minutiae-stabilization-and-verification.md))
 
 ## Hardware Run 11 & 12 (Deployed Driver — Stride-132 Column-Major Falsified)
 - **Journal Evidence (2026-09-05 00:35:56):**

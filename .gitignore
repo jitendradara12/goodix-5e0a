@@ -37,6 +37,8 @@ experiments/test_roundtrip
 experiments/test_stride165
 experiments/test_true_wbdi_unpack
 experiments/test_wbdi_unpack
+experiments/test_bozorth
+*.o
 *.raw
 
 # Internal AI agent workdir

@@ -7,10 +7,16 @@ claims, or USB captures yourself — write the exact commands for the user.
 
 - One variable per build. Frozen code needs a journal-backed reason.
 
-## Tickets (`.scratch/goodix-5e0a/issues/NN-*.md`)
+## Tickets (`.scratch/goodix-5e0a/issues/NN-<status>-*.md`)
 
-- Statuses: `ready-for-agent`, `in-progress`, `superseded` (+successor),
-  `closed` (+verdict). `verified` requires a deployed-driver hardware run.
+- Statuses: `ready-for-agent`, `ready-for-hardware-verify`, `in-progress`,
+  `superseded` (+successor), `closed` (+verdict). `verified` requires a
+  deployed-driver hardware run.
+- The filename carries the status: `NN-<first-word-of-Status>-slug.md`
+  (e.g. `26-ready-for-agent-*.md`, `18-closed-*.md`). Change the filename
+  in the same edit as the `Status:` header — never one without the other.
+  `ls *closed* *superseded*` shows permanent history; `ls *ready-for-agent*
+  *ready-for-hardware-verify* *in-progress*` shows the live workfront.
 - Each experiment states predicted journal signatures per branch (confirm /
   falsify). Supersede, don't delete.
 
@@ -56,6 +62,8 @@ tail -n 20`. Conclude only: confirmed / falsified /
 
 ## Live edge
 
-Transport/activation/TLS proven and frozen. Active experiments, findings,
+Transport/activation proven and frozen; TLS session establishment is
+warm-only — cold boot fails the record MAC (ticket 26, the active
+workfront). Active experiments, findings,
 and hardware run logs belong in tickets (`.scratch/goodix-5e0a/issues/NN-*.md`)
 and `docs/`, never in `AGENTS.md`. Refer to the open ticket for current status.

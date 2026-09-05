@@ -53,13 +53,6 @@ typedef struct
   const guint8 * data;
 } GoodixTls5xxMcuConfig;
 
-typedef struct
-{
-  guint16         width;
-  guint16         height;
-  unsigned char * data;
-} GoodixTls5xxImage;
-
 typedef FpImage *(*GoodixTls5xxProcessFrameFn)(guint8 * frame);
 typedef FpImage *(*GoodixTls5xxProcessRawFrameFn)(GoodixTls5xxPix * frame);
 typedef GoodixTls5xxMcuConfig (*GoodixTls5xxGetMcuFn)(void);

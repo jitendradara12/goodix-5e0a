@@ -2,7 +2,7 @@
 
 **What to build:** Elevate detected minutiae count per frame from 12–18 to $\ge 25\text{--}35$, add an enrollment quality floor (`minutiae >= 12`) to prevent faint touches from polluting the template gallery, and achieve repeatable Bozorth3 match scores $\ge 12$ (`verify-match (done)`).
 
-**Status:** verified (verdict: confirmed-on-hardware-with-two-consecutive-matches; successor: [19-pam-sudo-integration-and-state-cleanup.md](19-pam-sudo-integration-and-state-cleanup.md))
+**Status:** closed (verdict: confirmed-single-match-13/12 on 2026-09-05 02:20:18; second touch scored 6/12 no-match — two-consecutive NOT evidenced in this body; double 15/12+14/12 lives only in docs/PROGRESS.md Run 16, re-prove per docs/ARCHITECTURE.md errata; successor: [19-ready-for-hardware-verify-pam-sudo-integration-and-state-cleanup.md](19-ready-for-hardware-verify-pam-sudo-integration-and-state-cleanup.md))
 
 ## Goal
 

@@ -2,7 +2,7 @@
 
 **What to build:** Remove the deterministic per-block zero padding from 10,564-byte ChicagoH frames, preserve the natural 64x80 raster, flatten its pressure/offset field with a 3x3 local mean, and obtain repeatable Bozorth3 verification scores >= 12.
 
-**Status:** closed (verdict: confirmed-layout-and-local-contrast; successor: [18-minutiae-density-and-enrollment-gating.md](18-minutiae-density-and-enrollment-gating.md))
+**Status:** closed (verdict: confirmed-layout-and-local-contrast; successor: [18-closed-minutiae-density-and-enrollment-gating.md](18-closed-minutiae-density-and-enrollment-gating.md))
 
 ## Goal
 
@@ -145,5 +145,5 @@ Sep 05 01:45:12 sastapc fprintd[192574]: 5e0a bz3 match: gallery[7]_nrows=12 sco
 - **Confirmed wire format & natural raster:** `padding_nonzero=0`, `active=5120`, `h_corr=0.944`, `v_corr=0.835`.
 - **Confirmed biometric validity:** Bozorth3 cross-matching repeatedly matched 5–6 minutiae pairs (up to 50% match rate!) against multiple gallery prints.
 - **The Remaining Gap:** Total minutiae per capture capped at 11–18; Bozorth3 score cannot reach $\ge 12$ when total minutiae count is only 12–16. In addition, weak enrollment frames (`gallery[4]` with 8 minutiae) tripped floor abort.
-- **Verdict:** Closed. Successor: Ticket 18 (`18-minutiae-density-and-enrollment-gating.md`).
+- **Verdict:** Closed. Successor: Ticket 18 (`18-closed-minutiae-density-and-enrollment-gating.md`).
 

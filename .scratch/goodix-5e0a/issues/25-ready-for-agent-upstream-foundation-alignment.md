@@ -110,7 +110,7 @@ re-deriving it.
 - Foundation files: the architecture and upstream notes alongside the
   progress notes, the gap adjudication alongside the frozen gap list, and
   this ticket in the file-based issue tracker.
-- Keep exactly one active workfront list; when tickets 19–24 move, update
+- Keep exactly one active workfront list; when tickets 19–24 and 26 move, update
   the architecture note in the same change.
 - If upstream guidance shifts (style checker, harness layout, secret
   policy), the upstream roadmap note is updated first and the workfront

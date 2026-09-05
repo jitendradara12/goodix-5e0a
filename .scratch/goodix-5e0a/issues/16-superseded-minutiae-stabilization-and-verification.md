@@ -4,7 +4,7 @@
 
 **Blocked by:** None — builds on Ticket 14 (established +0.828 correlation, 52–57 minutiae, and non-zero Bozorth3 scores 3–5/12) and Ticket 15 (falsified stride-132 column-major).
 
-**Status:** superseded (successor: [17-canonical-layout-and-local-contrast.md](17-canonical-layout-and-local-contrast.md))
+**Status:** superseded (successor: [17-closed-canonical-layout-and-local-contrast.md](17-closed-canonical-layout-and-local-contrast.md))
 
 ## Settled facts this ticket builds on (do not re-litigate)
 

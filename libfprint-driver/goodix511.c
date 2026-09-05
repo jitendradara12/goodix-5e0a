@@ -47,14 +47,6 @@
 #define GOODIX511_WIDTH 64
 #define GOODIX511_HEIGHT 80
 #define GOODIX511_SCAN_WIDTH 88
-#define GOODIX511_FRAME_SIZE (GOODIX511_WIDTH * GOODIX511_HEIGHT)
-// For every 4 pixels there are 6 bytes and there are 8 extra start bytes and 5
-// extra end
-#define GOODIX511_RAW_FRAME_SIZE \
-  8 + (GOODIX511_HEIGHT * GOODIX511_SCAN_WIDTH) / 4 * 6 + 5
-#define GOODIX511_CAP_FRAMES 1 // Number of frames we capture per swipe
-
-typedef unsigned short Goodix511Pix;
 
 struct _FpiDeviceGoodixTls511
 {

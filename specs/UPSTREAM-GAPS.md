@@ -13,10 +13,12 @@ against the tree before quoting.
 - **B2 (driver-state command never sent)**: half-fixed, requirement retired.
   The sender exists (`goodix.c`) but no activation path calls it;
   provisioning succeeds without it on tested hardware, so the strict 52xD
-  parity demand is retired, not trace-closed.
-- **B3 (POV handshake missing)**: same as B2. Helpers exist, unused; the
-  driver ships without the POV leg. Open only if strict sibling-flow parity
-  is ever demanded.
+  parity demand is retired, not trace-closed. Ticket 26 revives the sibling
+  `0xe0` key-provisioning helper as the lead cold-boot hypothesis — keep it.
+- **B3 (POV handshake missing)**: same as B2, plus the `0xe4` key-query
+  helper is now evidence-gathering for ticket 26. Helpers exist, unused;
+  the driver ships without the POV leg. Open only if strict sibling-flow
+  parity is ever demanded.
 - **B4 (wrong image payload)**: superseded and fixed differently. Neither
   the old hardcoded value nor the sibling-family value is used; the frozen
   `05`-first payload matches dozens of identical Windows captures
@@ -60,3 +62,6 @@ behavior) but stands as caution: synthetic mocks never verify.
    vendor code included (see `docs/UPSTREAM.md` section 6).
 5. **Packing**: the monolithic unified patch must become logical commits
    (transport, driver, recordings, device table) each passing CI.
+6. **Cold-boot key provisioning** (ticket 26): warm-session TLS proves the
+   mechanism but not key agreement; the MR needs the `0xe0`/`0xe4` story
+   resolved first.

@@ -166,7 +166,7 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 ## 5. Current State & Configuration Summary
 
 - **Active State:** Biometric matching engine (15/12) and sub-300ms verification latency verified; 387-test automated test suite passing (100%); post-reboot cold-boot PSK provisioning tracked in Ticket 26.
-- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `c45c688ce60ff6cbf82249542c188ff58993b12eb53d2fafc1f524061c27b6eb`).
+- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `4e96f3f1a96505a98f26f00faf25b25a7f2a780526583673e44f4daef3ad5319`).
 - **Activation Sequence:** 6-state SSM: NOP -> Reset -> Read Chip ID -> Read OTP -> Query FW Version -> Upload Config -> TLS PSK Handshake -> Enable Chip.
 - **Verify Latency:** Sub-300ms instant unlock via immediate scan SSM completion and finger status reporting.
 - **Frame Decoder:** Strip each 132-byte block's first 96 bytes, discard 36-byte zero pad; unpack sequentially into 5,120 pixels.
@@ -176,3 +176,13 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 - **Enrollment Quality Floor:** `GOODIX_5E0A_ENROLL_MIN_MINUTIAE = 12`. Faint touches rejected with retry prompt.
 - **Flags:** `scaled->flags = FPI_IMAGE_COLORS_INVERTED` (capacitive high ADC inverted to black ink 0; `FPI_IMAGE_PARTIAL` omitted to retain edge minutiae).
 - **Matching Invariants:** `bz3_threshold = 12`, `MIN_COMPUTABLE_BOZORTH_MINUTIAE = 10` (strict biometric standards).
+
+## 6. Correction (ticket 26, cold-boot PSK disagreement)
+
+Runs 14–18 above are warm-session results: the MCU held the working key
+across them. After power loss the MCU reports a different key and rejects
+the TLS record MAC, so enrollment and verification fail until key
+provisioning (`0xe0`/`0xe4` experiments) lands. The OTP-read-as-crypto-fix
+hypothesis from Run 17 is falsified. Rows marked verified above for
+tickets 19–20 mean implemented-awaiting-hardware-verdict, not closed.
+See ticket 26 for the journal evidence and the active plan.

@@ -65,12 +65,10 @@ static const guint8 goodix_5e0a_config[256] = {
 
 /* Windows capture ground truth tables (APP_10036, goodix-win.pcapng) */
 #define GOODIX_CMD_SESSION_D6               (0xd6)
-#define GOODIX_CMD_MCU_SWITCH_TO_SLEEP_MODE (0x60)
 
 /* Session initialization commands */
 static const guint8 goodix_5e0a_query_ae[3]    = {0x00, 0x01, 0x00};
 static const guint8 goodix_5e0a_session_d6[2]  = {0x00, 0x00};
-static const guint8 goodix_5e0a_sleep_60[2]    = {0x01, 0x00};
 
 /* Exact 10-byte image capture payload: 05 00 b0 00 b2 00 b0 00 b1 00 (37/37 identical in capture) */
 static const guint8 goodix_5e0a_img_payload[10] = {

@@ -8,8 +8,10 @@ template storage, enroll, or match.
 ## Pipeline
 
 1. **Transport**: bulk endpoints, interface 0; flush-tolerant NOP, reset,
-   chip-ID read, OTP priming (`0xa6`), firmware check, ChicagoH provisioning,
-   chip enable, then TLS 1.2 PSK session (`TLS_PSK_WITH_AES_128_CBC_SHA256`).
+   chip-ID read, OTP identification read (`0xa6` — its use as a crypto
+   fix is falsified in ticket 26), firmware check, ChicagoH provisioning,
+   chip enable, then TLS 1.2 PSK session (`TLS_PSK_WITH_AES_128_CBC_SHA256`,
+   warm-session only: cold boot disagrees on the key, ticket 26).
 2. **Touch gating**: sampled finger-down replies; touch iff the channel byte
    is live and channel energy is positive — never the status byte. Idle
    replies re-sample on a short silent timer.
@@ -48,8 +50,10 @@ template storage, enroll, or match.
 
 ## Frozen (do not re-litigate without journal-backed reason)
 
-- USB transport shape, reset phasing, TLS-PSK negotiation, ChicagoH
-  provisioning blob and checksum, firmware identity, PSK flags.
+- USB transport shape, reset phasing, TLS-PSK handshake wiring and cipher,
+  ChicagoH provisioning blob and checksum, firmware identity, PSK flags.
+  Live key agreement is NOT frozen: cold boot fails the record MAC
+  (ticket 26, the current workfront).
 - Channel-energy gating rule; silence on empty air.
 - Canonical wire layout and native raster geometry with inverted polarity.
 - Synchronous teardown: reset state, shut down TLS, stop the read loop,
@@ -59,6 +63,8 @@ template storage, enroll, or match.
 
 ## Active (the only legal workfront)
 
+- Ticket 26: cold-boot PSK disagreement (TLS is warm-only until key
+  provisioning lands; owns the `0xe0`/`0xe4` experiments).
 - Tickets 19–20: PAM/sudo lifecycle and sub-300ms instant release
   (implemented, awaiting hardware verdicts).
 - Tickets 21–24: transport memory hygiene, compile-link isolation, base
@@ -77,6 +83,9 @@ template storage, enroll, or match.
 
 ## Errata (traps for future readers)
 
+- TLS works only while MCU SRAM holds the warm key; after power loss the
+  MCU reports a different key and rejects the record MAC. The
+  OTP-read-as-crypto-fix hypothesis is falsified in ticket 26.
 - The OTP priming command is `0xa6`, not `0x94` (`0x94` is the
   powerdown-scan frequency command). Some progress notes say `0x94`; the code
   is correct.

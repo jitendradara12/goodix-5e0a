@@ -6,6 +6,8 @@
 
 **Status:** ready-for-hardware-verify
 
+**Live-scope:** PAM teardown + claim release only; the 18-forward consecutive-match claim is not relied on (see 18 acceptance: second touch scored 6/12 no-match).
+
 ## Settled Facts (Frozen — Do Not Re-litigate)
 1. **Biometric Verification Pipeline:** 100% verified on physical hardware (Runs 15 & 16). Minutiae counts reached 23–25, Bozorth scores reached 14/12 and 15/12, producing consecutive `verify-match (done)` outcomes.
 2. **Image Pipeline & Raster:** 100% frozen: 80 blocks $\times$ 96B unpack, natural $64 \times 80$ raster, $3 \times 3$ local mean subtraction residual, direct non-saturating residual contrast mapping ($G = 1.0f$), explicit 500 DPI ppmm (`500.0 / 25.4`), upscaled $2\times$ bilinear to $128 \times 160$ with `FPI_IMAGE_COLORS_INVERTED`.

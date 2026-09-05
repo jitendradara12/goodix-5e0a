@@ -732,32 +732,6 @@ goodix_send_mcu_switch_to_fdt_down (FpDevice *dev, const guint8 *mode, guint16 l
     }
 }
 
-/* ponytail: 5e0a FDT 00-arm is ACK-only per trace — the MCU never sends a
-   reply to it, so the blocking helper above would wait forever. Minimal
-   no-reply DOWN sender for the arm stage only; the 0x01/0x0c legacy prefix
-   path stays in the blocking helper (511-only). Upgrade path: one shared
-   FDT sender with a reply flag replacing both helpers. */
-void
-goodix_send_mcu_switch_to_fdt_down_noreply (FpDevice *dev, const guint8 *mode,
-                                            guint16 length, GDestroyNotify free_func,
-                                            GoodixNoneCallback callback,
-                                            gpointer user_data)
-{
-  GoodixCallbackInfo *cb_info = NULL;
-  GoodixCmdCallback cb = NULL;
-
-  if (callback)
-    {
-      cb_info = malloc (sizeof (GoodixCallbackInfo));
-      cb_info->callback = G_CALLBACK (callback);
-      cb_info->user_data = user_data;
-      cb = goodix_receive_none;
-    }
-
-  goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, mode, length,
-                        free_func, TRUE, GOODIX_TIMEOUT, FALSE, cb, cb_info);
-}
-
 void
 goodix_send_mcu_switch_to_fdt_up (FpDevice *dev, const guint8 *mode, guint16 length,
                                   GDestroyNotify free_func,

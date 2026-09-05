@@ -8,6 +8,8 @@
 
 **Status:** ready-for-hardware-verify
 
+**Live-scope:** latency (<300ms) only; the OTP half is superseded by ticket 26 — do not re-add ACTIVATE_READ_OTP as a crypto fix.
+
 ## Problem Statement
 
 ### 1. Latency Bottleneck: Finger-Lift Polling Stall

@@ -34,7 +34,6 @@ extern guint32 goodix5e0a_last_declen;
 
 typedef struct
 {
-  guint8 * otp; // TODO: Remove
   GoodixTls5xxPix* calibration_img;
 } FpiDeviceGoodixTls5xxPrivate;
 
@@ -612,7 +611,6 @@ fpi_device_goodixtls5xx_init (FpiDeviceGoodixTls5xx * self)
 {
   FpiDeviceGoodixTls5xxPrivate* priv = fpi_device_goodixtls5xx_get_instance_private(self);
   priv->calibration_img = NULL;
-  priv->otp = NULL;
 }
 
 void goodixtls5xx_cleanup(FpiDeviceGoodixTls5xx* dev) {

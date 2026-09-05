@@ -301,13 +301,6 @@ void goodix_send_mcu_switch_to_fdt_down (FpDevice             *dev,
                                          GoodixDefaultCallback callback,
                                          gpointer              user_data);
 
-void goodix_send_mcu_switch_to_fdt_down_noreply (FpDevice          *dev,
-                                                 const guint8     *mode,
-                                                 guint16           length,
-                                                 GDestroyNotify    free_func,
-                                                 GoodixNoneCallback callback,
-                                                 gpointer          user_data);
-
 
 /**
  * @brief Tell the device we want to wait for the user to lift their finger off

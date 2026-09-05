@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately.
 
-**Status:** done
+**Status:** closed (suite hermetic via repo_paths.py + F25 sync; counts drifted since — recount, don't quote)
 
 - [x] Every tier runs to completion from its documented runner invocation with zero loader/import errors.
 - [x] Assertions match proven behavior (raw-frame pipeline; NOP silence-is-success; real command numbers) — no test contradicts an on-wire verified fact.
