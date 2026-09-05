@@ -6,13 +6,15 @@ and lifecycle state machine transitions per Challenger 2 specifications.
 
 import unittest
 import struct
+from tests.repo_paths import repo
 from tests.test_utils import (
     MockGoodixMCU, encode_pack, encode_protocol, decode_pack, decode_protocol,
     FLAGS_MSG_PROTOCOL, FLAGS_TLS, FLAGS_TLS_DATA,
     CMD_NOP, CMD_RESET, CMD_READ_SENSOR_REGISTER, CMD_FIRMWARE_VERSION,
     CMD_REQUEST_TLS_CONNECTION, CMD_UPLOAD_CONFIG_MCU, CMD_ENABLE_CHIP,
+    CMD_MCU_SWITCH_TO_FDT_DOWN,
     CMD_ACK, RESET_NUMBER, FIRMWARE_VERSION_STR, CHIP_ID_VAL,
-    CANONICAL_CONFIG_52XD, CANONICAL_PSK, PSK_FLAGS
+    CANONICAL_CONFIG_52XD, CANONICAL_FDT_DOWN, CANONICAL_PSK, PSK_FLAGS
 )
 
 class TestM2C2ActivationSSM(unittest.TestCase):
@@ -100,6 +102,13 @@ class TestM2C2ActivationSSM(unittest.TestCase):
         Adversarially inject mismatched firmware version strings and verify detection.
         goodixtls5xx_check_firmware_version must reject non-matching strings.
         """
+        with open(repo("libfprint-driver", "goodix5xx.c"), "r", encoding="utf-8") as f:
+            base = f.read()
+        self.assertIn("goodixtls5xx_check_firmware_version", base)
+        self.assertIn("strcmp (firmware, cls->firmware_version)", base)
+        with open(repo("libfprint-driver", "goodix5e0a.c"), "r", encoding="utf-8") as f:
+            drv = f.read()
+        self.assertIn("firmware_version = GOODIX_5E0A_FIRMWARE_VERSION;", drv)
         mismatched_versions = [
             "GFUSB_GM168SEC_APP_10037",
             "GFUSB_GM168SEC_APP_10035",
@@ -124,6 +133,12 @@ class TestM2C2ActivationSSM(unittest.TestCase):
         Adversarially test invalid reset counter numbers.
         goodixtls5xx_check_reset must strictly validate reset_number == 2048.
         """
+        with open(repo("libfprint-driver", "goodix5xx.c"), "r", encoding="utf-8") as f:
+            base = f.read()
+        self.assertIn("number != cls->reset_number", base)
+        with open(repo("libfprint-driver", "goodix5e0a.c"), "r", encoding="utf-8") as f:
+            drv = f.read()
+        self.assertIn("reset_number = GOODIX_5E0A_RESET_NUMBER;", drv)
         invalid_reset_numbers = [0, 1, 1024, 2047, 2049, 4096, 65535]
         for bad_cnt in invalid_reset_numbers:
             matches = (bad_cnt == RESET_NUMBER)
@@ -208,20 +223,23 @@ class TestM2C2ActivationSSM(unittest.TestCase):
         fdt_d_rep = self.mcu.handle_out_packet(fdt_d_pkt)
         self.assertTrue(self.mcu.fdt_down_active)
 
-    def test_lifecycle_deactivation_cleanup_invariants(self):
+    def test_lifecycle_activation_state_via_packet_path(self):
         """
-        Verify deactivation invariants: TLS session shutdown, state reset, buffer cleanup.
+        Verify activation state is reachable via the packet path before teardown.
+        (Teardown itself is driver-side; covered against source in
+        test_f25_dbus_lifecycle.py::test_clean_deactivation_and_ssm_free.)
         """
-        # Set active state
-        self.mcu.chip_enabled = True
-        self.mcu.fdt_down_active = True
+        # Drive mock to active state through real packet handling
+        enb_pkt = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_ENABLE_CHIP, bytes([0x01, 0x00])))
+        enb_rep = self.mcu.handle_out_packet(enb_pkt)
+        ok, _, body, _ = decode_pack(enb_rep)
+        p_ok, cmd, payload, _, _ = decode_protocol(body)
+        self.assertEqual(cmd, CMD_ACK)
+        self.assertTrue(self.mcu.chip_enabled)
 
-        # Deactivate
-        self.mcu.fdt_down_active = False
-        self.mcu.tls_established = False
-
-        self.assertFalse(self.mcu.fdt_down_active)
-        self.assertFalse(self.mcu.tls_established)
+        fdt_d_pkt = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_MCU_SWITCH_TO_FDT_DOWN, CANONICAL_FDT_DOWN))
+        self.mcu.handle_out_packet(fdt_d_pkt)
+        self.assertTrue(self.mcu.fdt_down_active)
 
 if __name__ == "__main__":
     unittest.main()
