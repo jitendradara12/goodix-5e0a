@@ -111,7 +111,10 @@ class TestAdversarialConfig52XDAndReg022C(unittest.TestCase):
 
         self.assertEqual(len(tmp_cfg), 256)
         self.assertEqual(len(repo_cfg), 256)
-        self.assertEqual(tmp_cfg, repo_cfg, "Header files in build and repo must be bit-for-bit identical")
+        if TMP_LIBFPRINT_HEADER != REPO_HEADER:
+            self.assertEqual(tmp_cfg, repo_cfg, "Header files in build and repo must be bit-for-bit identical")
+        # Else: no deployed build tree, fallback reads the repo file itself;
+        # self-comparison would prove nothing, so it is skipped by construction.
 
         python_sources = {
             "test_press_and_capture.py": self.press_config,

@@ -12,7 +12,7 @@ A reverse-engineered Linux driver for the **Goodix 27c6:5e0a** fingerprint scann
 - **NIST NBIS Minutiae Verification**: Extracts 23–25 minutiae per finger scan on hardware and passes Bozorth3 biometric match validation with scores of 13–15 (threshold: 12). See ticket 19 for the hardware run log.
 - **Empty-Air Rejection Gate**: Prevents capturing ambient thermal noise into templates when the sensor is touched lightly or untouched.
 - **Multi-Run PAM Stability**: Deterministic teardown and cancellable USB read loops prevent daemon hangs or timeouts across consecutive authentications.
-- **Exhaustive Automated Test Suite**: 380 tests across 5 tiers covering feature isolation, boundaries, pairwise integration, system scenarios, and adversarial fuzzing.
+- **Exhaustive Automated Test Suite**: 382 tests across 5 tiers covering feature isolation, boundaries, pairwise integration, system scenarios, and adversarial fuzzing.
 
 ---
 
@@ -26,7 +26,7 @@ A reverse-engineered Linux driver for the **Goodix 27c6:5e0a** fingerprint scann
 │   ├── goodix5xx.c / .h     # Base class for 5xx/5e0a Goodix sensors
 │   ├── goodix.c / .h        # Low-level USB transport and protocol framing
 │   └── goodixtls.c / .h     # In-process OpenSSL TLS 1.2 PSK engine
-├── tests/                   # 380-test automated test suite
+├── tests/                   # 382-test automated test suite
 │   ├── run_all_tests.sh     # Master end-to-end test runner
 │   ├── test_utils.py        # Authoritative protocol mock & framing library
 │   ├── repo_paths.py        # Portable repo-root / external-tree paths

@@ -20,13 +20,16 @@ def _split_sections(patch_lines):
     sections, cur = [], []
     for line in patch_lines:
         if line.startswith("diff --git"):
-            if cur:
+            if cur and cur[0].startswith("diff --git"):
                 sections.append(cur)
             cur = [line]
         else:
             cur.append(line)
-    if cur:
+    if cur and cur[0].startswith("diff --git"):
         sections.append(cur)
+    # Only diff sections survive: a git-format-patch mail preamble (or any
+    # trailing junk) is dropped instead of crashing consumers with
+    # AttributeError on a None regex match.
     return sections
 
 
@@ -34,6 +37,20 @@ def _local_counterpart(patch_path):
     base = os.path.basename(patch_path)
     local = repo("libfprint-driver", base)
     return local if os.path.isfile(local) else None
+
+
+def _reconstruct_new_file(sec):
+    """Rebuild exact new-file bytes from '+' lines, honoring '\ No newline'."""
+    chunks = []
+    for line in sec:
+        if line.startswith("+++") or not line.startswith(("+", "\\")):
+            continue
+        if line.startswith("\\"):
+            if chunks and chunks[-1].endswith("\n"):
+                chunks[-1] = chunks[-1][:-1]
+        else:
+            chunks.append(line[1:] + "\n")
+    return "".join(chunks)
 
 
 class TestF25PatchSourceSync(unittest.TestCase):
@@ -57,6 +74,11 @@ class TestF25PatchSourceSync(unittest.TestCase):
         """Every repo driver file must be patched or known-pristine upstream."""
         patched = set()
         for sec in self.sections:
+            for line in sec:
+                self.assertFalse(
+                    line.startswith("Binary files "),
+                    f"binary patch section cannot be byte-verified: {sec[0]}",
+                )
             m = re.match(r"diff --git a/(.*) b/(.*)", sec[0])
             patched.add(os.path.basename(m.group(1)))
         for base in os.listdir(repo("libfprint-driver")):
@@ -85,10 +107,12 @@ class TestF25PatchSourceSync(unittest.TestCase):
             m = re.match(r"diff --git a/(.*) b/(.*)", sec[0])
             local = _local_counterpart(m.group(1))
             self.assertIsNotNone(local, f"new file {m.group(1)} has no repo counterpart")
-            added = [l[1:] for l in sec if l.startswith("+") and not l.startswith("+++")]
             with open(local, "r", encoding="utf-8") as f:
-                disk = f.read().splitlines()
-            self.assertEqual(added, disk, f"patch copy of {m.group(1)} drifted from {local}")
+                disk = f.read()
+            self.assertEqual(
+                _reconstruct_new_file(sec), disk,
+                f"patch copy of {m.group(1)} drifted from {local}",
+            )
             checked += 1
         self.assertGreater(checked, 0, "no new-file sections found in patch")
 
@@ -113,10 +137,45 @@ class TestF25PatchSourceSync(unittest.TestCase):
                     if line.startswith(" ") or line.startswith("+"):
                         new_count += 1
                     i += 1  # '\ No newline' marker lines match neither branch
-                self.assertEqual(old_count, old_n, f"old count mismatch in hunk: {m.group(0)}")
-                self.assertEqual(new_count, new_n, f"new count mismatch in hunk: {m.group(0)}")
-                hunks += 1
+            self.assertEqual(old_count, old_n, f"old count mismatch in hunk: {m.group(0)}")
+            self.assertEqual(new_count, new_n, f"new count mismatch in hunk: {m.group(0)}")
+            hunks += 1
         self.assertGreater(hunks, 0, "no hunks found in patch")
+
+
+class TestPatchParser(unittest.TestCase):
+    """Unit tests for the section splitter and new-file reconstruction."""
+
+    def test_drops_mail_preamble(self):
+        """A git-format-patch mail header must not become a section."""
+        lines = [
+            "From abc123 Mon Sep 17 00:00:00 2001",
+            "From: A U Thor",
+            "Subject: [PATCH] x",
+            "---",
+            "diff --git a/f b/f",
+            "new file mode 100644",
+            "--- /dev/null",
+            "+++ b/f",
+            "@@ -0,0 +1 @@",
+            "+hi",
+        ]
+        secs = _split_sections(lines)
+        self.assertEqual(len(secs), 1)
+        self.assertTrue(secs[0][0].startswith("diff --git"))
+
+    def test_reconstruct_honors_no_trailing_newline(self):
+        """'\\ No newline' marker must strip the reconstructed final newline."""
+        sec = [
+            "diff --git a/f b/f",
+            "--- /dev/null",
+            "+++ b/f",
+            "@@ -0,0 +1,2 @@",
+            "+hi",
+            "+bye",
+            "\\ No newline at end of file",
+        ]
+        self.assertEqual(_reconstruct_new_file(sec), "hi\nbye")
 
 
 if __name__ == "__main__":
