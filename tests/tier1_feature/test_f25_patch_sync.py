@@ -39,6 +39,21 @@ def _local_counterpart(patch_path):
     return local if os.path.isfile(local) else None
 
 
+def _count_hunk_body(sec, i):
+    """Count old/new lines from index i to the next header or end.
+
+    Returns (old_count, new_count, next_i)."""
+    old_count = new_count = 0
+    while i < len(sec) and not sec[i].startswith("@@") and not sec[i].startswith("diff --git"):
+        line = sec[i]
+        if line.startswith(" ") or line.startswith("-"):
+            old_count += 1
+        if line.startswith(" ") or line.startswith("+"):
+            new_count += 1
+        i += 1  # '\ No newline' marker lines match neither branch
+    return old_count, new_count, i
+
+
 def _reconstruct_new_file(sec):
     """Rebuild exact new-file bytes from '+' lines, honoring '\ No newline'."""
     chunks = []
@@ -128,18 +143,10 @@ class TestF25PatchSourceSync(unittest.TestCase):
                     continue
                 old_n = int(m.group(2)) if m.group(2) is not None else 1
                 new_n = int(m.group(4)) if m.group(4) is not None else 1
-                i += 1
-                old_count = new_count = 0
-                while i < len(sec) and not sec[i].startswith("@@") and not sec[i].startswith("diff --git"):
-                    line = sec[i]
-                    if line.startswith(" ") or line.startswith("-"):
-                        old_count += 1
-                    if line.startswith(" ") or line.startswith("+"):
-                        new_count += 1
-                    i += 1  # '\ No newline' marker lines match neither branch
-            self.assertEqual(old_count, old_n, f"old count mismatch in hunk: {m.group(0)}")
-            self.assertEqual(new_count, new_n, f"new count mismatch in hunk: {m.group(0)}")
-            hunks += 1
+                old_count, new_count, i = _count_hunk_body(sec, i + 1)
+                self.assertEqual(old_count, old_n, f"old count mismatch in hunk: {m.group(0)}")
+                self.assertEqual(new_count, new_n, f"new count mismatch in hunk: {m.group(0)}")
+                hunks += 1
         self.assertGreater(hunks, 0, "no hunks found in patch")
 
 
@@ -176,6 +183,36 @@ class TestPatchParser(unittest.TestCase):
             "\\ No newline at end of file",
         ]
         self.assertEqual(_reconstruct_new_file(sec), "hi\nbye")
+
+    def test_count_hunk_body(self):
+        """Body counter must tally old/new lines and stop at the next header."""
+        sec = [" context", "-old", "+new", " context", "@@ -1,1 +1,1 @@"]
+        old, new, nxt = _count_hunk_body(sec, 0)
+        self.assertEqual((old, new, nxt), (3, 3, 4))
+
+    def test_count_hunk_body_ignores_no_newline_marker(self):
+        """Marker lines must count toward neither side."""
+        sec = ["+only", "\\ No newline at end of file"]
+        old, new, nxt = _count_hunk_body(sec, 0)
+        self.assertEqual((old, new, nxt), (0, 1, 2))
+
+    def test_reconstruction_detects_single_byte_drift(self):
+        """Flipping one byte in a real new-file section must change output.
+
+        Proves the byte-exact test above is sensitive, not vacuous."""
+        with open(PATCH_PATH, "r", encoding="utf-8") as f:
+            secs = _split_sections(f.read().splitlines())
+        sec = next(s for s in secs if any(l.startswith("--- /dev/null") for l in s))
+        original = _reconstruct_new_file(sec)
+        mutated, flipped = [], False
+        for line in sec:
+            if not flipped and line.startswith("+") and not line.startswith("+++") and len(line) > 1:
+                mutated.append("+" + ("X" if line[1] != "X" else "Y") + line[2:])
+                flipped = True
+            else:
+                mutated.append(line)
+        self.assertTrue(flipped, "no mutable '+' line found")
+        self.assertNotEqual(_reconstruct_new_file(mutated), original)
 
 
 if __name__ == "__main__":

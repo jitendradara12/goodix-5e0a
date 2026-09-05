@@ -128,7 +128,7 @@ Support for the Goodix 27c6:5e0a fingerprint sensor (Realme Book / ChicagoH / GF
   - Ticket 18 verified and closed.
 - **Teamwork Production Hardening & Victory Audit**:
   - Reconciled verify deactivation flow to eliminate D-Bus claim locks in PAM/sudo.
-   - Master E2E test suite modernized and expanded to 382 tests across all 5 tiers (100% passing).
+   - Master E2E test suite modernized and expanded to 385 tests across all 5 tiers (100% passing).
   - Independent Victory Audit confirmed: VICTORY CONFIRMED.
 
 ---
@@ -146,13 +146,13 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 | **16** | Revert to contiguous $80 \times 64$ linear unpack | Correlation restored, but `nonzero=3728` on every single frame; score capped at 3/12 | **Superseded** (`/dev/shm/live_frame.raw` revealed 7680 bytes = 58 blocks × 36 zero bytes swallowed). |
 | **17** | Canonical block extraction ($80 \times 96\text{B}$) + natural $64 \times 80$ raster + $3 \times 3$ local contrast | `padding_nonzero=0`, `active=5120`, `h_corr=0.944`, `v_corr=0.835`, Bozorth **5/12, 6/12** | **Confirmed** (Wire layout & biometric validity proven; peak score 6/12). |
 | **18** | Minutiae density elevation + Enrollment quality gate + `ppmm=500/25.4` + Direct residual contrast | **Two consecutive verify-match passes (15/12 and 14/12)** | **Verified & Closed** (Biometric consistency target achieved!). |
-| **19** | PAM / Sudo D-Bus lifecycle fix + Full E2E CI Test Suite (382 tests) | **382/382 passing tests across Tiers 1-5; Victory Audit confirmed** | **Verified & Ready for Deployment**. |
+| **19** | PAM / Sudo D-Bus lifecycle fix + Full E2E CI Test Suite (385 tests) | **385/385 passing tests across Tiers 1-5; Victory Audit confirmed** | **Verified & Ready for Deployment**. |
 
 ---
 
 ## 5. Current State & Configuration Summary
 
-- **Active State:** Production-hardened driver verified by 382-test automated suite and independent victory audit.
+- **Active State:** Production-hardened driver verified by 385-test automated suite and independent victory audit.
 - **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `e8fd1c4cfc4abc43822f9de25d3083e4ffb1b5a55a68b26cf7e89c76c3f0d852`)
 - **Frame Decoder:** Strip each 132-byte block's first 96 bytes, discard 36-byte zero pad; unpack sequentially into 5,120 pixels.
 - **Dimensions:** Native $64 \times 80$ (WxH), upscaled 2x via bilinear interpolation to $128 \times 160$.

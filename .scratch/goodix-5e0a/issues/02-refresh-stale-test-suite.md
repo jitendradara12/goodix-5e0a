@@ -15,7 +15,7 @@
   `/home/sastauser` + `/tmp` paths made tier 1 fail 5+45 on a fresh clone.
   Fixed via `tests/repo_paths.py`; environment-gated tests (build tree,
   NixOS flake, NBIS fixture/harness, nix tools) now skip with reasons.
-  Suite is 382/382 green hermetically (`bash tests/run_all_tests.sh`).
+  Suite is 385/385 green hermetically (`bash tests/run_all_tests.sh`).
 - Added F25 patch/source sync test: new-file sections must reconstruct
   `libfprint-driver/` byte-for-byte; `goodixtls.h`, `goodix511.h`,
   `goodix_proto.c` verified byte-identical to upstream `c343b69`.
