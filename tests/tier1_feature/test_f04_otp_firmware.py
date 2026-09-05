@@ -51,7 +51,11 @@ class TestF04OTPFirmware(unittest.TestCase):
         self.assertEqual(len(payload), 32)
 
     def test_firmware_version_mismatch_detection(self):
-        """Verify that any deviation from canonical firmware string triggers validation failure."""
+        """Documents a rejected firmware literal off the canonical string.
+
+        Live validation logic is covered against driver source in
+        test_m2_c2_activation_ssm.py::test_firmware_version_mismatch_adversarial.
+        """
         bad_fw = b"GFUSB_GM168SEC_APP_99999\x00"
         self.assertNotEqual(bad_fw.rstrip(b"\x00").decode("ascii"), FIRMWARE_VERSION_STR)
 

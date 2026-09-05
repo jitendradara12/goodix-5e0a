@@ -6,13 +6,15 @@ and lifecycle state machine transitions per Challenger 2 specifications.
 
 import unittest
 import struct
+from tests.repo_paths import repo
 from tests.test_utils import (
     MockGoodixMCU, encode_pack, encode_protocol, decode_pack, decode_protocol,
     FLAGS_MSG_PROTOCOL, FLAGS_TLS, FLAGS_TLS_DATA,
-    CMD_NOP, CMD_RESET, CMD_READ_SENSOR_REGISTER, CMD_FIRMWARE_VERSION,
+    CMD_NOP, CMD_RESET, CMD_READ_SENSOR_REGISTER, CMD_READ_OTP, CMD_FIRMWARE_VERSION,
     CMD_REQUEST_TLS_CONNECTION, CMD_UPLOAD_CONFIG_MCU, CMD_ENABLE_CHIP,
+    CMD_MCU_SWITCH_TO_FDT_DOWN,
     CMD_ACK, RESET_NUMBER, FIRMWARE_VERSION_STR, CHIP_ID_VAL,
-    CANONICAL_CONFIG_52XD, CANONICAL_PSK, PSK_FLAGS
+    CANONICAL_CONFIG_52XD, CANONICAL_FDT_DOWN, CANONICAL_PSK, PSK_FLAGS
 )
 
 class TestM2C2ActivationSSM(unittest.TestCase):
@@ -28,11 +30,12 @@ class TestM2C2ActivationSSM(unittest.TestCase):
     # --------------------------------------------------------------------------
     def test_ssm_progression_nominal_path(self):
         """
-        Verify complete 4-stage activation SSM + post-TLS initialization:
+        Verify complete 5-stage activation SSM + post-TLS initialization:
         Stage 0: ACTIVATE_READ_AND_NOP (CMD 0x00)
         Stage 1: ACTIVATE_RESET (CMD 0xa2)
         Stage 2: ACTIVATE_READ_CHIP_ID (CMD 0x82, reg 0x0000)
-        Stage 3: ACTIVATE_CHECK_FW_VER (CMD 0xa8)
+        Stage 3: ACTIVATE_READ_OTP (CMD 0xa6)
+        Stage 4: ACTIVATE_CHECK_FW_VER (CMD 0xa8)
         Post-SSM: TLS Init -> Config Upload (CMD 0x90) -> Chip Enable (CMD 0x96)
         """
         # State 0: ACTIVATE_READ_AND_NOP (silence is success / buffer empty)
@@ -59,7 +62,15 @@ class TestM2C2ActivationSSM(unittest.TestCase):
         self.assertEqual(cmd, CMD_READ_SENSOR_REGISTER)
         self.assertEqual(payload, CHIP_ID_VAL)
 
-        # State 3: ACTIVATE_CHECK_FW_VER
+        # State 3: ACTIVATE_READ_OTP
+        otp_pkt = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_READ_OTP, b""))
+        otp_reply = self.mcu.handle_out_packet(otp_pkt)
+        ok, _, body, _ = decode_pack(otp_reply)
+        p_ok, cmd, payload, _, _ = decode_protocol(body)
+        self.assertEqual(cmd, CMD_READ_OTP)
+        self.assertEqual(len(payload), 32)
+
+        # State 4: ACTIVATE_CHECK_FW_VER
         fw_pkt = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_FIRMWARE_VERSION, b""))
         fw_reply = self.mcu.handle_out_packet(fw_pkt)
         ok, _, body, _ = decode_pack(fw_reply)
@@ -100,6 +111,13 @@ class TestM2C2ActivationSSM(unittest.TestCase):
         Adversarially inject mismatched firmware version strings and verify detection.
         goodixtls5xx_check_firmware_version must reject non-matching strings.
         """
+        with open(repo("libfprint-driver", "goodix5xx.c"), "r", encoding="utf-8") as f:
+            base = f.read()
+        self.assertIn("goodixtls5xx_check_firmware_version", base)
+        self.assertIn("strcmp (firmware, cls->firmware_version)", base)
+        with open(repo("libfprint-driver", "goodix5e0a.c"), "r", encoding="utf-8") as f:
+            drv = f.read()
+        self.assertIn("firmware_version = GOODIX_5E0A_FIRMWARE_VERSION;", drv)
         mismatched_versions = [
             "GFUSB_GM168SEC_APP_10037",
             "GFUSB_GM168SEC_APP_10035",
@@ -124,6 +142,12 @@ class TestM2C2ActivationSSM(unittest.TestCase):
         Adversarially test invalid reset counter numbers.
         goodixtls5xx_check_reset must strictly validate reset_number == 2048.
         """
+        with open(repo("libfprint-driver", "goodix5xx.c"), "r", encoding="utf-8") as f:
+            base = f.read()
+        self.assertIn("number != cls->reset_number", base)
+        with open(repo("libfprint-driver", "goodix5e0a.c"), "r", encoding="utf-8") as f:
+            drv = f.read()
+        self.assertIn("reset_number = GOODIX_5E0A_RESET_NUMBER;", drv)
         invalid_reset_numbers = [0, 1, 1024, 2047, 2049, 4096, 65535]
         for bad_cnt in invalid_reset_numbers:
             matches = (bad_cnt == RESET_NUMBER)
@@ -208,20 +232,50 @@ class TestM2C2ActivationSSM(unittest.TestCase):
         fdt_d_rep = self.mcu.handle_out_packet(fdt_d_pkt)
         self.assertTrue(self.mcu.fdt_down_active)
 
-    def test_lifecycle_deactivation_cleanup_invariants(self):
+    def test_lifecycle_activation_state_via_packet_path(self):
         """
-        Verify deactivation invariants: TLS session shutdown, state reset, buffer cleanup.
+        Verify activation state is reachable via the packet path before teardown.
+        (Teardown itself is driver-side; covered against source in
+        test_f25_dbus_lifecycle.py::test_clean_deactivation_and_ssm_free.)
         """
-        # Set active state
-        self.mcu.chip_enabled = True
-        self.mcu.fdt_down_active = True
+        # Drive mock to active state through real packet handling
+        enb_pkt = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_ENABLE_CHIP, bytes([0x01, 0x00])))
+        enb_rep = self.mcu.handle_out_packet(enb_pkt)
+        ok, _, body, _ = decode_pack(enb_rep)
+        p_ok, cmd, payload, _, _ = decode_protocol(body)
+        self.assertEqual(cmd, CMD_ACK)
+        self.assertTrue(self.mcu.chip_enabled)
 
-        # Deactivate
-        self.mcu.fdt_down_active = False
-        self.mcu.tls_established = False
+        fdt_d_pkt = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_MCU_SWITCH_TO_FDT_DOWN, CANONICAL_FDT_DOWN))
+        self.mcu.handle_out_packet(fdt_d_pkt)
+        self.assertTrue(self.mcu.fdt_down_active)
 
-        self.assertFalse(self.mcu.fdt_down_active)
-        self.assertFalse(self.mcu.tls_established)
+    def test_activation_ssm_states_definition_in_driver(self):
+        """Verify goodix5e0a.c defines all 5 activation states and wires them correctly."""
+        with open(repo("libfprint-driver", "goodix5e0a.c"), "r", encoding="utf-8") as f:
+            drv = f.read()
+        expected_states = [
+            "ACTIVATE_READ_AND_NOP",
+            "ACTIVATE_RESET",
+            "ACTIVATE_READ_CHIP_ID",
+            "ACTIVATE_READ_OTP",
+            "ACTIVATE_CHECK_FW_VER",
+            "ACTIVATE_NUM_STATES",
+        ]
+        for st in expected_states:
+            self.assertIn(st, drv)
+        self.assertIn("goodix_send_read_otp (dev, goodixtls5xx_check_none_cmd, ssm);", drv)
+
+    def test_otp_read_payload_handling(self):
+        """Verify OTP read payload validation and response handling."""
+        otp_pkt = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_READ_OTP, b""))
+        reply = self.mcu.handle_out_packet(otp_pkt)
+        ok, flags, body, _ = decode_pack(reply)
+        self.assertTrue(ok)
+        p_ok, cmd, payload, _, _ = decode_protocol(body)
+        self.assertTrue(p_ok)
+        self.assertEqual(cmd, CMD_READ_OTP)
+        self.assertEqual(len(payload), 32)
 
 if __name__ == "__main__":
     unittest.main()

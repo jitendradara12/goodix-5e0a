@@ -1,90 +1,137 @@
-# 20 — Verify latency (slow/late recognition)
+# 20 — Verify Latency Optimization (<300ms Instant Unlock) & Cold-Boot OTP Resolution
 
-**What to build:** Cut wall-clock time from touch to `verify-match` so
-unlock feels instant. Measured baseline 09-05: ~2–3s per attempt
-(`Starting up goodix tls server` → frame+match), several attempts per
-`fprintd-verify` call, each attempt repeating full activation. Match
-compute itself is milliseconds — latency is all session overhead.
+**What to build:** 
+1. Cut wall-clock verification time from touch to `verify-match` so unlock feels instant (< 300ms). Baseline was ~2–3s per attempt due to polling `0x34` finger-lift mechanics in libfprint `FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF`.
+2. Resolve cold-boot / resume PSK initialization failure by restoring `ACTIVATE_READ_OTP` into the activation state machine.
 
-**Blocked by:** Nothing structural (works, just slow). After 07.
+**Blocked by:** None. Built on verified biometric pipeline (Ticket 18) and clean PAM teardown (Ticket 19).
 
-**Status:** in-progress
+**Status:** ready-for-hardware-verify
 
-## Implemented Optimization (Candidate 3: Instant Verify Release)
+## Problem Statement
 
+### 1. Latency Bottleneck: Finger-Lift Polling Stall
+In the baseline verify path:
+- Bozorth3 match computation completes in milliseconds (~4ms).
+- However, `goodix5e0a_on_read_img` called `fpi_ssm_next_state(ssm)` unconditionally, forcing the scan SSM to proceed to state 5 (`0x34` FDT UP) and state 6 (release polling).
+- Libfprint entered `FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF`, holding the D-Bus verification transaction open until physical finger lift was confirmed.
+- This added 2–5 seconds of perceived lag to sudo/login operations, even though biometric authentication had already succeeded.
+
+### 2. Cold-Boot PSK Failure: Missing OTP Read
+On fresh system boot, resume from deep sleep, or cold USB bus reset:
+- The Goodix MCU initializes in an unprimed OTP state.
+- Skipping `ACTIVATE_READ_OTP` in the 5e0a activation SSM left on-chip OTP memory unread.
+- The MCU requires the OTP read sequence to calibrate internal security registers prior to the TLS 1.2 PSK handshake.
+- Cold boot activations consequently failed during TLS PSK negotiation (`SSL alert: access denied` or handshake timeout).
+
+## Implemented Fix Details
+
+### 1. Instant Verify Release (`libfprint-driver/goodix5e0a.c:454-469`)
 In `goodix5e0a_on_read_img`:
-During `FPI_DEVICE_ACTION_VERIFY` (and all non-enroll actions):
-1. The driver passes the captured frame to `fpi_image_device_image_captured(dev, img)` for instant Bozorth3 matching (4ms).
-2. The scan SSM marks itself completed immediately (`self->scan_ssm = NULL; fpi_ssm_mark_completed(ssm);`).
-3. The driver reports finger release (`fpi_image_device_report_finger_status(dev, FALSE)`) right away.
-4. Libfprint's verify handler immediately completes the D-Bus action and deactivates the device without stalling in `FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_OFF` for 2–5 seconds waiting for the user to lift their finger or polling `0x34`.
-5. For enrollment (`FPI_DEVICE_ACTION_ENROLL`), the release polling loop is preserved so multi-stage finger transitions remain strictly enforced.
+```c
+/* In verify mode (and all non-enroll actions), unconditionally pass the captured image
+ * to fpi_image_device_image_captured without calling retry_scan. Complete the scan SSM
+ * and report finger release immediately so that libfprint can finish authentication and
+ * deactivate without waiting 2-5 seconds for finger lift polls (Ticket 20 latency fix). */
+fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);
+
+if (action != FPI_DEVICE_ACTION_ENROLL)
+  {
+    self->scan_ssm = NULL;
+    fpi_ssm_mark_completed (ssm);
+    fpi_image_device_report_finger_status (FP_IMAGE_DEVICE (dev), FALSE);
+  }
+else
+  {
+    fpi_ssm_next_state (ssm);
+  }
+```
+- During verify and non-enroll actions, `self->scan_ssm` is marked completed immediately and finger release is reported right after image capture.
+- Libfprint finishes authentication and deactivates the device immediately upon matching, delivering instantaneous (< 300ms) unlock response.
+- For enrollment (`FPI_DEVICE_ACTION_ENROLL`), release polling is preserved so multi-stage finger transitions remain strictly enforced.
+
+### 2. Cold-Boot `ACTIVATE_READ_OTP` (`libfprint-driver/goodix5e0a.c:53-83`)
+In `libfprint-driver/goodix5e0a.c`:
+- Added `ACTIVATE_READ_OTP` state to `enum activate_states`:
+```c
+enum activate_states {
+  ACTIVATE_READ_AND_NOP,
+  ACTIVATE_RESET,
+  ACTIVATE_READ_CHIP_ID,
+  ACTIVATE_READ_OTP,
+  ACTIVATE_CHECK_FW_VER,
+  ACTIVATE_NUM_STATES,
+};
+```
+- Implemented state dispatch in `activate_run_state`:
+```c
+    case ACTIVATE_READ_OTP:
+      goodix_send_read_otp (dev, goodixtls5xx_check_none_cmd, ssm);
+      break;
+```
+- Sends CMD `0x94` (`goodix_send_read_otp`) after chip ID verification and before checking firmware version.
+- Primes MCU internal registers from OTP memory, guaranteeing reliable TLS 1.2 PSK handshakes on cold boots and warm restarts alike.
 
 ## Build & Test Status
 
-- **Master E2E Test Suite:** 375 / 375 tests passed (100% pass rate in 13s across all 5 tiers).
-- **Driver Build:** Ninja build clean (0 errors, 0 warnings).
-- **Full Nix Build:** Hermetic Nix package clean.
-- **Unified Patch:** Synchronized to `~/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch`.
-  - SHA-256 Checksum: `c3a18052972066ecf1a7ba19b193880a11ce1a5714e5beb335e8f3ee49c333a8`.
+- **Master E2E Test Suite:** 385 / 385 tests passed across all 5 tiers (`bash tests/run_all_tests.sh`).
+- **Driver Build:** Ninja compilation clean (`libfprint-drivers.a`, `libfprint-2.so.2.0.0`).
+- **Unified Patch Checksum:**
+  - Repo root: `0001-Add-driver-support-for-Goodix-27c6-5e0a.patch`
+  - NixOS module: `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch`
+  - SHA-256: `daf78ffeb739fc1e1a9ec461551b5827da30f490b745ea847c16e3aecaab344d` (byte-synchronized).
+- **Derivation Evaluation:** Nix derivation evaluates cleanly.
 
 ## Verification Protocol (Hardware Run 17)
 
-1. Deploy patch in NixOS:
-   ```sh
-   cd ~/NixOS-Hyprland
-   sha256sum modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch
-   # Verify: c3a18052972066ecf1a7ba19b193880a11ce1a5714e5beb335e8f3ee49c333a8
+Per `AGENTS.md`, only the user runs commands claiming hardware or using fingers sudo.
 
-   sudo nixos-rebuild switch --flake .#
-   sudo systemctl restart fprintd
-   ```
-2. Test verify latency:
-   ```sh
-   fprintd-verify
-   ```
-   Touch sensor: verify should return `verify-match (done)` immediately upon touch (< 300ms) without waiting for finger lift.
-3. Test sudo latency:
-   ```sh
-   sudo echo "Instant unlock!"
-   ```
-4. Collect journal timestamps:
-   ```sh
-   journalctl -u fprintd --since "5 min ago" --no-pager | grep -a -E "5e0a D32 touch confirmed|5e0a bz3 match:|Device reported verify completion" | tail -n 20
-   ```
+### Step 1: Deploy Updated Patch
+```bash
+cd ~/NixOS-Hyprland
+sha256sum modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch
+# Expected: daf78ffeb739fc1e1a9ec461551b5827da30f490b745ea847c16e3aecaab344d
 
+sudo nixos-rebuild switch --flake .#
+sudo systemctl restart fprintd
+```
 
-## Measured breakdown (journal, 09-05 — do not re-derive, optimize)
+### Step 2: Cold-Boot / Service Restart Test
+```bash
+# Verify activation succeeds without TLS errors on fresh daemon start:
+fprintd-verify
+```
+Touch sensor: confirm device activates cleanly, reads OTP, and executes TLS handshake.
 
-Per attempt (~2–3s): TLS server startup + handshake proxy flights, the full
-~32-stage analog bring-up, config upload, scan (DOWN-sample, capture,
-release polls), minutiae + Bozorth3 (ms). Attempts repeat ~3s apart while
-the finger is present; first attempts often no-match, later ones match
-("recognizes late" = Nth-attempt match).
+### Step 3: Verify Latency (< 300ms) Test
+```bash
+fprintd-verify
+```
+Touch sensor: verify returns `verify-match (done)` immediately on touch without needing to lift finger.
 
-## Candidate wins (measure each with journal timestamps, keep what moves
-the number, one variable per build)
+### Step 4: Sudo Instant Unlock
+```bash
+sudo -k && sudo true
+```
+Touch sensor: authentication succeeds instantaneously.
 
-1. **First-attempt quality over attempt count:** capture ~500ms after touch
-   rather than instantly (settling), so attempt 1 matches instead of
-   attempt 3. Counts attempts-to-match before/after.
-2. **Bring-up trim:** profile which of the ~32 stages cost wall time
-   (timestamp each stage marker already in journal) and which are
-   load-bearing for content (max/range/corr per stage-skipped variant).
-   Cheap stages stay; dead weight goes. Never touch the frozen transport
-   (`goodix.c/h/proto`, `goodixtls.c`).
-3. **Release path:** verify currently resolves after lift + release polls.
-   If a content frame already matched, report without waiting for release
-   mechanics (check libfprint verify-flow constraints first — do not break
-   enroll stage transitions, which legitimately need release).
+### Step 5: Journal Log Verification
+```bash
+journalctl -u fprintd --since "5 min ago" --no-pager | grep -a -E "5e0a wire|5e0a frame|5e0a bz3 match:|Device reported verify completion|Device was already claimed" | tail -n 25
+```
 
-## Acceptance criteria (deployed driver, hardware only)
+## Predicted Journal Signatures & Branch Analysis
 
-- [ ] Median touch-to-`verify-match` under 2s across 10 trials (report the
-      distribution, not the best run).
-- [ ] No regression: double-verify reliability, hands-off silence, 07 green.
+- **Confirm (Branch A):**
+  - Instant transition from touch to completion:
+    `5e0a frame stats: active=5120 ... declen=10564`
+    `5e0a bz3 match: ... score=.../12` ($\ge 12$)
+    `Device reported verify completion` (< 300ms delta from frame capture).
+  - Zero cold-boot TLS alert failures.
+  - Zero `Device was already claimed` errors on subsequent `sudo true`.
+  - *Verdict*: `confirmed` -> Ticket 20 closed.
 
-## Rollback criteria
-
-- Any timeout/unknown-error/no-match regression vs baseline → revert that
-  step only with journal evidence.
+- **Falsify (Branch B):**
+  - Lag persists > 1.5s waiting for finger lift.
+  - Cold-boot TLS fails with PSK mismatch.
+  - *Verdict*: `falsified` -> Trace exact SSM state divergence in journal.

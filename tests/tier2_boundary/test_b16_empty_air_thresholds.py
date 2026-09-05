@@ -4,6 +4,7 @@ Tests rejection of noise floors and empty air scans under hardware FDT and bz3_t
 """
 
 import unittest
+from tests.repo_paths import repo
 from tests.test_utils import squash_frame_linear, FRAME_PIXELS
 
 class TestB16EmptyAirThresholds(unittest.TestCase):
@@ -24,13 +25,13 @@ class TestB16EmptyAirThresholds(unittest.TestCase):
 
     def test_bz3_threshold_calibration_12(self):
         """Verify minutiae matching threshold is configured to 12."""
-        with open("/home/sastauser/code/temp/goodix/libfprint-driver/goodix5e0a.c", "r") as f:
+        with open(repo("libfprint-driver", "goodix5e0a.c"), "r") as f:
             content = f.read()
         self.assertIn("bz3_threshold = 12", content)
 
     def test_blocking_fdt_prevents_empty_air_capture(self):
         """Verify hardware FDT blocks until physical touch interrupt is raised."""
-        with open("/home/sastauser/code/temp/goodix/libfprint-driver/goodix5xx.c", "r") as f:
+        with open(repo("libfprint-driver", "goodix5xx.c"), "r") as f:
             content = f.read()
         self.assertIn("SCAN_STAGE_SWITCH_TO_FDT_DOWN", content)
 

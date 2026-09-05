@@ -4,6 +4,7 @@ Requirements: Pass 100% of multi-stage enroll (8 stages) and consecutive verific
 """
 
 import unittest
+from tests.repo_paths import repo
 from tests.test_utils import (
     MockGoodixMCU, encode_pack, encode_protocol, decode_pack, decode_protocol,
     FLAGS_MSG_PROTOCOL, CMD_MCU_SWITCH_TO_FDT_DOWN, CMD_MCU_SWITCH_TO_FDT_UP,
@@ -17,19 +18,19 @@ class TestF23PAMReliability(unittest.TestCase):
 
     def test_enroll_stage_count_is_8(self):
         """Verify device driver specifies exactly 8 enrollment stages."""
-        with open("/home/sastauser/code/temp/goodix/libfprint-driver/goodix5e0a.c", "r") as f:
+        with open(repo("libfprint-driver", "goodix5e0a.c"), "r") as f:
             content = f.read()
         self.assertIn("nr_enroll_stages = 8", content)
 
     def test_scan_type_is_press(self):
         """Verify driver scan type is FP_SCAN_TYPE_PRESS."""
-        with open("/home/sastauser/code/temp/goodix/libfprint-driver/goodix5e0a.c", "r") as f:
+        with open(repo("libfprint-driver", "goodix5e0a.c"), "r") as f:
             content = f.read()
         self.assertIn("scan_type = FP_SCAN_TYPE_PRESS", content)
 
     def test_bz3_threshold_value(self):
         """Verify minutiae matching bz3_threshold is calibrated to 12."""
-        with open("/home/sastauser/code/temp/goodix/libfprint-driver/goodix5e0a.c", "r") as f:
+        with open(repo("libfprint-driver", "goodix5e0a.c"), "r") as f:
             content = f.read()
         self.assertIn("bz3_threshold = 12", content)
 

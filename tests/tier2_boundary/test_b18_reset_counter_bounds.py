@@ -5,6 +5,7 @@ Tests reset counter values (2048, 0, 65535) and little-endian decoding.
 
 import unittest
 import struct
+from tests.repo_paths import repo
 from tests.test_utils import RESET_NUMBER
 
 class TestB18ResetCounterBounds(unittest.TestCase):
@@ -30,7 +31,7 @@ class TestB18ResetCounterBounds(unittest.TestCase):
 
     def test_reset_number_check_in_goodix5xx(self):
         """Verify goodix5xx.c asserts number == cls->reset_number."""
-        with open("/home/sastauser/code/temp/goodix/libfprint-driver/goodix5xx.c", "r") as f:
+        with open(repo("libfprint-driver", "goodix5xx.c"), "r") as f:
             content = f.read()
         self.assertIn("cls->reset_number", content)
 

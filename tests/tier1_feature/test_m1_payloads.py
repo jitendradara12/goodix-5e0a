@@ -4,6 +4,7 @@ Validates byte-exactness of hardware tables in goodix5e0a.h against canonical ha
 """
 
 import re
+import struct
 import unittest
 from pathlib import Path
 from tests.test_utils import (
@@ -115,12 +116,20 @@ class TestMilestone1Payloads(unittest.TestCase):
         # In little-endian uint16, bytes [0x05, 0x03] are represented as 0x0305
         self.assertEqual(reg_val, 0x0305, "Register 0x022c gain value must correspond to \x05\x03 (0x0305)")
 
+    def test_reg_022c_mock_matches_header(self):
+        """Verify mock CANONICAL_REG_022C_GAIN equals the header LE value.
+
+        The gain bytes are one of the two mock values shared with frozen
+        hardware (the other is the PSK); pin the agreement both ways."""
+        reg_val = parse_c_macro(self.header_content, "GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL")
+        self.assertEqual(CANONICAL_REG_022C_GAIN, struct.pack("<H", reg_val))
+
     def test_b4_get_image_payload_exactness(self):
         """Verify B4 10-byte finger-capture payload in goodix.c."""
         expected_payload = bytes([0x01] + [0x00] * 9)
         self.assertEqual(len(expected_payload), 10)
         # Verify it is wired in goodix.c:goodix_send_mcu_get_image
-        with open("/home/sastauser/code/temp/goodix/libfprint-driver/goodix.c", "r") as f:
+        with open(str(REPO_ROOT / "libfprint-driver" / "goodix.c"), "r") as f:
             c_code = f.read()
         if "payload_5e0a" in c_code:
             self.assertIn("payload_5e0a[10] = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}", c_code)

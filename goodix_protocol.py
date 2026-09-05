@@ -1,10 +1,19 @@
-import struct
-import time
-import usb.core
-import usb.util
+"""USB bulk transport for Goodix 27c6:5e0a hardware experiments.
+
+pyusb is required only to instantiate USBProtocol (i.e. on a machine with
+the device attached); importing this module never requires it.
+"""
+
 
 class USBProtocol:
     def __init__(self, vendor=0x27c6, product=0x5e0a, timeout=5):
+        try:
+            import usb.core
+            import usb.util
+        except ImportError as e:
+            raise ImportError(
+                "pyusb is required for hardware access (pip install pyusb)"
+            ) from e
         self.vendor = vendor
         self.product = product
         self.device = usb.core.find(idVendor=vendor, idProduct=product)

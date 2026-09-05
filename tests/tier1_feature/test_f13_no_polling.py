@@ -7,12 +7,13 @@ temp_hot_seconds set to -1 (disables thermal watchdog polling).
 import unittest
 import os
 import re
+from tests.repo_paths import repo
 
 class TestF13NoPolling(unittest.TestCase):
 
     def setUp(self):
-        self.driver_c_path = "/home/sastauser/code/temp/goodix/libfprint-driver/goodix5e0a.c"
-        self.driver_5xx_path = "/home/sastauser/code/temp/goodix/libfprint-driver/goodix5xx.c"
+        self.driver_c_path = repo("libfprint-driver", "goodix5e0a.c")
+        self.driver_5xx_path = repo("libfprint-driver", "goodix5xx.c")
 
     def test_temp_hot_seconds_disabled(self):
         """Verify dev_class->temp_hot_seconds is explicitly set to -1 in goodix5e0a.c."""

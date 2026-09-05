@@ -32,11 +32,13 @@ class TestF16Demosaicing(unittest.TestCase):
             self.assertLessEqual(p, 255)
 
     def test_demosaic_fpimage_flags(self):
-        """Verify FpImage flags include PARTIAL and COLORS_INVERTED."""
-        FPI_IMAGE_PARTIAL = 1 << 0
-        FPI_IMAGE_COLORS_INVERTED = 1 << 1
-        flags = FPI_IMAGE_PARTIAL | FPI_IMAGE_COLORS_INVERTED
-        self.assertEqual(flags, 3)
+        """Verify FpImage uses COLORS_INVERTED with PARTIAL deliberately omitted (edge minutiae kept)."""
+        from pathlib import Path
+        repo_c = Path(__file__).resolve().parents[2] / "libfprint-driver" / "goodix5e0a.c"
+        self.assertTrue(repo_c.exists(), f"Missing driver C file: {repo_c}")
+        c_code = repo_c.read_text(encoding="utf-8")
+        self.assertIn("img->flags = FPI_IMAGE_COLORS_INVERTED;", c_code)
+        self.assertIn("Omit FPI_IMAGE_PARTIAL", c_code)
 
     def test_demosaic_continuity(self):
         """Verify interpolation maintains continuity without discrete step discontinuities."""

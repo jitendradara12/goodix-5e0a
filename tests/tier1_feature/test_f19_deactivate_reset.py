@@ -4,12 +4,13 @@ Requirements: Clear priv->cmd, priv->ack, priv->reply, timers, and data buffers 
 """
 
 import unittest
+from tests.repo_paths import repo
 
 class TestF19DeactivateReset(unittest.TestCase):
 
     def setUp(self):
-        self.goodix_c_path = "/home/sastauser/code/temp/goodix/libfprint-driver/goodix.c"
-        self.goodix5xx_c_path = "/home/sastauser/code/temp/goodix/libfprint-driver/goodix5xx.c"
+        self.goodix_c_path = repo("libfprint-driver", "goodix.c")
+        self.goodix5xx_c_path = repo("libfprint-driver", "goodix5xx.c")
 
     def test_goodix_reset_state_clears_cmd(self):
         """Verify goodix_reset_state resets priv->cmd to 0."""

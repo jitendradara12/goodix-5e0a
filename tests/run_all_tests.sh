@@ -21,6 +21,7 @@ NC='\033[0m' # No Color
 
 TOTAL_PASSED=0
 TOTAL_FAILED=0
+TOTAL_SKIPPED=0
 START_TIME=$(date +%s)
 
 echo -e "${BOLD}${CYAN}==============================================================================${NC}"
@@ -58,6 +59,8 @@ run_tier() {
         fi
         echo -e "${GREEN}✔ ${tier_name} PASSED (${count} tests in ${tier_duration}s)${NC}\n"
         TOTAL_PASSED=$((TOTAL_PASSED + count))
+        local skipped=$(echo "${output}" | grep -oE "OK \(skipped=[0-9]+\)" | grep -oE "[0-9]+" || echo "0")
+        TOTAL_SKIPPED=$((TOTAL_SKIPPED + skipped))
     else
         echo -e "${RED}✖ ${tier_name} FAILED in ${tier_duration}s${NC}"
         echo "${output}"
@@ -85,18 +88,22 @@ if [ -f "/tmp/libfprint-goodix/build/build.ninja" ]; then
 fi
 
 
-echo -n "Evaluating libfprint-goodix Nix derivation... "
-nix-instantiate --eval -E "let pkgs = import <nixpkgs> {}; in pkgs.callPackage ${ROOT_DIR}/libfprint-goodix.nix {}" > /dev/null 2>&1 && echo -e "${GREEN}OK${NC}" || (echo -e "${RED}FAIL${NC}" && exit 1)
+if ! command -v nix-instantiate >/dev/null 2>&1; then
+    echo -e "${YELLOW}SKIP nix pre-flight (nix-instantiate not installed, non-fatal)${NC}"
+else
+    echo -n "Evaluating libfprint-goodix Nix derivation... "
+    nix-instantiate --eval -E "let pkgs = import <nixpkgs> {}; in pkgs.callPackage ${ROOT_DIR}/libfprint-goodix.nix {}" > /dev/null 2>&1 && echo -e "${GREEN}OK${NC}" || (echo -e "${RED}FAIL${NC}" && exit 1)
 
-echo -n "Evaluating NixOS module configuration... "
-nix-instantiate --parse "${ROOT_DIR}/nixos-module.nix" > /dev/null 2>&1 && echo -e "${GREEN}OK${NC}" || (echo -e "${RED}FAIL${NC}" && exit 1)
+    echo -n "Evaluating NixOS module configuration... "
+    nix-instantiate --parse "${ROOT_DIR}/nixos-module.nix" > /dev/null 2>&1 && echo -e "${GREEN}OK${NC}" || (echo -e "${RED}FAIL${NC}" && exit 1)
+fi
 
 echo ""
 
 # ------------------------------------------------------------------------------
 # Execute All Test Tiers
 # ------------------------------------------------------------------------------
-run_tier "Tier 1 (Feature Coverage)" "${SCRIPT_DIR}/tier1_feature" "24 Driver Features in Isolation"
+run_tier "Tier 1 (Feature Coverage)" "${SCRIPT_DIR}/tier1_feature" "Features F01-F25 plus Milestone Payloads in Isolation"
 run_tier "Tier 2 (Boundary & Corner Cases)" "${SCRIPT_DIR}/tier2_boundary" "Boundary Value & Limit Analysis"
 run_tier "Tier 3 (Pairwise Integration)" "${SCRIPT_DIR}/tier3_combination" "Cross-Feature Combinations & State Transitions"
 run_tier "Tier 4 (Real-World Application Scenarios)" "${SCRIPT_DIR}/tier4_realworld" "PAM Auth, Enrollment & System Scenarios"
@@ -110,6 +117,7 @@ echo -e "${BOLD}${CYAN}  Test Execution Summary                                 
 echo -e "${BOLD}${CYAN}==============================================================================${NC}"
 echo -e "Total Tests Passed: ${BOLD}${GREEN}${TOTAL_PASSED}${NC}"
 echo -e "Total Tests Failed: ${BOLD}${RED}${TOTAL_FAILED}${NC}"
+echo -e "Total Tests Skipped (env-gated): ${BOLD}${YELLOW}${TOTAL_SKIPPED}${NC}"
 echo -e "Total Execution Time: ${BOLD}${TOTAL_DURATION}s${NC}"
 
 if [ ${TOTAL_FAILED} -eq 0 ]; then

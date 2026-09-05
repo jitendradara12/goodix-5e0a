@@ -6,6 +6,7 @@ Cross-feature interaction tests validating state machines, protocol lifecycles, 
 import unittest
 import struct
 import socket
+from tests.repo_paths import repo
 from tests.test_utils import (
     MockGoodixMCU, encode_pack, encode_protocol, decode_pack, decode_protocol,
     decode_12bit_frame, decode_chicagoh_frame, pack_12bit_frame, squash_frame_linear,
@@ -110,10 +111,10 @@ class TestPairwiseCombinations(unittest.TestCase):
 
     # Pairwise 7: Corrupted Packet Header + State Reset + Re-synchronization
     def test_pair_07_corrupted_packet_state_reset_resync(self):
-        """Pair 7: Protocol recovers cleanly when corrupt packet is followed by reset."""
-        # Inject bad packet
+        """Pair 7: Corrupt bytes on the wire are ignored; NOP and reset still succeed after."""
+        # Inject bad packet through the mock (undecodable flags -> empty reply, no state change)
         bad = b"\xff\xff\x00\x00"
-        decode_pack(bad)
+        self.assertEqual(self.mcu.handle_out_packet(bad), b"")
 
         # Recover with NOP and Reset
         nop = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_NOP, b""))
@@ -214,7 +215,7 @@ class TestPairwiseCombinations(unittest.TestCase):
 
     # Pairwise 14: TLS Session Establishment + Frame Request + Socket Teardown
     def test_pair_14_tls_session_frame_socket_teardown(self):
-        """Pair 14: TLS establishment, data capture, and simulated socket shutdown."""
+        """Pair 14: Socket shutdown discipline (SHUT_RDWR then close) as used by the TLS server teardown."""
         s1, s2 = socket.socketpair()
         try:
             # Send mock frame data through socket
@@ -256,7 +257,7 @@ class TestPairwiseCombinations(unittest.TestCase):
     # Pairwise 17: Driver Class Inheritance + Auto-feature initialization
     def test_pair_17_driver_class_inheritance(self):
         """Pair 17: Subclassing verification and auto feature init."""
-        with open("/home/sastauser/code/temp/goodix/libfprint-driver/goodix5e0a.c", "r") as f:
+        with open(repo("libfprint-driver", "goodix5e0a.c"), "r") as f:
             content = f.read()
         self.assertIn("G_DEFINE_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a,", content)
         self.assertIn("FPI_TYPE_DEVICE_GOODIXTLS5XX", content)
@@ -265,7 +266,7 @@ class TestPairwiseCombinations(unittest.TestCase):
     # Pairwise 18: Patch evaluation + Derivation compilation + Udev rules generation
     def test_pair_18_patch_and_nixos_module_integrity(self):
         """Pair 18: Patch consistency with NixOS derivation configuration."""
-        with open("/home/sastauser/code/temp/goodix/libfprint-goodix.nix", "r") as f:
+        with open(repo("libfprint-goodix.nix"), "r") as f:
             nix_content = f.read()
         self.assertIn("0001-Add-driver-support-for-Goodix-27c6-5e0a.patch", nix_content)
         self.assertIn("-Ddrivers=goodixtls5e0a", nix_content)
@@ -307,7 +308,7 @@ class TestPairwiseCombinations(unittest.TestCase):
 
     # Pairwise 22: TLS Socket creation + Socketpair bi-directional write/read loop
     def test_pair_22_socketpair_bidirectional_traffic(self):
-        """Pair 22: Simulating USB-to-TLS bridge bi-directional traffic flow."""
+        """Pair 22: Socketpair echo sanity for opaque bridge payloads (no USB/TLS stack involved)."""
         s_mcu, s_tls = socket.socketpair()
         try:
             # Client writes MCU packet to TLS
@@ -325,8 +326,7 @@ class TestPairwiseCombinations(unittest.TestCase):
 
     # Pairwise 23: Device Re-open after unexpected close / disconnect
     def test_pair_23_device_reopen_after_disconnect(self):
-        """Pair 23: Disconnect simulator and re-instantiate clean state."""
-        self.mcu.is_connected = False
+        """Pair 23: A freshly re-instantiated mock answers NOP (clean-state recovery)."""
         new_mcu = MockGoodixMCU()
         self.assertTrue(new_mcu.is_connected)
         nop_pkt = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_NOP, b""))

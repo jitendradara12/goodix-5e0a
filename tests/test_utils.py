@@ -16,6 +16,16 @@ from typing import Tuple, List, Optional, Dict, Any
 
 # ==============================================================================
 # Canonical Constants
+# ------------------------------------------------------------------------------
+# NOTE (evidence hierarchy): the CANONICAL_* byte tables below are
+# self-consistent mock fixtures from the 52XD prototype generation — they are
+# NOT hardware ground truth and must not be cited as such. Hardware ground
+# truth lives in libfprint-driver/goodix5e0a.h (frozen; tickets 14-19), and
+# differs (35B FDT tables, 05-first image payload, b0-first config magic).
+# The values shared with hardware are the PSK (cross-checked in
+# test_m1_payloads.py::test_psk_key_exactness) and the 022C gain bytes.
+# Do not "fix" these fixtures to match the header: MockGoodixMCU behavior
+# and dozens of tests are built on them.
 # ==============================================================================
 
 VENDOR_ID = 0x27C6

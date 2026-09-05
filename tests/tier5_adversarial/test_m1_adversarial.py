@@ -10,7 +10,7 @@ Adversarially tests:
 
 import struct
 import unittest
-from pathlib import Path
+from tests.repo_paths import REPO_ROOT
 from tests.test_utils import (
     CANONICAL_PSK,
     CANONICAL_CONFIG_52XD,
@@ -33,7 +33,7 @@ from tests.test_utils import (
 )
 from tests.tier1_feature.test_m1_payloads import parse_c_array, parse_c_macro
 
-HEADER_PATH = Path("/tmp/libfprint-goodix/libfprint/drivers/goodixtls/goodix5e0a.h")
+HEADER_PATH = REPO_ROOT / "libfprint-driver" / "goodix5e0a.h"
 
 
 class TestM1AdversarialHarness(unittest.TestCase):

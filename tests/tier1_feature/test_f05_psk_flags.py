@@ -54,7 +54,7 @@ class TestF05PSKFlags(unittest.TestCase):
         self.assertEqual(psk_bytes, CANONICAL_PSK)
 
     def test_psk_flags_mismatch_rejection(self):
-        """Verify simulated mismatch in PSK flags is detected as invalid."""
+        """Documents an invalid PSK-flags literal off the canonical value (literal corpus only)."""
         invalid_flags = 0xAA010002
         self.assertNotEqual(invalid_flags, PSK_FLAGS)
 

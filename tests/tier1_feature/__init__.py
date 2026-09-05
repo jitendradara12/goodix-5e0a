@@ -1,4 +1,4 @@
-"""Tier 1: Feature Coverage Test Suite (Features F1 - F24)."""
+"""Tier 1: Feature Coverage Test Suite (Features F01 - F25, M1 - M2)."""
 import sys
 from pathlib import Path
 

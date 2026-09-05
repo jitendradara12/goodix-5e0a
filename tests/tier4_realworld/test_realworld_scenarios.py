@@ -9,9 +9,11 @@ Simulates realistic system-level workloads:
 """
 
 import unittest
+import shutil
 import struct
 import subprocess
 import time
+from tests.repo_paths import repo, REPO_ROOT
 from tests.test_utils import (
     MockGoodixMCU, encode_pack, encode_protocol, decode_pack, decode_protocol,
     decode_12bit_frame, pack_12bit_frame, squash_frame_linear, process_frame_demosaic,
@@ -36,6 +38,7 @@ class TestRealWorldScenarios(unittest.TestCase):
         mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_NOP, b"")))
         mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_RESET, struct.pack("<BB", 3, 20))))
         mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_READ_SENSOR_REGISTER, struct.pack("<BHBB", 0, 0, 4, 0))))
+        mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_READ_OTP, b"")))
         mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_FIRMWARE_VERSION, b"")))
         mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_REQUEST_TLS_CONNECTION, b"")))
         mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_UPLOAD_CONFIG_MCU, CANONICAL_CONFIG_52XD)))
@@ -48,8 +51,8 @@ class TestRealWorldScenarios(unittest.TestCase):
     # Scenario 1: Multi-stage Enrollment (fprintd-enroll) without false air advances
     def test_scenario_01_multi_stage_enrollment(self):
         """Scenario 1: Simulates an 8-stage fprintd-enroll session.
-        Advances ONLY on genuine touch down and finger up.
-        Rejects advancing on idle / empty air.
+        Drives touch-down / capture / release sequencing per stage.
+        (Idle-air rejection is hardware-side; the mock answers regardless.)
         """
         self._activate_device(self.mcu)
 
@@ -96,7 +99,8 @@ class TestRealWorldScenarios(unittest.TestCase):
     # Scenario 2: Consecutive Sudo PAM Verifications (5x back-to-back fprintd-verify)
     def test_scenario_02_consecutive_pam_verifications(self):
         """Scenario 2: Simulates 5 consecutive PAM authentication verify runs (e.g. repeated sudo commands).
-        Verifies no 0xa2 command timeout, no socket hang, and clean re-initialization per run.
+        Each run re-activates, captures, processes, releases, and tears down cleanly.
+        (Timeout/hang behavior is hardware-side and unmeasured here.)
         """
         for run_idx in range(1, 6):
             # 1. Device activation
@@ -153,7 +157,8 @@ class TestRealWorldScenarios(unittest.TestCase):
     # Scenario 4: Empty Air Finger Touch Rejection (0 false triggers over idle periods)
     def test_scenario_04_empty_air_finger_touch_rejection(self):
         """Scenario 4: Simulates long idle periods where no physical finger touches the sensor.
-        Verifies zero false image acquisitions and zero CPU busy-loops.
+        Verifies the idle query path stays responsive while no image is polled.
+        (Acquisition gating and busy-loop behavior are hardware-side.)
         """
         self._activate_device(self.mcu)
         self.mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_MCU_SWITCH_TO_FDT_MODE, CANONICAL_FDT_MODE)))
@@ -170,6 +175,7 @@ class TestRealWorldScenarios(unittest.TestCase):
         self._deactivate_device(self.mcu)
 
     # Scenario 5: Hermetic Nix Package Build & Service Configuration Evaluation
+    @unittest.skipUnless(shutil.which("nix-instantiate"), "nix-instantiate not installed")
     def test_scenario_05_nix_package_and_service_evaluation(self):
         """Scenario 5: Evaluates NixOS configuration and libfprint-goodix derivation hermetically.
         """
@@ -178,11 +184,11 @@ class TestRealWorldScenarios(unittest.TestCase):
             "nix-instantiate", "--eval",
             "-E", "let pkgs = import <nixpkgs> {}; in pkgs.callPackage ./libfprint-goodix.nix {}"
         ]
-        res1 = subprocess.run(cmd1, cwd="/home/sastauser/code/temp/goodix", capture_output=True, text=True)
+        res1 = subprocess.run(cmd1, cwd=str(REPO_ROOT), capture_output=True, text=True)
         self.assertEqual(res1.returncode, 0, f"Derivation eval failed: {res1.stderr}")
 
         # 2. Verify nixos-module.nix syntax and attributes
-        with open("/home/sastauser/code/temp/goodix/nixos-module.nix", "r") as f:
+        with open(repo("nixos-module.nix"), "r") as f:
             module_src = f.read()
         self.assertIn("services.fprintd", module_src)
         self.assertIn("services.udev", module_src)

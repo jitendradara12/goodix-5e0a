@@ -9,7 +9,17 @@ press-and-hold advances stages to a completed enroll, verify matches.
 what survives (polling UX lessons, metrics logging) and what was wrong
 (39B tables, 01/45 payloads, 80x64 geometry, no-poll-query).
 
-**Status:** ready-for-agent
+**Status:** superseded by 10 (retired 2026-09-05 — do not implement; see rationale below)
+
+> Retirement rationale (static, no hardware): this ticket's own header already
+> routes succession through 10, and every implementable premise below has since
+> been falsified on hardware and frozen otherwise — `01`-first image payload
+> (ground truth is `05…`, `goodix5e0a.h:76-78`, pinned by `test_img_payload_exactness`),
+> 80x64 geometry (frozen 64x80, `goodix5e0a.h:14-15`, Runs 13–17), and skipping
+> the FDT stages (driver retains `SCAN_STAGE_SWITCH_TO_FDT_DOWN`, and
+> `test_b16_empty_air_thresholds` gates on it). Applying "Precise changes" as
+> written would revert tickets 14–18. The acceptance criteria above remain
+> valid as outcome definitions; the prescribed implementation does not.
 
 ## Background evidence (all verified, do not re-litigate)
 

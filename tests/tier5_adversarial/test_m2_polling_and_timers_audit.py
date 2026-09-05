@@ -6,12 +6,13 @@ sleep statements, or synthetic noise heuristics.
 
 import unittest
 import re
+from tests.repo_paths import repo
 
 class TestM2PollingAndTimersAudit(unittest.TestCase):
 
     def setUp(self):
-        self.driver_c_path = "/tmp/libfprint-goodix/libfprint/drivers/goodixtls/goodix5e0a.c"
-        self.driver_h_path = "/tmp/libfprint-goodix/libfprint/drivers/goodixtls/goodix5e0a.h"
+        self.driver_c_path = repo("libfprint-driver", "goodix5e0a.c")
+        self.driver_h_path = repo("libfprint-driver", "goodix5e0a.h")
 
         with open(self.driver_c_path, "r") as f:
             self.c_code = f.read()
@@ -64,14 +65,16 @@ class TestM2PollingAndTimersAudit(unittest.TestCase):
 
     def test_event_driven_activation_ssm(self):
         """Verify activation SSM transitions are strictly callback-driven with no timers."""
-        # 4 states in SSM:
+        # 5 states in SSM:
         # ACTIVATE_READ_AND_NOP -> goodix_send_nop -> goodixtls5xx_check_none
         # ACTIVATE_RESET -> goodix_send_reset -> goodixtls5xx_check_reset
         # ACTIVATE_READ_CHIP_ID -> goodix_send_read_sensor_register -> goodixtls5xx_check_none_cmd
+        # ACTIVATE_READ_OTP -> goodix_send_read_otp -> goodixtls5xx_check_none_cmd
         # ACTIVATE_CHECK_FW_VER -> goodix_send_query_firmware_version -> goodixtls5xx_check_firmware_version
         self.assertIn("goodix_send_nop (dev, goodixtls5xx_check_none, ssm);", self.c_code)
         self.assertIn("goodix_send_reset (dev, TRUE, 20, goodixtls5xx_check_reset, ssm);", self.c_code)
         self.assertIn("goodix_send_read_sensor_register (dev, 0x0000, 4, goodixtls5xx_check_none_cmd, ssm);", self.c_code)
+        self.assertIn("goodix_send_read_otp (dev, goodixtls5xx_check_none_cmd, ssm);", self.c_code)
         self.assertIn("goodix_send_query_firmware_version (dev, goodixtls5xx_check_firmware_version, ssm);", self.c_code)
 
 if __name__ == "__main__":
