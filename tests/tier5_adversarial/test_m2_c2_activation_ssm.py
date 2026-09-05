@@ -250,7 +250,9 @@ class TestM2C2ActivationSSM(unittest.TestCase):
             "ACTIVATE_READ_AND_NOP",
             "ACTIVATE_RESET",
             "ACTIVATE_READ_CHIP_ID",
+            "ACTIVATE_READ_OTP",
             "ACTIVATE_CHECK_FW_VER",
+            "ACTIVATE_UPLOAD_CONFIG",
             "ACTIVATE_NUM_STATES",
         ]
         for st in expected_states:

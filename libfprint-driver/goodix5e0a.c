@@ -53,7 +53,9 @@ enum activate_states {
   ACTIVATE_READ_AND_NOP,
   ACTIVATE_RESET,
   ACTIVATE_READ_CHIP_ID,
+  ACTIVATE_READ_OTP,
   ACTIVATE_CHECK_FW_VER,
+  ACTIVATE_UPLOAD_CONFIG,
   ACTIVATE_NUM_STATES,
 };
 
@@ -75,8 +77,18 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
       goodix_send_read_sensor_register (dev, 0x0000, 4, goodixtls5xx_check_none_cmd, ssm);
       break;
 
+    case ACTIVATE_READ_OTP:
+      goodix_send_read_otp (dev, goodixtls5xx_check_none_cmd, ssm);
+      break;
+
     case ACTIVATE_CHECK_FW_VER:
       goodix_send_query_firmware_version (dev, goodixtls5xx_check_firmware_version, ssm);
+      break;
+
+    case ACTIVATE_UPLOAD_CONFIG:
+      goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config,
+                                     sizeof (goodix_5e0a_config), NULL,
+                                     goodixtls5xx_check_config_upload, ssm);
       break;
     }
 }
@@ -95,29 +107,6 @@ on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
 }
 
 static void
-on_config_uploaded (FpDevice *dev, gboolean success,
-                    gpointer user_data, GError *error)
-{
-  if (error)
-    {
-      fp_err ("failed to upload MCU config: %s (code: %d)", error->message, error->code);
-      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
-      return;
-    }
-  if (!success)
-    {
-      fpi_image_device_activate_complete (
-        FP_IMAGE_DEVICE (dev),
-        g_error_new (FP_DEVICE_ERROR, FP_DEVICE_ERROR_PROTO,
-                     "failed to upload mcu config"));
-      return;
-    }
-
-  fp_dbg ("MCU config uploaded successfully after TLS! Enabling chip...");
-  goodix_send_enable_chip (dev, TRUE, on_chip_enabled, NULL);
-}
-
-static void
 on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
 {
   if (error)
@@ -127,10 +116,8 @@ on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
       return;
     }
 
-  fp_dbg ("TLS connection ready! Uploading MCU config (ChicagoH GF3658 DN3)...");
-  goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config,
-                                 sizeof (goodix_5e0a_config), NULL,
-                                 on_config_uploaded, NULL);
+  fp_dbg ("TLS connection ready! Enabling chip...");
+  goodix_send_enable_chip (dev, TRUE, on_chip_enabled, NULL);
 }
 
 static void
