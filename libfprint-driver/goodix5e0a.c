@@ -53,6 +53,7 @@ enum activate_states {
   ACTIVATE_READ_AND_NOP,
   ACTIVATE_RESET,
   ACTIVATE_READ_CHIP_ID,
+  ACTIVATE_READ_OTP,
   ACTIVATE_CHECK_FW_VER,
   ACTIVATE_NUM_STATES,
 };
@@ -73,6 +74,10 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
 
     case ACTIVATE_READ_CHIP_ID:
       goodix_send_read_sensor_register (dev, 0x0000, 4, goodixtls5xx_check_none_cmd, ssm);
+      break;
+
+    case ACTIVATE_READ_OTP:
+      goodix_send_read_otp (dev, goodixtls5xx_check_none_cmd, ssm);
       break;
 
     case ACTIVATE_CHECK_FW_VER:
