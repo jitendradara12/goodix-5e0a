@@ -12,7 +12,7 @@ A reverse-engineered Linux driver for the **Goodix 27c6:5e0a** fingerprint scann
 - **NIST NBIS Minutiae Verification**: Extracts 23–25 minutiae per finger scan on hardware and passes Bozorth3 biometric match validation with scores of 13–15 (threshold: 12). See ticket 19 for the hardware run log.
 - **Empty-Air Rejection Gate**: Prevents capturing ambient thermal noise into templates when the sensor is touched lightly or untouched.
 - **Multi-Run PAM Stability**: Deterministic teardown and cancellable USB read loops prevent daemon hangs or timeouts across consecutive authentications.
-- **Exhaustive Automated Test Suite**: 375 tests across 5 tiers covering feature isolation, boundaries, pairwise integration, system scenarios, and adversarial fuzzing.
+- **Exhaustive Automated Test Suite**: 378 tests across 5 tiers covering feature isolation, boundaries, pairwise integration, system scenarios, and adversarial fuzzing.
 
 ---
 
