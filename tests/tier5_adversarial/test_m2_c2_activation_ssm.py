@@ -62,15 +62,7 @@ class TestM2C2ActivationSSM(unittest.TestCase):
         self.assertEqual(cmd, CMD_READ_SENSOR_REGISTER)
         self.assertEqual(payload, CHIP_ID_VAL)
 
-        # State 3: ACTIVATE_READ_OTP
-        otp_pkt = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_READ_OTP, b""))
-        otp_reply = self.mcu.handle_out_packet(otp_pkt)
-        ok, _, body, _ = decode_pack(otp_reply)
-        p_ok, cmd, payload, _, _ = decode_protocol(body)
-        self.assertEqual(cmd, CMD_READ_OTP)
-        self.assertEqual(len(payload), 32)
-
-        # State 4: ACTIVATE_CHECK_FW_VER
+        # State 3: ACTIVATE_CHECK_FW_VER
         fw_pkt = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_FIRMWARE_VERSION, b""))
         fw_reply = self.mcu.handle_out_packet(fw_pkt)
         ok, _, body, _ = decode_pack(fw_reply)
@@ -251,20 +243,18 @@ class TestM2C2ActivationSSM(unittest.TestCase):
         self.assertTrue(self.mcu.fdt_down_active)
 
     def test_activation_ssm_states_definition_in_driver(self):
-        """Verify goodix5e0a.c defines all 5 activation states and wires them correctly."""
+        """Verify goodix5e0a.c defines all 4 activation states and wires them correctly."""
         with open(repo("libfprint-driver", "goodix5e0a.c"), "r", encoding="utf-8") as f:
             drv = f.read()
         expected_states = [
             "ACTIVATE_READ_AND_NOP",
             "ACTIVATE_RESET",
             "ACTIVATE_READ_CHIP_ID",
-            "ACTIVATE_READ_OTP",
             "ACTIVATE_CHECK_FW_VER",
             "ACTIVATE_NUM_STATES",
         ]
         for st in expected_states:
             self.assertIn(st, drv)
-        self.assertIn("goodix_send_read_otp (dev, goodixtls5xx_check_none_cmd, ssm);", drv)
 
     def test_otp_read_payload_handling(self):
         """Verify OTP read payload validation and response handling."""

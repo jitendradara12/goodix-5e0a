@@ -662,10 +662,10 @@ index a19379c..d7427ea 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..a9d104b
+index 0000000..65d3dbb
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,880 @@
+@@ -0,0 +1,875 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -721,7 +721,6 @@ index 0000000..a9d104b
 +  ACTIVATE_READ_AND_NOP,
 +  ACTIVATE_RESET,
 +  ACTIVATE_READ_CHIP_ID,
-+  ACTIVATE_READ_OTP,
 +  ACTIVATE_CHECK_FW_VER,
 +  ACTIVATE_NUM_STATES,
 +};
@@ -742,10 +741,6 @@ index 0000000..a9d104b
 +
 +    case ACTIVATE_READ_CHIP_ID:
 +      goodix_send_read_sensor_register (dev, 0x0000, 4, goodixtls5xx_check_none_cmd, ssm);
-+      break;
-+
-+    case ACTIVATE_READ_OTP:
-+      goodix_send_read_otp (dev, goodixtls5xx_check_none_cmd, ssm);
 +      break;
 +
 +    case ACTIVATE_CHECK_FW_VER:

@@ -68,12 +68,11 @@ class TestM2DriverRefactoring(unittest.TestCase):
         self.assertNotIn("usleep", self.c_content)
 
     def test_activation_ssm_structure(self):
-        """Verify dev_activate implements 5-state SSM followed by TLS init and MCU config upload."""
+        """Verify dev_activate implements 4-state SSM followed by TLS init and MCU config upload."""
         self.assertIn("enum activate_states {", self.c_content)
         self.assertIn("ACTIVATE_READ_AND_NOP,", self.c_content)
         self.assertIn("ACTIVATE_RESET,", self.c_content)
         self.assertIn("ACTIVATE_READ_CHIP_ID,", self.c_content)
-        self.assertIn("ACTIVATE_READ_OTP,", self.c_content)
         self.assertIn("ACTIVATE_CHECK_FW_VER,", self.c_content)
         self.assertIn("ACTIVATE_NUM_STATES,", self.c_content)
 

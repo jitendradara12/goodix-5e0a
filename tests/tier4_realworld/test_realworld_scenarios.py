@@ -38,7 +38,6 @@ class TestRealWorldScenarios(unittest.TestCase):
         mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_NOP, b"")))
         mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_RESET, struct.pack("<BB", 3, 20))))
         mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_READ_SENSOR_REGISTER, struct.pack("<BHBB", 0, 0, 4, 0))))
-        mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_READ_OTP, b"")))
         mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_FIRMWARE_VERSION, b"")))
         mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_REQUEST_TLS_CONNECTION, b"")))
         mcu.handle_out_packet(encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_UPLOAD_CONFIG_MCU, CANONICAL_CONFIG_52XD)))

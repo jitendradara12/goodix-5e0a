@@ -65,16 +65,14 @@ class TestM2PollingAndTimersAudit(unittest.TestCase):
 
     def test_event_driven_activation_ssm(self):
         """Verify activation SSM transitions are strictly callback-driven with no timers."""
-        # 5 states in SSM:
+        # 4 states in SSM:
         # ACTIVATE_READ_AND_NOP -> goodix_send_nop -> goodixtls5xx_check_none
         # ACTIVATE_RESET -> goodix_send_reset -> goodixtls5xx_check_reset
         # ACTIVATE_READ_CHIP_ID -> goodix_send_read_sensor_register -> goodixtls5xx_check_none_cmd
-        # ACTIVATE_READ_OTP -> goodix_send_read_otp -> goodixtls5xx_check_none_cmd
         # ACTIVATE_CHECK_FW_VER -> goodix_send_query_firmware_version -> goodixtls5xx_check_firmware_version
         self.assertIn("goodix_send_nop (dev, goodixtls5xx_check_none, ssm);", self.c_code)
         self.assertIn("goodix_send_reset (dev, TRUE, 20, goodixtls5xx_check_reset, ssm);", self.c_code)
         self.assertIn("goodix_send_read_sensor_register (dev, 0x0000, 4, goodixtls5xx_check_none_cmd, ssm);", self.c_code)
-        self.assertIn("goodix_send_read_otp (dev, goodixtls5xx_check_none_cmd, ssm);", self.c_code)
         self.assertIn("goodix_send_query_firmware_version (dev, goodixtls5xx_check_firmware_version, ssm);", self.c_code)
 
 if __name__ == "__main__":
