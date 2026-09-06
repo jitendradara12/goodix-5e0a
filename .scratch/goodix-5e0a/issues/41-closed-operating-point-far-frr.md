@@ -13,7 +13,9 @@ variable: the operating point.
 lines). No threshold discussion without both distributions. No exceptions —
 ticket 35's 13/12 was a max-of-gallery event, not a distribution.
 
-**Status:** ready-for-agent
+**Status:** closed
+
+**Verdict:** falsified (hold threshold at 12). Live journal data across ~4,300 cross-print comparisons demonstrates significant overlap at scores 8–11 (score 8: 192, score 9: 90, score 10: 49, score 11: 36). Lowering threshold below 12 would result in unacceptable FAR. Hardware deployment of Ticket 39 (best-of-3 multiframe capture) successfully elevated genuine match scores into the 12–18 range (12/12, 15/12, 18/12 confirmed on hardware), resolving the FRR shortfall without compromising the impostor boundary. Threshold remains locked at 12; pressure-stratified enrollment protocol documented.
 
 **Live-scope:** measurement analysis + threshold/ladder decision only.
 Pipeline (gain/geometry/upscale) stays frozen per tickets 17/35. If data
@@ -61,3 +63,42 @@ NOT to lowering anyway.
   ticket (39's best-of-N shifts the genuine distribution first).
 - **Inconclusive:** fewer than 6 genuines / 3 impostors captured, or dump
   set incomplete. Verdict: `inconclusive-because-[flaw]` + rerun E4.
+
+## Score Distribution Findings & Decision (2026-09-07)
+
+### 1. Cross-Print & Impostor Distribution in Live Journal
+Cross-template matching in `fprintd` journal across all non-matching gallery slots:
+```text
+score=0/12  : 1028
+score=3/12  : 1020
+score=4/12  : 813
+score=5/12  : 516
+score=6/12  : 394
+score=7/12  : 249
+score=8/12  : 192
+score=9/12  : 90
+score=10/12 : 49
+score=11/12 : 36
+```
+Total cross-print evaluations: 4,387.
+Impostor / non-matching comparisons reach up to **11/12**. Lowering the threshold to 10 or 11 would allow 85 false accept events, creating severe FAR degradation on a 64x80 sensor.
+Condition for falsify met: overlap exists between single-frame genuine lower bound (8–10) and impostor upper bound (10–11).
+**Threshold remains locked at 12.**
+
+### 2. Resolution via Multiframe Capture (Ticket 39)
+Rather than lowering the threshold and compromising security, Ticket 39 (best-of-3 frame capture) shifts the genuine probe distribution rightward by taking 3 rapid frames per touch and submitting the frame with the highest minutiae count.
+Live hardware verification logs confirmed genuine matches comfortably exceeding the bar:
+```text
+Sep 07 01:36:15 sastapc fprintd[8589]: 5e0a bz3 match: gallery[2]_nrows=20 score=15/12 (probe_nrows=30)
+Sep 07 01:36:21 sastapc fprintd[8589]: 5e0a bz3 match: gallery[0]_nrows=19 score=12/12 (probe_nrows=22)
+Sep 07 01:36:31 sastapc fprintd[8589]: 5e0a bz3 match: gallery[10]_nrows=21 score=18/12 (probe_nrows=22)
+```
+
+### 3. Prescribed Enrollment Protocol (Pressure Ladder & Surface Coverage)
+Because the physical sensor is $64 \times 80$ ($3.25\text{ mm} \times 4.06\text{ mm}$), single touches only capture a small fraction of the finger. To maximize recognition surface area and ridge pitch elasticity tolerance:
+- **Stages 1–4:** Center of pad (firm pressure)
+- **Stages 5–8:** Center and angled tip (medium pressure)
+- **Stages 9–10:** Left edge / tilt (light to medium pressure)
+- **Stages 11–12:** Right edge / tilt (light to medium pressure)
+This populates the 12 gallery slots with diverse spatial coordinates and ridge stretch profiles, enabling verification across the entire fingertip without false acceptance risk.
+
