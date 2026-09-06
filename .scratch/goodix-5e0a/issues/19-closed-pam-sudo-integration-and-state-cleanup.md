@@ -4,7 +4,10 @@
 
 **Blocked by:** None. Ticket 18 verified biometric verification on physical hardware (Hardware Run 15/16) with Bozorth3 match scores clearing threshold (`score=13/12`, `14/12`, `15/12`).
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
+
+**Verdict:** confirmed on hardware 2026-09-07. Cancellation returned cleanly,
+and the following sudo claim prompted for the enrolled finger and unlocked.
 
 **Live-scope:** PAM teardown + claim release only; the 18-forward consecutive-match claim is not relied on (see 18 acceptance: second touch scored 6/12 no-match).
 
@@ -177,6 +180,19 @@ Per `AGENTS.md`, only the user executes hardware deployment and commands requiri
 - **Inconclusive (Branch C)**:
   - Stale `openssl s_server` process squatting on port, missing pasted journal lines, or unverified claims.
 - *Verdict*: `inconclusive-because-[flaw]` + single next diagnostic experiment.
+
+## Final hardware verdict 2026-09-07
+
+- `sudo -k && sudo true` prompted for the fingerprint.
+- The prompt was cancelled and returned to the shell without a claim or
+  command-collision error.
+- The following sudo attempt again prompted for the fingerprint and unlocked
+  successfully.
+- The pasted journal contained no `already claimed`, timeout, error, or
+  command-collision lines.
+
+**Confirmed:** PAM cancellation releases the device and the next caller can
+reclaim it successfully.
 
 ## Hardware finding 2026-09-07 (cancellation outcome inconclusive)
 
