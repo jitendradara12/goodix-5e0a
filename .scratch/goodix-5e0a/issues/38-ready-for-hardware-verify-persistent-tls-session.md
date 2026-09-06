@@ -87,6 +87,20 @@ ladder, never a third half-bring-up).
   tickets; see docs/PROGRESS.md Staged NixOS Patch line for current hash.
 - NO wall-clock improvement claimed — runs 2-3 timing delta is hardware-only.
 
+## Hardware finding 2026-09-07 (reuse branch confirmed; fallback acceptance pending)
+
+- PID 16200 logged `TLS connection ready` followed by `TLS session reused`;
+  PID 16711 showed the same sequence. No timeout, error, or dead-session
+  journal line was pasted.
+- A later fresh PID logged `TLS connection ready`, demonstrating recovery
+  through a normal handshake, but the pasted run does not identify a full
+  poweroff/key-loss drill or provide wall-clock measurements. Client results
+  shown for the claims were `verify-no-match`.
+- Verdict: `confirmed` for session reuse; `inconclusive-because-no-key-loss-
+  drill-and-no-verify-match` for the complete ticket acceptance.
+  Next experiment: full poweroff, 60-second drain, one enrolled-finger
+  verify, and pasted client/journal output.
+
 ## Hardware finding 2026-09-06 (falsified-as-implemented, corroboration pending)
 
 - Deployed build `3c4ed07e` verified live (`TLS connection ready` lines

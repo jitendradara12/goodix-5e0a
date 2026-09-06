@@ -68,3 +68,16 @@ are captured back-to-back while the finger is down — no extra touches).
 - Full suite + patch/NixOS/hash-pin/LOC hygiene re-verified green at
   ticket-40 close-out (425 passed).
 - NO match-rate improvement claimed — 6-attempt success rate is hardware-only.
+
+## Hardware finding 2026-09-07 (frame variation observed; match-rate acceptance pending)
+
+- Pasted frames were complete (`declen=10564`) and varied within touches:
+  one burst moved from `10,13,15` minutiae, while another was `10,10,10`.
+  This supports frame variation but also shows that independence is not
+  universal.
+- The shown client results were `verify-no-match`, and no six-attempt
+  success-rate comparison was pasted. The best-frame proxy therefore cannot
+  yet be credited with improving verification.
+- Verdict: `inconclusive-because-no-verify-match-or-success-rate`.
+  Next experiment: repeat six natural-pressure attempts with the client
+  result for each attempt pasted alongside all three frame lines.

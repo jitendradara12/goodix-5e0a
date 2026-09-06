@@ -129,6 +129,17 @@ not a PSK event.
   left-middle-finger — with deployed build `3c4ed07e` (our code).
 - Cold: full poweroff → 30s wait → boot → verify still pending.
 
+## Hardware finding 2026-09-07 (cold TLS transport confirmed; match acceptance pending)
+
+- After the reboot, the pasted journal showed `TLS connection ready` and
+  complete frames with `declen=10564`; no `bad record mac` occurred. This is
+  the discriminating upstream-clean strip result.
+- The client result was `verify-no-match`. Per the reopen rule, clean TLS plus
+  a no-match is not a PSK failure, but the ticket's full warm-and-cold
+  `verify-match` acceptance is not demonstrated by this paste.
+- Verdict: `confirmed` for behavior-preserving cold TLS; formal biometric
+  acceptance remains `inconclusive-because-no-verify-match`.
+
 ## Cold verdict 2026-09-06 (FALSIFIED — parent ticket 26 reopened)
 
 - Cold boot produced the pasted `0A000119 bad record mac` recurrence on

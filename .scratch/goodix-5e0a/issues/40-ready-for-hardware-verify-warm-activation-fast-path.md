@@ -69,6 +69,16 @@ always resets warm state — sleep safety is not negotiable).
   repo + NixOS module copies identical); LOC budget 1350 (measured 1334).
 - NO speedup claimed — run-2-vs-run-1 delta is hardware-only.
 
+## Hardware finding 2026-09-07 (warm branch not exercised)
+
+- Every warm-filtered line shown was `warm expired: reason=cold-start`; no
+  `warm taken` line appeared. The observed `TLS session reused` lines belong
+  to ticket 38's earlier branch and correctly dominate ticket 40.
+- Verdict: `inconclusive-because-warm-branch-not-exercised`.
+  Next experiment: issue the next claim 31–59 seconds after a clean claim,
+  while confirming the same fprintd PID remains alive, so the 30-second park
+  TTL expires while the 60-second warm TTL remains valid.
+
 ## Hardware finding 2026-09-06 (falsified-as-implemented, corroboration pending)
 
 - Every claim logs `warm expired: reason=cold-start`, including 4–6s-apart

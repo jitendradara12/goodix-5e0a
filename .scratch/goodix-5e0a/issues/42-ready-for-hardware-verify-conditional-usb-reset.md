@@ -91,6 +91,20 @@ always forces reset — sleep safety is not negotiable).
   copy are synchronized (SHA-256:
   `1f4de3f7bb680ed4bebb5cfe5edf59b0f7ad004989eaf1cd772fe0eeb2d4205e`).
 
+## Hardware finding 2026-09-07 (reset/reuse confirmed; biometric result inconclusive)
+
+- Pasted journal evidence: PID 16200 took the reset at `00:52:39`, then
+  skipped it at `00:52:41` and logged `TLS session reused (parked 0.0s,
+  gen=3)`. PID 16577 took the reset at `00:55:57` after the idle interval.
+- The reset-on-open and parked-session branches therefore behaved as
+  predicted. All shown client results were `verify-no-match`, so the
+  ticket's additional end-to-end `verify-match` acceptance clause is not
+  proven by this run.
+- Verdict: `confirmed` for conditional reset/session reuse;
+  `inconclusive-because-no-verify-match` for the end-to-end acceptance.
+  Next experiment: repeat one known-good enrolled-finger claim while
+  capturing the same reset/session journal lines and a `verify-match`.
+
 ## Hardware verify protocol (user only, AGENTS.md compliant)
 
 1. Deploy + restart:

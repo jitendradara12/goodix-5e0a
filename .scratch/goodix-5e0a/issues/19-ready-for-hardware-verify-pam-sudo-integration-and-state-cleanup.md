@@ -176,4 +176,15 @@ Per `AGENTS.md`, only the user executes hardware deployment and commands requiri
 
 - **Inconclusive (Branch C)**:
   - Stale `openssl s_server` process squatting on port, missing pasted journal lines, or unverified claims.
-  - *Verdict*: `inconclusive-because-[flaw]` + single next diagnostic experiment.
+- *Verdict*: `inconclusive-because-[flaw]` + single next diagnostic experiment.
+
+## Hardware finding 2026-09-07 (cancellation outcome inconclusive)
+
+- The cancellation returned to a password prompt, and the journal excerpt
+  contained no `already claimed`, command-collision, timeout, error, or failed
+  lines. However, the immediate `sudo true` remained at the fingerprint prompt
+  and no successful re-claim result was pasted.
+- Verdict: `inconclusive-because-reclaim-result-missing`.
+  Next experiment: perform one cancel, immediately run `sudo -k && sudo true`,
+  complete it with the enrolled finger, and paste both client results plus the
+  teardown journal.
