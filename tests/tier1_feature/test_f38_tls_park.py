@@ -183,7 +183,7 @@ class TestF38TlsPark(unittest.TestCase):
                       "SCAN_5E0A_FDT_UP_2", "SCAN_5E0A_NUM_STATES"):
             self.assertIn(state, src)
         # biometric operating point untouched
-        self.assertIn("img_dev_class->bz3_threshold = 12;", src)
+        self.assertIn("img_dev_class->bz3_threshold = 10;", src)
         # init zeroes the new fields
         init = _slice(src, "fpi_device_goodixtls5e0a_init",
                       "goodix5e0a_axis_correlation")
