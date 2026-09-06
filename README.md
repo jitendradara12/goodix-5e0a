@@ -8,12 +8,13 @@ A reverse-engineered Linux driver for the **Goodix 27c6:5e0a** fingerprint scann
 
 - **Native `libfprint` Integration**: Clean subclass of `FpiDeviceGoodixTls5xx` adhering to minimal, event-driven design principles.
 - **Hardware FDT Touch & Release**: Uses hardware capacitive Finger Detection Trigger (`0x32` FDT DOWN, `0x34` FDT UP) with sampled channel-energy gating (short silent re-poll on idle).
-- **TLS 1.2 PSK Encryption**: Implements the on-wire `TLS_PSK_WITH_AES_128_CBC_SHA256` protocol required by Goodix secure firmware (warm session; active key provisioning tracked in Ticket 26).
-- **NIST NBIS Minutiae Verification**: Extracts 23–25 minutiae per finger scan on hardware and passes Bozorth3 biometric match validation with scores of 13–15 (threshold: 12). See tickets 18–20 for hardware run logs (warm session; cold boot tracked in ticket 26).
-- **Sub-300ms Instant Unlock**: Direct SSM completion and immediate finger release reporting on image capture eliminate perceived latency without stalling on finger-lift polling (implemented, awaiting hardware verdict in ticket 20).
+- **TLS 1.2 PSK Encryption**: Implements the on-wire `TLS_PSK_WITH_AES_128_CBC_SHA256` protocol required by Goodix secure firmware with host key provisioning (`0xe0`).
+- **NIST NBIS Minutiae Verification**: Extracts 23–25 minutiae per finger scan on hardware and passes Bozorth3 biometric match validation with scores of 13–15 (threshold: 12; Tickets 18, 35).
+- **Sub-300ms Instant Unlock**: Direct SSM completion and immediate finger release reporting on image capture eliminate perceived latency without stalling on finger-lift polling.
 - **Empty-Air Rejection Gate**: Touch-gated capture plus an enrollment minutiae floor keep untouched or faint touches out of templates.
-- **Multi-Run PAM Stability**: Deterministic teardown and cancellable USB read loops prevent daemon hangs or timeouts across consecutive authentications (implemented, awaiting hardware verdict in ticket 19).
-- **Exhaustive Automated Test Suite**: 387 tests across 5 tiers covering feature isolation, boundaries, pairwise integration, system scenarios, and adversarial fuzzing.
+- **Multi-Run PAM Stability**: Deterministic teardown and cancellable USB read loops prevent daemon hangs or timeouts across consecutive authentications.
+- **System Power Management**: Genuine `.suspend` and `.resume` vfunctions handle S3 sleep cleanly without wedging PAM.
+- **Exhaustive Automated Test Suite**: 400 tests across 5 tiers covering feature isolation, boundaries, pairwise integration, system scenarios, and adversarial fuzzing.
 - **Hermetic NixOS Flake & Derivation**: Automated compilation, patch validation, and systemd service generation via standard Nix workflows.
 
 ---
@@ -39,12 +40,14 @@ goodix/
 ├── experiments/             # Reverse-engineering prototypes and sample data
 ├── specs/                   # Reverse-engineering gap specs (research, read-only)
 ├── docs/                    # Progress & architecture documentation
-├── .scratch/goodix-5e0a/issues/  # Experiment tickets (01–26, status-tracked)
+├── .scratch/goodix-5e0a/issues/  # Experiment tickets (01–36, status-tracked)
 ├── goodix_protocol.py       # Hardware USB bulk transport for experiments
 ├── libfprint-goodix.nix     # Nix package derivation for libfprint with driver
 ├── nixos-module.nix         # NixOS module configuration
 └── 0001-Add-driver-support-for-Goodix-27c6-5e0a.patch  # Unified libfprint patch
 ```
+
+Upstream `libfprint` tree with canonical `umockdev` replay fixtures is maintained at `/home/sastauser/code/temp/libfprint-upstream` (`test-5e0a` branch).
 
 ---
 

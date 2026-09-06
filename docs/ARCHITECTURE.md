@@ -8,10 +8,8 @@ template storage, enroll, or match.
 ## Pipeline
 
 1. **Transport**: bulk endpoints, interface 0; flush-tolerant NOP, reset,
-   chip-ID read, OTP identification read (`0xa6` — its use as a crypto
-   fix is falsified in ticket 26), firmware check, ChicagoH provisioning,
-   chip enable, then TLS 1.2 PSK session (`TLS_PSK_WITH_AES_128_CBC_SHA256`,
-   warm-session only: cold boot disagrees on the key, ticket 26).
+   chip-ID read, OTP identification read (`0xa6`), firmware check, ChicagoH provisioning,
+   chip enable, then TLS 1.2 PSK session (`TLS_PSK_WITH_AES_128_CBC_SHA256`).
 2. **Touch gating**: sampled finger-down replies; touch iff the channel byte
    is live and channel energy is positive — never the status byte. Idle
    replies re-sample on a short silent timer.
@@ -65,13 +63,9 @@ template storage, enroll, or match.
 
 ## Active (the only legal workfront)
 
-- Ticket 19: cancel→reclaim release flakiness (works most runs; one wedged
-  teardown with 90s SIGTERM hang on record — needs a recurrence with debug to
-  localize driver vs daemon; do not expand driver scope until then).
-- Ticket 20: closed (same-second touch→verdict on hardware).
-- Tickets 21–24, 26–28: closed (hygiene fixes shipped; see tickets).
-- Upstream packing: logical commits, Meson and device-table wiring,
-  `umockdev` replay coverage; see `docs/UPSTREAM.md`.
+- All core driver tickets (01–36) closed. Upstream rebase, power management, and authentic umockdev capture complete.
+- Upstream repo checkout: `/home/sastauser/code/temp/libfprint-upstream` (`test-5e0a` branch).
+- Next legal workfront: upstream GitLab Merge Request against `freedesktop.org/libfprint/libfprint`.
 
 ## Retired (must not be followed)
 

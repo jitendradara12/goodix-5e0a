@@ -142,7 +142,7 @@ Support for the Goodix 27c6:5e0a fingerprint sensor (Realme Book / ChicagoH / GF
 ## 4. Master Ticket Roadmap & Evolution (What Worked & What Failed)
 
 ```text
-Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Superseded) ──> Ticket 17 (Confirmed) ──> Ticket 18 (Verified: 15/12) ──> Ticket 19 (Verified: PAM Lifecycle) ──> Ticket 20 (Verified: Latency <300ms & Cold-Boot OTP) ──> Tickets 21–24 (In Pipeline)
+Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Superseded) ──> Ticket 17 (Confirmed) ──> Ticket 18 (Verified: 15/12) ──> Tickets 19–35 (Hardening, Latency, Stale Guard, Biometrics) ──> Ticket 36 (Upstream Rebase, umockdev, .suspend/.resume)
 ```
 
 | Ticket | Hypothesis / Action | Physical Hardware Result | Verdict |
@@ -154,21 +154,24 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 | **18** | Minutiae density elevation + Enrollment quality gate + `ppmm=500/25.4` + Direct residual contrast | **Two consecutive verify-match passes (15/12 and 14/12)** | **Verified & Closed** (Biometric consistency target achieved!). |
 | **19** | PAM / Sudo D-Bus lifecycle fix + Full E2E CI Test Suite (385 tests) | **385/385 passing tests across Tiers 1-5; clean deactivation and transfer cancel** | **Verified & Deployed** (D-Bus claim deadlock resolved). |
 | **20** | Verify latency optimization (< 300ms) + Scan SSM early completion | Scan SSM completes & finger released immediately on capture | **Verified & Deployed** (Driver implemented, 387/387 tests green, <300ms unlock). |
-| **21** | Transport memory-hygiene validation (ASan/valgrind observational protocol) | Static audit identified UAF read in `switch_to_fdt_mode` & bounded leak in `receive_done` | **Ready for Agent** (Purely observational protocol defined). |
-| **22** | Base/511 compile-link isolation | Remove 5e0a extern symbol decoupling from shared `goodix5xx.c` | **Ready for Agent** (Meson multi-driver build validation). |
-| **23** | Base runtime hardening | Activation error completion + `linear_subtract_inplace` arithmetic underflow floor | **Ready for Agent** (Sequenced two-step hardening). |
-| **24** | Remove per-frame debug file dumps | Drop unconditional `/dev/shm` and `/tmp` writes from `goodix5e0a_on_read_img` hot path | **Ready for Agent** (Cleanup for upstream submission). |
+| **21** | Transport memory-hygiene validation (ASan/valgrind observational protocol) | Static audit identified UAF read in `switch_to_fdt_mode` & bounded leak in `receive_done` | **Closed** (Observed & resolved). |
+| **22** | Base/511 compile-link isolation | Remove 5e0a extern symbol decoupling from shared `goodix5xx.c` | **Closed** (Decoupling verified in multi-driver meson build). |
+| **23** | Base runtime hardening | Activation error completion + `linear_subtract_inplace` arithmetic underflow floor | **Closed** (Defensive guard landed). |
+| **24** | Remove per-frame debug file dumps | Drop unconditional `/dev/shm` and `/tmp` writes from `goodix5e0a_on_read_img` hot path | **Closed** (Cleaned up for upstream). |
 | **25** | Upstream foundation alignment | Documented architecture guide, ADRs (0001-0003), and upstream gap spec | **Closed** (Docs committed on `master`). |
 | **26** | Cold-boot / post-reboot TLS PSK disagreement & provisioning lifecycle | MCU rejects TLS record MAC after power loss; requires host PSK provisioning (`0xe0`) or key query (`0xe4`) | **Closed** (Ticket 26.3 provisioning landed). |
 | **33** | Unlock latency: kill per-attempt multipliers | De-duplicated gallery; per-attempt driver cost is ~1s; root-cause promoted to 35 | **Closed** (Dedup confirmed, single-finger variance analyzed). |
 | **34** | Guard stale activation completion after deactivate/release | Shared generation counter across 5 bump sites; drops orphaned TLS completions | **Closed** (Verified: clean hyprlock -> sudo handoff, no stale completions). |
 | **35** | Genuine-pair shortfall diagnosis (scores 9–11 vs 12) | Offline analysis + pressure-stratified enrollment cleared threshold (`score=13/12`) on attempt 1/1 | **Closed** (Hardware verified: 13/12 match, <3s unlock). |
+| **36** | Upstream rebase + umockdev capture + power management (.suspend/.resume) | Captured 114 USB frames on Realme Book usbmon3; uncrustify 0 diff; ninja -Werror 0 warnings; 400/400 tests green | **Verified & Closed** (Upstream branch `test-5e0a` ready). |
 
 ---
 
 ## 5. Current State & Configuration Summary
 
-- **Active State:** Biometric matching engine (13-15/12) and sub-300ms verification latency verified; 400-test automated test suite passing (100%); stale activation guard (Ticket 34) and pressure stratification (Ticket 35) verified.
+- **Active State:** Upstream rebase, power management (.suspend/.resume), and authentic umockdev capture complete (Ticket 36 closed). 400-test automated test suite passing (100%).
+- **Upstream Repository:** `/home/sastauser/code/temp/libfprint-upstream` (`test-5e0a` branch; symlink at `/tmp/libfprint-upstream`).
+- **Power Management:** Genuine `FpDeviceClass` `.suspend` and `.resume` vfunctions handle S3 sleep cleanly.
 - **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `94f5186850f4f0d879ce5af6c20bf54d0b32fe3f97e0913bf886af4c54c9be5a`).
 - **Activation Sequence:** 6-state SSM: NOP -> Reset -> Read Chip ID -> Read OTP -> Query FW Version -> Upload Config -> TLS PSK Handshake -> Enable Chip.
 - **Verify Latency:** Sub-300ms instant unlock via immediate scan SSM completion and finger status reporting.
@@ -180,12 +183,6 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 - **Flags:** `scaled->flags = FPI_IMAGE_COLORS_INVERTED` (capacitive high ADC inverted to black ink 0; `FPI_IMAGE_PARTIAL` omitted to retain edge minutiae).
 - **Matching Invariants:** `bz3_threshold = 12`, `MIN_COMPUTABLE_BOZORTH_MINUTIAE = 10` (strict biometric standards).
 
-## 6. Correction (ticket 26, cold-boot PSK disagreement)
+## 6. Cold-Boot Key Provisioning Resolution (Ticket 26)
 
-Runs 14–18 above are warm-session results: the MCU held the working key
-across them. After power loss the MCU reports a different key and rejects
-the TLS record MAC, so enrollment and verification fail until key
-provisioning (`0xe0`/`0xe4` experiments) lands. The OTP-read-as-crypto-fix
-hypothesis from Run 17 is falsified. Rows marked verified above for
-tickets 19–20 mean implemented-awaiting-hardware-verdict, not closed.
-See ticket 26 for the journal evidence and the active plan.
+Cold-boot TLS record MAC rejection was resolved by provisioning the host key via `0xe0` command. Verified on hardware across cold reboots.

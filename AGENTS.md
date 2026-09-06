@@ -62,8 +62,7 @@ tail -n 20`. Conclude only: confirmed / falsified /
 
 ## Live edge
 
-Transport/activation proven and frozen; TLS session establishment is
-warm-only — cold boot fails the record MAC (ticket 26, the active
-workfront). Active experiments, findings,
-and hardware run logs belong in tickets (`.scratch/goodix-5e0a/issues/NN-*.md`)
-and `docs/`, never in `AGENTS.md`. Refer to the open ticket for current status.
+Core driver, TLS, biometric matching (13–15/12), stale guard (Ticket 34), and pressure floor (Ticket 35) are verified and frozen.
+Upstream integration, power management (.suspend/.resume), and canonical umockdev replay capture are complete (Ticket 36 closed).
+Upstream tree checkout lives at `/home/sastauser/code/temp/libfprint-upstream` (`test-5e0a` branch).
+Refer to `.scratch/goodix-5e0a/issues/` for ticket history.
