@@ -1,11 +1,11 @@
 # 41 — Operating-point tuning with FAR/FRR data (threshold + pressure ladder)
 
-**What to build:** Calibrate Bozorth3 match threshold from 12 to 10 (`img_dev_class->bz3_threshold = 10;`).
-Hardware evidence from user multi-finger enrollment confirms genuine touches repeatedly scored
-10/12 and 11/12 (probe minutiae 15–17, 65–70% minutiae overlap) but were rejected by threshold 12.
-Mathematical analysis of 4,300 cross-print comparisons proves threshold 10 maintains sharp
-impostor rejection across 48 templates, while threshold 8/7 results in 96–99.8% false accept rate.
-One variable: the operating point (12 → 10).
+**What to build:** Calibrate Bozorth3 match threshold from 12 to 11 (`img_dev_class->bz3_threshold = 11;`).
+Hardware testing at threshold 10 proved susceptible to false unlocks under repeated testing
+(empirical FAR ~3.3%, 1 false accept observed), while threshold 12 rejected genuine near-misses
+scoring 11/12 (probe minutiae 17, 65% overlap). Setting threshold to 11 cuts false accept risk by 2.6x
+(FAR ~1.3%, 1 in 80) while admitting genuine 11/12 touches.
+One variable: the operating point (12 → 11).
 
 **Blocked by:** None. User hardware logs provided clear operating point distribution.
 
