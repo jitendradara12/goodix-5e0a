@@ -82,3 +82,48 @@ Provide an automated test suite and clear verification instructions that allow r
 ### System Stability
 - [ ] Driver builds cleanly via Ninja and passes full Nix package build (`callPackage ./libfprint-goodix.nix {}`).
 - [ ] `fprintd.service` stays cleanly active and responsive without entering `stop-sigterm` or hung deactivation states.
+
+## Follow-up — 2026-09-05T17:25:17Z
+
+Prepare the Goodix 27c6:5e0a fingerprint driver for upstream merge into freedesktop.org/libfprint/libfprint master, implementing umockdev replay tests and suspend/resume power management while preserving downstream stability.
+
+Working directory: /home/sastauser/code/temp/goodix
+Integrity mode: development
+
+References:
+- docs/UPSTREAM.md (upstream requirements & submission checklist)
+- .scratch/goodix-5e0a/issues/36-ready-for-agent-upstream-rebase-and-umockdev-capture.md (active workfront ticket)
+
+## Requirements
+
+### R1. Upstream Master Tree Placement & Build Cleanliness
+Rebase and integrate the Goodix 5e0a driver sources directly into an upstream libfprint master tree checkout (under libfprint/drivers/goodixtls/), properly registering the driver in top-level and library meson.build. The build must succeed with meson setup --werror under the upstream warning profile, and pass formatting validation via scripts/uncrustify.sh.
+
+### R2. Automated umockdev Replay Harness (FP_DEVICE_EMULATION=1)
+Implement the standard upstream test directory (tests/goodixtls5e0a/) containing device attributes, a recorded capture.ioctl replay trace, and a reference capture.png. Wire it into tests/meson.build so that meson test executes the complete emulation test under FP_DEVICE_EMULATION=1 without physical hardware access.
+
+### R3. Power Management Lifecycle (.suspend / .resume)
+Implement device class .suspend and .resume vfunctions in the driver. Ensure that entering system suspend cleanly terminates active USB transfers and teardown state, and resuming successfully re-primes the chip and resets the TLS session state machine without wedging PAM or authorization claims.
+
+### R4. Downstream Preservation & Regression Guard
+Ensure all changes remain 100% backward-compatible with the downstream NixOS flake packaging (libfprint-goodix.nix), and ensure the existing 400-test master test suite (tests/run_all_tests.sh) remains completely passing.
+
+## Acceptance Criteria
+
+### Upstream Tree Compilation & Style
+- [ ] Upstream checkout with driver patch configures and builds cleanly with meson setup build -Ddrivers=default,goodixtls5e0a --werror and ninja -C build.
+- [ ] scripts/uncrustify.sh produces zero diff on all modified and newly created driver files.
+- [ ] Driver implements FpImageDevice vfunctions conforming to upstream libfprint/fpi-image-device.h.
+
+### Replay & Emulation Verification
+- [ ] tests/goodixtls5e0a/ contains valid device, capture.ioctl, and capture.png test fixtures.
+- [ ] Running meson test -C build under FP_DEVICE_EMULATION=1 executes the goodixtls5e0a test suite to completion with an exit code of 0.
+
+### Power Management & Lifecycle Hooks
+- [ ] Driver class exposes .suspend and .resume function pointers.
+- [ ] Suspend callback cancels in-flight transfers and frees pending state machines without memory leaks.
+- [ ] Resume callback cleanly transitions through device re-activation without requiring daemon restart.
+
+### Regression Prevention
+- [ ] Downstream test suite runner (tests/run_all_tests.sh) passes 400/400 tests across Tiers 1–5 with zero errors.
+- [ ] nix-build -E 'with import <nixpkgs> {}; callPackage ./libfprint-goodix.nix {}' completes successfully.

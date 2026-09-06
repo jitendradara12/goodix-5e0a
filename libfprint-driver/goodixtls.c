@@ -24,6 +24,7 @@
 #include <netinet/in.h>
 #include <openssl/crypto.h>
 #include <openssl/err.h>
+#include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <openssl/tls1.h>
 #include <poll.h>
@@ -38,6 +39,10 @@
 #include "glibconfig.h"
 #include "goodix.h"
 #include "goodixtls.h"
+
+#ifndef fpi_device_emulation_mode_enabled
+#define fpi_device_emulation_mode_enabled(dev) (g_getenv ("FP_DEVICE_EMULATION") != NULL)
+#endif
 
 static GError *
 err_from_ssl (void)
@@ -60,6 +65,7 @@ tls_server_psk_server_callback (SSL           *ssl,
                                 unsigned int   max_psk_len)
 {
   GoodixTlsServer *server = SSL_get_app_data (ssl);
+
   if (server && server->user_data)
     {
       FpDevice *dev = FP_DEVICE (server->user_data);
@@ -124,7 +130,7 @@ tls_server_create_ctx (void)
 static void
 tls_server_config_ctx (SSL_CTX *ctx)
 {
-  SSL_CTX_set_ecdh_auto (ctx, 1);
+  (void) SSL_CTX_set_ecdh_auto (ctx, 1);
   SSL_CTX_set_dh_auto (ctx, 1);
   SSL_CTX_set_cipher_list (ctx, GOODIX_TLS_CIPHERS);
   SSL_CTX_set_min_proto_version (ctx, TLS1_2_VERSION);
@@ -247,6 +253,12 @@ goodix_tls_server_init (GoodixTlsServer *self, GError **error)
   self->serve_thread = 0;
   self->ssl_layer = NULL;
   self->ssl_ctx = NULL;
+
+  if (self->user_data && fpi_device_emulation_mode_enabled (FP_DEVICE (self->user_data)))
+    {
+      static const unsigned char fixed_seed[32] = "goodix5e0a_deterministic_seed_01";
+      RAND_seed (fixed_seed, sizeof (fixed_seed));
+    }
 
   SSL_load_error_strings ();
   OpenSSL_add_ssl_algorithms ();

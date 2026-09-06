@@ -58,10 +58,10 @@ typedef struct
   /* Ticket 34 stale-activation guard: bumped on every (re)activation start
    * and every deactivate/teardown entry; TLS completion callbacks capture
    * it at TLS-init time and drop on mismatch. Zero-initialized. */
-  guint             activation_gen;
+  guint         activation_gen;
 
-  GCancellable       *transfer_cancel_tkn;
-  gboolean            inited;
+  GCancellable *transfer_cancel_tkn;
+  gboolean      inited;
 } FpiDeviceGoodixTlsPrivate;
 
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (FpiDeviceGoodixTls, fpi_device_goodixtls,
@@ -427,14 +427,10 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
       if (priv->cmd == GOODIX_CMD_MCU_GET_IMAGE ||
           priv->cmd == GOODIX_CMD_REQUEST_TLS_CONNECTION ||
           (priv->reply && priv->callback != NULL && priv->cmd == 0))
-        {
-          goodix_receive_done (dev, payload, payload_len, NULL);
-        }
+        goodix_receive_done (dev, payload, payload_len, NULL);
       else
-        {
-          fp_dbg ("Discarding stale TLS msg (0x%02x, len %u) while waiting for cmd 0x%02x",
-                  flags, payload_len, priv->cmd);
-        }
+        fp_dbg ("Discarding stale TLS msg (0x%02x, len %u) while waiting for cmd 0x%02x",
+                flags, payload_len, priv->cmd);
       break;
 
     default:

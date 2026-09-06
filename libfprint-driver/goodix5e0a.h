@@ -89,7 +89,7 @@ static const guint8 goodix_5e0a_config[256] = {
 };
 
 /* Windows capture ground truth tables (APP_10036, goodix-win.pcapng) */
-#define GOODIX_CMD_SESSION_D6               (0xd6)
+#define GOODIX_CMD_SESSION_D6 (0xd6)
 
 /* Session initialization commands */
 static const guint8 goodix_5e0a_query_ae[3]    = {0x00, 0x01, 0x00};
@@ -130,3 +130,6 @@ static const FpIdEntry goodix_5e0a_id_table[] = {
   {.vid = 0x27c6, .pid = 0x5e0a},
   {.vid = 0, .pid = 0, .driver_data = 0},
 };
+
+void goodix5e0a_suspend (FpDevice *dev);
+void goodix5e0a_resume (FpDevice *dev);

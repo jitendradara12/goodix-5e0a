@@ -52,9 +52,9 @@ struct _FpiDeviceGoodixTls5e0a
 {
   FpiDeviceGoodixTls5xx parent;
 
-  gboolean session_started;
-  FpiSsm  *scan_ssm;
-  GSource *down_timeout;
+  gboolean              session_started;
+  FpiSsm               *scan_ssm;
+  GSource              *down_timeout;
 };
 
 G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a, FPI,
@@ -85,7 +85,7 @@ on_psk_read (FpDevice *dev, gboolean success, guint32 flags, guint8 *psk,
 
   if (error)
     {
-      g_warning ("5e0a PSK read failed (%s), attempting provision", error->message);
+      g_message ("5e0a PSK read failed (%s), attempting provision", error->message);
       g_error_free (error);
       fpi_ssm_next_state (ssm);
       return;
@@ -135,7 +135,7 @@ on_psk_write (FpDevice *dev, gboolean success, gpointer user_data, GError *error
 
   if (error)
     {
-      g_warning ("5e0a PSK provision failed (%s), continuing with host key", error->message);
+      g_message ("5e0a PSK provision failed (%s), continuing with host key", error->message);
       g_error_free (error);
       fpi_ssm_next_state (ssm);
       return;
@@ -143,7 +143,7 @@ on_psk_write (FpDevice *dev, gboolean success, gpointer user_data, GError *error
 
   if (!success)
     {
-      g_warning ("5e0a PSK provision rejected by MCU, continuing with host key (cold boot may fail TLS)");
+      g_message ("5e0a PSK provision rejected by MCU, continuing with host key (cold boot may fail TLS)");
       fpi_ssm_next_state (ssm);
       return;
     }
@@ -330,6 +330,7 @@ static void
 goodix5e0a_step_cb (FpDevice *dev, gpointer user_data, GError *error)
 {
   FpiSsm *ssm = user_data;
+
   if (error)
     {
       fp_dbg ("5e0a step cb tolerant error: %s", error->message);
@@ -356,13 +357,17 @@ goodix5e0a_on_d6_reply (FpDevice *dev, guint8 *data, guint16 len,
   fpi_ssm_next_state (ssm);
 }
 
-static void goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
-                                          gpointer ssm, GError *err);
+static void goodix5e0a_on_fdt_down_reply (FpDevice *dev,
+                                          guint8   *data,
+                                          guint16   len,
+                                          gpointer  ssm,
+                                          GError   *err);
 
 static void
 goodix5e0a_on_down_poll_timeout (FpDevice *dev, gpointer user_data)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
   self->down_timeout = NULL;
 
   FpiSsm *ssm = user_data;
@@ -401,10 +406,8 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
 
   guint32 channel_energy = 0;
   if (len >= 4)
-    {
-      for (guint16 i = 4; i + 1 < len; i += 2)
-        channel_energy += (guint32) data[i] | ((guint32) data[i + 1] << 8);
-    }
+    for (guint16 i = 4; i + 1 < len; i += 2)
+      channel_energy += (guint32) data[i] | ((guint32) data[i + 1] << 8);
 
   /* Gating rule: touch = channel-byte energy (data[2] != 0xff and channel_energy > 0), never byte0 */
   gboolean touch = (len >= 4 && data[2] != 0xff && channel_energy > 0);
@@ -416,7 +419,8 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
           g_source_destroy (self->down_timeout);
           self->down_timeout = NULL;
         }
-      g_message ("5e0a D32 touch confirmed: mask=0x%02x energy=%u", data[2], channel_energy);
+      g_message ("5e0a D32 touch confirmed: mask=0x%02x energy=%u",
+                 (data && len >= 3) ? data[2] : 0, channel_energy);
       fpi_image_device_report_finger_status (FP_IMAGE_DEVICE (dev), TRUE);
       fpi_ssm_next_state (ssm);
       return;
@@ -516,8 +520,10 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
       if (raw_frame[i] > 0)
         {
           total_nonzero++;
-          if (raw_frame[i] < raw_min) raw_min = raw_frame[i];
-          if (raw_frame[i] > raw_max) raw_max = raw_frame[i];
+          if (raw_frame[i] < raw_min)
+            raw_min = raw_frame[i];
+          if (raw_frame[i] > raw_max)
+            raw_max = raw_frame[i];
         }
     }
   g_message ("5e0a wire layout: decoded_px=%u blocks=%u active_bytes=%u padding_nonzero=%u footer_bytes=%u",
@@ -547,7 +553,7 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
                  minutiae_count, GOODIX_5E0A_ENROLL_MIN_MINUTIAE);
       if (minutiae_count < GOODIX_5E0A_ENROLL_MIN_MINUTIAE)
         {
-          g_warning ("5e0a enrollment touch rejected: minutiae_count=%u < %d (press firmer)",
+          g_message ("5e0a enrollment touch rejected: minutiae_count=%u < %d (press firmer)",
                      minutiae_count, GOODIX_5E0A_ENROLL_MIN_MINUTIAE);
           g_object_unref (img);
           fpi_image_device_retry_scan (FP_IMAGE_DEVICE (dev), FP_DEVICE_RETRY_TOO_SHORT);
@@ -656,6 +662,7 @@ static void
 goodix5e0a_scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
   self->scan_ssm = NULL;
   if (self->down_timeout)
     {
@@ -676,6 +683,7 @@ static void
 goodix5e0a_scan_start (FpDevice *dev)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
   if (self->scan_ssm != NULL)
     {
       fp_dbg ("5e0a scan SSM already active, ignoring start request");
@@ -734,10 +742,10 @@ fpi_device_goodixtls5e0a_init (FpiDeviceGoodixTls5e0a *self)
 
 static double
 goodix5e0a_axis_correlation (const GoodixTls5xxPix *pix,
-                              int width,
-                              int height,
-                              int dx,
-                              int dy)
+                             int                    width,
+                             int                    height,
+                             int                    dx,
+                             int                    dy)
 {
   double sum_a = 0.0, sum_b = 0.0;
   guint count = 0;
@@ -790,13 +798,16 @@ process_raw_frame (GoodixTls5xxPix * pix)
           if (v > 30)
             {
               active++;
-              if (v < min_v) min_v = v;
-              if (v > max_v) max_v = v;
+              if (v < min_v)
+                min_v = v;
+              if (v > max_v)
+                max_v = v;
             }
         }
     }
 
-  if (min_v == 65535) min_v = 0;
+  if (min_v == 65535)
+    min_v = 0;
   guint16 range = (max_v > min_v) ? (max_v - min_v) : 1;
 
   double horizontal_corr = goodix5e0a_axis_correlation (pix, W, H, 1, 0);
@@ -875,7 +886,8 @@ process_raw_frame (GoodixTls5xxPix * pix)
   for (int y = 0; y < dst_h; y++)
     {
       float src_y = (y + 0.5f) * 0.5f - 0.5f;
-      if (src_y < 0.0f) src_y = 0.0f;
+      if (src_y < 0.0f)
+        src_y = 0.0f;
       int y0 = (int) src_y;
       int y1 = (y0 + 1 < H) ? y0 + 1 : y0;
       float y_frac = src_y - (float) y0;
@@ -883,7 +895,8 @@ process_raw_frame (GoodixTls5xxPix * pix)
       for (int x = 0; x < dst_w; x++)
         {
           float src_x = (x + 0.5f) * 0.5f - 0.5f;
-          if (src_x < 0.0f) src_x = 0.0f;
+          if (src_x < 0.0f)
+            src_x = 0.0f;
           int x0 = (int) src_x;
           int x1 = (x0 + 1 < W) ? x0 + 1 : x0;
           float x_frac = src_x - (float) x0;
@@ -912,10 +925,8 @@ goodix5e0a_count_minutiae (FpImage *img)
   unsigned char *buf = g_memdup2 (img->data, w * h);
 
   if (img->flags & FPI_IMAGE_COLORS_INVERTED)
-    {
-      for (int i = 0; i < w * h; i++)
-        buf[i] = 255 - buf[i];
-    }
+    for (int i = 0; i < w * h; i++)
+      buf[i] = 255 - buf[i];
 
   LFSPARMS parms = g_lfsparms_V2;
   parms.remove_perimeter_pts = 0;
@@ -932,15 +943,71 @@ goodix5e0a_count_minutiae (FpImage *img)
   guint count = (ret == 0 && minutiae) ? minutiae->num : 0;
 
   g_free (buf);
-  if (minutiae) free_minutiae (minutiae);
-  if (qmap) g_free (qmap);
-  if (dmap) g_free (dmap);
-  if (lcmap) g_free (lcmap);
-  if (lfmap) g_free (lfmap);
-  if (hcmap) g_free (hcmap);
-  if (bdata) g_free (bdata);
+  if (minutiae)
+    free_minutiae (minutiae);
+  if (qmap)
+    g_free (qmap);
+  if (dmap)
+    g_free (dmap);
+  if (lcmap)
+    g_free (lcmap);
+  if (lfmap)
+    g_free (lfmap);
+  if (hcmap)
+    g_free (hcmap);
+  if (bdata)
+    g_free (bdata);
 
   return count;
+}
+
+void
+goodix5e0a_suspend (FpDevice *dev)
+{
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+  FpiDeviceAction action = fpi_device_get_current_action (dev);
+
+  fp_dbg ("5e0a suspend requested during action: %d", action);
+
+  /* Ticket 34 staleness guard: orphan any in-flight TLS handshake/activation */
+  goodix_activation_gen_bump (dev);
+
+  self->session_started = FALSE;
+  if (self->down_timeout)
+    {
+      g_source_destroy (self->down_timeout);
+      self->down_timeout = NULL;
+    }
+
+  /* Reset in-flight protocol commands and timeout */
+  goodix_reset_state (dev);
+
+  /* Free in-flight scan state machine */
+  if (self->scan_ssm != NULL)
+    {
+      fpi_ssm_free (self->scan_ssm);
+      self->scan_ssm = NULL;
+    }
+
+  /* Terminate background read loop and cancel transfers */
+  goodix_stop_read_loop (dev);
+
+  /* Tear down TLS context */
+  goodix_shutdown_tls (dev, NULL);
+
+  /* Complete suspend with NOT_SUPPORTED to trigger clean core deactivation
+   * of the interactive task, releasing PAM claims before sleep. */
+  fpi_device_suspend_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_NOT_SUPPORTED));
+}
+
+void
+goodix5e0a_resume (FpDevice *dev)
+{
+  fp_dbg ("5e0a resume requested");
+
+  /* Device state was cleaned up during suspend; complete resume immediately.
+   * Subsequent user claims will trigger clean open/activate and hardware re-priming. */
+  fpi_device_resume_complete (dev, NULL);
 }
 
 static void
@@ -972,6 +1039,8 @@ fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
   dev_class->nr_enroll_stages = 12;
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
   dev_class->temp_hot_seconds = -1; // Disable thermal watchdog
+  dev_class->suspend = goodix5e0a_suspend;
+  dev_class->resume = goodix5e0a_resume;
 
   img_dev_class->activate = dev_activate;
   img_dev_class->change_state = goodix5e0a_change_state;

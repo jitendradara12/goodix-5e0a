@@ -448,8 +448,8 @@ void goodix_send_request_tls_connection (FpDevice             *dev,
  * @param user_data
  */
 void goodix_send_tls_successfully_established (FpDevice          *dev,
-                                                GoodixNoneCallback callback,
-                                                gpointer           user_data);
+                                               GoodixNoneCallback callback,
+                                               gpointer           user_data);
 
 void goodix_send_set_drv_state (FpDevice          *dev,
                                 GoodixNoneCallback cb,
@@ -460,11 +460,11 @@ void goodix_send_mcu_get_pov_image (FpDevice             *dev,
                                     gpointer              ud);
 
 void goodix_send_set_pov_config (FpDevice          *dev,
-                                 const guint8     *cfg,
-                                 guint16           len,
-                                 GDestroyNotify    ff,
+                                 const guint8      *cfg,
+                                 guint16            len,
+                                 GDestroyNotify     ff,
                                  GoodixNoneCallback cb,
-                                 gpointer          ud);
+                                 gpointer           ud);
 
 /**
  * @brief Set the device preset psk. May not work for all device firmware versions

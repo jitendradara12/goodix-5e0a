@@ -60,19 +60,19 @@ typedef void (*GoodixTls5xxResetStateFn)(FpDevice *);
 
 struct _FpiDeviceGoodixTls5xxClass
 {
-  FpiDeviceGoodixTlsClass    parent;
+  FpiDeviceGoodixTlsClass       parent;
 
-  GoodixTls5xxGetMcuFn       get_mcu_cfg; ///< provide the mcu config before fdt commands
-  GoodixTls5xxGetMcuFn       get_fdt_down_cfg;
-  GoodixTls5xxGetMcuFn       get_fdt_up_cfg;
-  GoodixTls5xxProcessFrameFn process_frame; ///< process a frame after it is decoded (e.g. crop it)
+  GoodixTls5xxGetMcuFn          get_mcu_cfg; ///< provide the mcu config before fdt commands
+  GoodixTls5xxGetMcuFn          get_fdt_down_cfg;
+  GoodixTls5xxGetMcuFn          get_fdt_up_cfg;
+  GoodixTls5xxProcessFrameFn    process_frame; ///< process a frame after it is decoded (e.g. crop it)
   GoodixTls5xxProcessRawFrameFn process_raw_frame; ///< process raw 12-bit ADC frame directly
-  GoodixTls5xxResetStateFn   reset_state; ///< callback to reset the state, may be NULL
+  GoodixTls5xxResetStateFn      reset_state; ///< callback to reset the state, may be NULL
 
-  guint16                    scan_width; ///< width of the raw scanner image
-  guint16                    scan_height; ///< height of the raw scanner image
+  guint16                       scan_width; ///< width of the raw scanner image
+  guint16                       scan_height; ///< height of the raw scanner image
 
-  const char               * firmware_version; ///< only needed if goodixtls5xx_check_firmware_version() is used
+  const char                  * firmware_version; ///< only needed if goodixtls5xx_check_firmware_version() is used
 
   /// only needed if goodixtls5xx_check_preset_psk_read() is used
   int            psk_flags;
@@ -245,4 +245,4 @@ void goodixtls5xx_squash_frame_linear (GoodixTls5xxPix *frame,
  *
  * @param dev device to cleanup the state for
  */
-void goodixtls5xx_cleanup(FpiDeviceGoodixTls5xx* dev);
+void goodixtls5xx_cleanup (FpiDeviceGoodixTls5xx * dev);

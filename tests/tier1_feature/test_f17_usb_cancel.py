@@ -29,7 +29,7 @@ class TestF17USBCancel(unittest.TestCase):
         """Verify GCancellable *transfer_cancel_tkn is declared in FpiDeviceGoodixTlsPrivate."""
         with open(self.goodix_c_path, "r") as f:
             content = f.read()
-        self.assertIn("GCancellable       *transfer_cancel_tkn;", content)
+        self.assertIn("GCancellable *transfer_cancel_tkn;", content)
 
     def test_inited_flag_lifecycle(self):
         """Verify priv->inited boolean tracks active state to avoid double-free or double-start."""

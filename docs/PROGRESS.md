@@ -169,7 +169,7 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 ## 5. Current State & Configuration Summary
 
 - **Active State:** Biometric matching engine (13-15/12) and sub-300ms verification latency verified; 400-test automated test suite passing (100%); stale activation guard (Ticket 34) and pressure stratification (Ticket 35) verified.
-- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `524318b4b0d445e4ba48e017d9718c36ce645f5c639b58f24b4df2835fe4addc`).
+- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `94f5186850f4f0d879ce5af6c20bf54d0b32fe3f97e0913bf886af4c54c9be5a`).
 - **Activation Sequence:** 6-state SSM: NOP -> Reset -> Read Chip ID -> Read OTP -> Query FW Version -> Upload Config -> TLS PSK Handshake -> Enable Chip.
 - **Verify Latency:** Sub-300ms instant unlock via immediate scan SSM completion and finger status reporting.
 - **Frame Decoder:** Strip each 132-byte block's first 96 bytes, discard 36-byte zero pad; unpack sequentially into 5,120 pixels.
