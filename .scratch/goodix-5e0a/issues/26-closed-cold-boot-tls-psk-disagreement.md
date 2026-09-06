@@ -5,7 +5,10 @@ Resolve the post-reboot / cold-boot TLS 1.2 PSK handshake failure. On machine co
 
 **Blocked by:** None. Supersedes the cold-boot OTP hypothesis from Ticket 20.
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
+
+**Verdict:** closed as intermittent/not reproducible on the current
+upstream-clean build. Reopen only on a new pasted `bad record mac` recurrence.
 
 **Verdict (2026-09-05): could-not-reproduce + mechanism dismantled.**
 The systematic-cold-failure premise (one post-reboot event) never reproduced

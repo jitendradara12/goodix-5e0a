@@ -13,7 +13,10 @@ activation USB sequence only.
 **Blocked by:** None. Successor to ticket 26 (closed, could-not-reproduce);
 does not re-litigate 26 facts, acts on them.
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
+
+**Verdict:** confirmed on hardware 2026-09-07. Cold/restart TLS reached the
+ready state with complete frames and no `bad record mac`; no PSK states ran.
 
 **Live-scope:** activation strip + test/patch sync only. No biometric tuning,
 no lifecycle changes, no upstream-repo contact (that tree stays clean; no PR).
@@ -139,6 +142,13 @@ not a PSK event.
   `verify-match` acceptance is not demonstrated by this paste.
 - Verdict: `confirmed` for behavior-preserving cold TLS; formal biometric
   acceptance remains `inconclusive-because-no-verify-match`.
+
+### Final close evidence
+
+The later correct `verify-match`, repeated TLS-ready lines, complete
+`declen=10564` frames, and absence of `bad record mac` close the upstream-clean
+activation strip. Any remaining no-match is a biometric placement/matching
+result, not a PSK/provisioning failure.
 
 ## Cold verdict 2026-09-06 (FALSIFIED — parent ticket 26 reopened)
 

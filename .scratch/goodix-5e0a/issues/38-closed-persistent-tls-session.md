@@ -12,7 +12,10 @@ otherwise untouched).
 attempt, total unlock = attempts × ~2s) and Update-3/4 (device key can die
 independently of the host — see constraint below).
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
+
+**Verdict:** confirmed on hardware 2026-09-07. Repeated claims reused the
+parked TLS session and later fresh opens recovered with a new handshake.
 
 **Live-scope:** session reuse + health-check fallback only. No biometric
 tuning, no threshold changes, no warm-path skipping of reset/config (that
@@ -100,6 +103,14 @@ ladder, never a third half-bring-up).
   drill-and-no-verify-match` for the complete ticket acceptance.
   Next experiment: full poweroff, 60-second drain, one enrolled-finger
   verify, and pasted client/journal output.
+
+### Final close evidence
+
+PID 4629 repeatedly logged reset-skipped plus `TLS session reused` at roughly
+0.4–1.0 seconds between claims, and a correct enrolled-finger `verify-match`
+was obtained. The later fresh-PID `TLS connection ready` lines demonstrate
+recovery through the full handshake path. No dead-session timeout was
+pasted. Session reuse is closed as confirmed.
 
 ## Hardware finding 2026-09-06 (falsified-as-implemented, corroboration pending)
 

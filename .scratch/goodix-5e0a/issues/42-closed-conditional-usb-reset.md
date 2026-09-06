@@ -12,7 +12,10 @@ lines appear, they re-verify as-is.
 
 **Blocked by:** None (hermetic work is small). Decided by hardware.
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
+
+**Verdict:** confirmed on hardware 2026-09-07. Clean reopen skipped reset,
+reused TLS repeatedly, and later dirty/PID-restart opens took reset.
 
 **Live-scope:** open-path reset gating + clean-close bookkeeping only. No
 transport changes, no biometric changes, no suspend-path changes (suspend
@@ -104,6 +107,14 @@ always forces reset — sleep safety is not negotiable).
   `inconclusive-because-no-verify-match` for the end-to-end acceptance.
   Next experiment: repeat one known-good enrolled-finger claim while
   capturing the same reset/session journal lines and a `verify-match`.
+
+### Final close evidence
+
+The later pasted run produced repeated `USB reset skipped (clean close,
+boot_seq=1)` and `TLS session reused` lines in PID 4629, alongside a
+successful `verify-match`. The earlier idle run showed `USB reset taken`.
+The reset/session objective is therefore closed; biometric no-match events
+were user-placement errors, not reset failures.
 
 ## Hardware verify protocol (user only, AGENTS.md compliant)
 
