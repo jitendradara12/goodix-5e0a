@@ -1,8 +1,8 @@
 diff --git a/libfprint/drivers/goodixtls/goodix.c b/libfprint/drivers/goodixtls/goodix.c
-index 236589f..b98bd28 100644
+index 236589f..72704fc 100644
 --- a/libfprint/drivers/goodixtls/goodix.c
 +++ b/libfprint/drivers/goodixtls/goodix.c
-@@ -55,8 +55,13 @@ typedef struct
+@@ -55,8 +55,46 @@ typedef struct
  
    GoodixCallbackInfo *tls_ready_callback;
  
@@ -13,12 +13,45 @@ index 236589f..b98bd28 100644
 +   * it at TLS-init time and drop on mismatch. Zero-initialized. */
 +  guint         activation_gen;
 +
++  /* Ticket 40 warm-activation key: bumped in goodix_dev_init (once per
++   * device open, not per claim). Zero-initialized; first open reads 1.
++   * Ticket 42 couples it to the USB reset actually taken (not the open):
++   * a clean reopen is the same device boot, a real reset is a new boot. */
++  guint         boot_seq;
++
++  /* Ticket 42 conditional USB reset: TRUE only when the previous session
++   * on this USB device closed cleanly (set ONLY in the
++   * goodix5e0a_deactivate park branch — the single point a session proves
++   * clean with a live TLS context + completed deactivate). FALSE is the
++   * safe direction (reset taken). Zero-initialized, so the first open
++   * after a daemon restart always resets. Cleared on every failure funnel
++   * (activate/TLS/chip/scan errors), on suspend entry, and on USB
++   * re-enumeration; destroy-path deactivate also clears (no live context
++   * to prove device health — when in doubt, reset). */
++  gboolean      clean_close;
++
++  /* Ticket 42 re-enumeration key: bus+address+port+vid+pid snapshot from
++   * the last open, via fpi_device_get_usb_device. A mismatch means the
++   * kernel re-enumerated the device (replug / vanish+reappear) so the
++   * flag is forced dirty regardless of clean_close. Choice: bus+address
++   * detects a new kernel address on the same port; port+vid+pid disam-
++   * biguates port moves and foreign devices. If no USB identity can be
++   * read (NULL device — never expected for our USB type), the open is
++   * treated as dirty. usb_identity_valid is FALSE until the first open
++   * snapshots, so daemon restarts stay dirty by construction. */
++  guint8        last_usb_bus;
++  guint8        last_usb_addr;
++  guint8        last_usb_port;
++  guint16       last_usb_vid;
++  guint16       last_usb_pid;
++  gboolean      usb_identity_valid;
++
 +  GCancellable *transfer_cancel_tkn;
 +  gboolean      inited;
  } FpiDeviceGoodixTlsPrivate;
  
  G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (FpiDeviceGoodixTls, fpi_device_goodixtls,
-@@ -89,7 +94,11 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
+@@ -89,7 +127,11 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
    gpointer user_data = priv->user_data;
  
    if (!(priv->ack || priv->reply))
@@ -31,7 +64,7 @@ index 236589f..b98bd28 100644
  
    goodix_reset_state (dev);
    if (!error)
-@@ -97,6 +106,8 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
+@@ -97,6 +139,8 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
  
    if (callback)
      callback (dev, data, length, user_data, error);
@@ -40,7 +73,7 @@ index 236589f..b98bd28 100644
  }
  
  void
-@@ -109,6 +120,19 @@ goodix_receive_none (FpDevice *dev, guint8 *data, guint16 length,
+@@ -109,6 +153,19 @@ goodix_receive_none (FpDevice *dev, guint8 *data, guint16 length,
    callback (dev, cb_info->user_data, error);
  }
  
@@ -60,7 +93,7 @@ index 236589f..b98bd28 100644
  void
  goodix_receive_default (FpDevice *dev, guint8 *data, guint16 length,
                          gpointer user_data, GError *error)
-@@ -398,11 +422,15 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
+@@ -398,11 +455,15 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
        break;
  
      case GOODIX_FLAGS_TLS:
@@ -81,7 +114,7 @@ index 236589f..b98bd28 100644
        break;
  
      default:
-@@ -422,9 +450,12 @@ goodix_receive_data_cb (FpiUsbTransfer *transfer, FpDevice *dev,
+@@ -422,9 +483,12 @@ goodix_receive_data_cb (FpiUsbTransfer *transfer, FpDevice *dev,
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
  
@@ -95,7 +128,7 @@ index 236589f..b98bd28 100644
        return;
      }
    if (error)
-@@ -464,16 +495,34 @@ goodix_start_read_loop (FpDevice *dev)
+@@ -464,16 +528,34 @@ goodix_start_read_loop (FpDevice *dev)
      fpi_device_goodixtls_get_instance_private (self);
  
    if (priv->inited)
@@ -133,7 +166,7 @@ index 236589f..b98bd28 100644
  void
  goodix_receive_data (FpDevice *dev)
  {
-@@ -563,6 +612,11 @@ goodix_send_protocol (
+@@ -563,6 +645,11 @@ goodix_send_protocol (
        fp_warn ("A command is already running: 0x%02x", priv->cmd);
        if (free_func)
          free_func ((void *) payload);
@@ -145,7 +178,7 @@ index 236589f..b98bd28 100644
        return;
      }
  
-@@ -597,6 +651,8 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
+@@ -597,6 +684,8 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
    GoodixNop payload = {.unknown = 0x00000000};
    GoodixCallbackInfo *cb_info;
  
@@ -154,7 +187,7 @@ index 236589f..b98bd28 100644
    if (callback)
      {
        cb_info = malloc (sizeof (GoodixCallbackInfo));
-@@ -605,23 +661,31 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
+@@ -605,23 +694,31 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
        cb_info->user_data = user_data;
  
        goodix_send_protocol (dev, GOODIX_CMD_NOP, (guint8 *) &payload,
@@ -192,7 +225,7 @@ index 236589f..b98bd28 100644
  
    if (callback)
      {
-@@ -630,14 +694,14 @@ goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,
+@@ -630,14 +727,14 @@ goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
  
@@ -211,7 +244,7 @@ index 236589f..b98bd28 100644
                          NULL, NULL);
  }
  
-@@ -648,29 +712,31 @@ goodix_send_mcu_switch_to_fdt_down (FpDevice *dev, const guint8 *mode, guint16 l
+@@ -648,29 +745,31 @@ goodix_send_mcu_switch_to_fdt_down (FpDevice *dev, const guint8 *mode, guint16 l
                                      gpointer user_data)
  {
    GoodixCallbackInfo *cb_info = NULL;
@@ -256,7 +289,7 @@ index 236589f..b98bd28 100644
  }
  
  void
-@@ -680,41 +746,41 @@ goodix_send_mcu_switch_to_fdt_up (FpDevice *dev, const guint8 *mode, guint16 len
+@@ -680,41 +779,41 @@ goodix_send_mcu_switch_to_fdt_up (FpDevice *dev, const guint8 *mode, guint16 len
                                    gpointer user_data)
  {
    GoodixCallbackInfo *cb_info = NULL;
@@ -317,7 +350,7 @@ index 236589f..b98bd28 100644
  
    if (callback)
      {
-@@ -722,11 +788,11 @@ goodix_send_mcu_switch_to_fdt_mode (FpDevice *dev, const guint8 *mode, guint16 l
+@@ -722,11 +821,11 @@ goodix_send_mcu_switch_to_fdt_mode (FpDevice *dev, const guint8 *mode, guint16 l
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
@@ -331,7 +364,7 @@ index 236589f..b98bd28 100644
                          cb_info);
  
  }
-@@ -979,7 +1045,7 @@ goodix_send_query_firmware_version (FpDevice                     *dev,
+@@ -979,7 +1078,7 @@ goodix_send_query_firmware_version (FpDevice                     *dev,
  }
  
  void
@@ -340,7 +373,7 @@ index 236589f..b98bd28 100644
                               gpointer user_data)
  {
    GoodixQueryMcuState payload = {.unused_flags = 0x55};
-@@ -993,13 +1059,13 @@ goodix_send_query_mcu_state (FpDevice *dev, GoodixDefaultCallback callback,
+@@ -993,13 +1092,13 @@ goodix_send_query_mcu_state (FpDevice *dev, GoodixDefaultCallback callback,
        cb_info->user_data = user_data;
  
        goodix_send_protocol (dev, GOODIX_CMD_QUERY_MCU_STATE, (guint8 *) &payload,
@@ -357,7 +390,7 @@ index 236589f..b98bd28 100644
                          NULL);
  }
  
-@@ -1048,13 +1114,86 @@ goodix_send_tls_successfully_established (FpDevice          *dev,
+@@ -1048,13 +1147,86 @@ goodix_send_tls_successfully_established (FpDevice          *dev,
  
        goodix_send_protocol (dev, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED,
                              (guint8 *) &payload, sizeof (payload), NULL, TRUE,
@@ -446,7 +479,7 @@ index 236589f..b98bd28 100644
  }
  
  void
-@@ -1108,13 +1247,13 @@ goodix_send_preset_psk_write (FpDevice *dev, guint32 flags, guint8 *psk,
+@@ -1108,13 +1280,13 @@ goodix_send_preset_psk_write (FpDevice *dev, guint32 flags, guint8 *psk,
        cb_info->user_data = user_data;
  
        goodix_send_protocol (dev, GOODIX_CMD_PRESET_PSK_WRITE, payload,
@@ -462,59 +495,83 @@ index 236589f..b98bd28 100644
                          TRUE, NULL, NULL);
  }
  
-@@ -1145,6 +1284,42 @@ goodix_send_preset_psk_read (FpDevice *dev, guint32 flags, guint16 length,
-                         NULL);
- }
- 
-+void
-+goodix_send_preset_psk_read_slice (FpDevice *dev, guint32 flags, guint32 length,
-+                                   guint32 offset,
-+                                   GoodixPresetPskReadCallback callback,
-+                                   gpointer user_data)
-+{
-+  /* 5e0a-only sliced form, byte-identical to vendor goodix.py:
-+   * 16-byte LE payload [length, offset, flags, 0]. */
-+  guint32 payload[4];
-+  GoodixCallbackInfo *cb_info;
-+
-+  _Static_assert (sizeof (payload) == 16, "sliced PSK read payload must be 16 bytes");
-+
-+  payload[0] = GUINT32_TO_LE (length);
-+  payload[1] = GUINT32_TO_LE (offset);
-+  payload[2] = GUINT32_TO_LE (flags);
-+  payload[3] = GUINT32_TO_LE (0);
-+
-+  if (callback)
-+    {
-+      cb_info = malloc (sizeof (GoodixCallbackInfo));
-+
-+      cb_info->callback = G_CALLBACK (callback);
-+      cb_info->user_data = user_data;
-+
-+      goodix_send_protocol (dev, GOODIX_CMD_PRESET_PSK_READ, (guint8 *) payload,
-+                            sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
-+                            goodix_receive_preset_psk_read, cb_info);
-+      return;
-+    }
-+
-+  goodix_send_protocol (dev, GOODIX_CMD_PRESET_PSK_READ, (guint8 *) payload,
-+                        sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE, NULL,
-+                        NULL);
-+}
-+
- // ---- GOODIX SEND SECTION END ----
- 
- // -----------------------------------------------------------------------------
-@@ -1168,6 +1343,8 @@ goodix_dev_init (FpDevice *dev, GError **error)
+@@ -1168,8 +1340,73 @@ goodix_dev_init (FpDevice *dev, GError **error)
    priv->length = 0;
    priv->transfer_cancel_tkn = g_cancellable_new ();
  
-+  g_usb_device_reset (fpi_device_get_usb_device (dev), NULL);
+-  return g_usb_device_claim_interface (fpi_device_get_usb_device (dev),
+-                                       class->interface, 0, error);
++  /* Ticket 42 conditional USB reset: skip the cold-state repair only when
++   * the previous session on THIS USB device closed cleanly. The reset
++   * wipes the device-side TLS key/config before activate runs, and
++   * boot_seq follows the reset (not the open): a clean reopen is the same
++   * device boot by construction (freezing the counter across a real reset
++   * would fake warmth; bumping it across a skipped reset would fake
++   * coldness and kill tickets 38/40 exactly as observed). Re-enumeration
++   * (bus/address/port/vid/pid mismatch) forces dirty+reset regardless of
++   * the flag; a NULL USB handle (never expected) is also dirty. */
++  {
++    GUsbDevice *usb = fpi_device_get_usb_device (dev);
++    gboolean reenumerated = FALSE;
++    gboolean take_reset;
++    if (usb != NULL)
++      {
++        guint8 bus = g_usb_device_get_bus (usb);
++        guint8 addr = g_usb_device_get_address (usb);
++        guint8 port = g_usb_device_get_port_number (usb);
++        guint16 vid = g_usb_device_get_vid (usb);
++        guint16 pid = g_usb_device_get_pid (usb);
++        if (priv->usb_identity_valid
++            && (bus != priv->last_usb_bus || addr != priv->last_usb_addr
++                || port != priv->last_usb_port || vid != priv->last_usb_vid
++                || pid != priv->last_usb_pid))
++          {
++            reenumerated = TRUE;
++            priv->clean_close = FALSE;
++          }
++        priv->last_usb_bus = bus;
++        priv->last_usb_addr = addr;
++        priv->last_usb_port = port;
++        priv->last_usb_vid = vid;
++        priv->last_usb_pid = pid;
++        priv->usb_identity_valid = TRUE;
++      }
++    else
++      {
++        reenumerated = TRUE;
++        priv->clean_close = FALSE;
++      }
++    take_reset = !priv->clean_close;
++    if (take_reset)
++      {
++        /* Ticket 40 (as amended by 42): counter follows the reset. */
++        priv->boot_seq++;
++        if (reenumerated)
++          g_message ("5e0a USB reset taken (re-enumerated device, boot_seq=%u)",
++                     priv->boot_seq);
++        else
++          g_message ("5e0a USB reset taken (dirty close, boot_seq=%u)",
++                     priv->boot_seq);
++        g_usb_device_reset (fpi_device_get_usb_device (dev), NULL);
++      }
++    else
++      {
++        g_message ("5e0a USB reset skipped (clean close, boot_seq=%u)",
++                   priv->boot_seq);
++      }
++  }
 +
-   return g_usb_device_claim_interface (fpi_device_get_usb_device (dev),
-                                        class->interface, 0, error);
++  {
++    gboolean ok = g_usb_device_claim_interface (fpi_device_get_usb_device (dev),
++                                                class->interface, 0, error);
++    if (!ok)
++      priv->clean_close = FALSE;
++    return ok;
++  }
  }
-@@ -1182,8 +1359,32 @@ goodix_reset_state (FpDevice *dev)
+ void
+ goodix_reset_state (FpDevice *dev)
+@@ -1182,8 +1419,79 @@ goodix_reset_state (FpDevice *dev)
      g_clear_pointer (&priv->timeout, g_source_destroy);
    priv->ack = FALSE;
    priv->reply = FALSE;
@@ -544,20 +601,98 @@ index 236589f..b98bd28 100644
 +    fpi_device_goodixtls_get_instance_private (self);
 +
 +  return ++priv->activation_gen;
++}
++
++/* Ticket 40 warm-activation key (single shared counter; live paths untouched).
++ * Ticket 42 amends the bump site: goodix_dev_init bumps ONLY when the USB
++ * reset is actually taken (see above). */
++guint
++goodix_boot_seq_get (FpDevice *dev)
++{
++  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
++  FpiDeviceGoodixTlsPrivate *priv =
++    fpi_device_goodixtls_get_instance_private (self);
++
++  return priv->boot_seq;
++}
++
++/* Ticket 42 clean-vs-dirty session lifetime (single shared flag; live
++ * paths untouched). Set ONLY in the goodix5e0a_deactivate park branch;
++ * cleared on every failure funnel, on suspend entry, on destroy-path
++ * deactivate, and on re-enumeration/claim failure in goodix_dev_init. */
++void
++goodix_session_mark_clean (FpDevice *dev)
++{
++  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
++  FpiDeviceGoodixTlsPrivate *priv =
++    fpi_device_goodixtls_get_instance_private (self);
++
++  priv->clean_close = TRUE;
++}
++
++void
++goodix_session_mark_dirty (FpDevice *dev)
++{
++  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
++  FpiDeviceGoodixTlsPrivate *priv =
++    fpi_device_goodixtls_get_instance_private (self);
++
++  priv->clean_close = FALSE;
++}
++
++gboolean
++goodix_session_is_clean (FpDevice *dev)
++{
++  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
++  FpiDeviceGoodixTlsPrivate *priv =
++    fpi_device_goodixtls_get_instance_private (self);
++
++  return priv->clean_close;
  }
  
  gboolean
-@@ -1194,6 +1395,9 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
+@@ -1193,18 +1501,37 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
+   FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS (self);
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
- 
-+  /* Ticket 34 teardown entry: orphan any in-flight TLS activation. */
-+  goodix_activation_gen_bump (dev);
++  gboolean clean_close = priv->clean_close;
++  gboolean released;
 +
++  /* Ticket 42: clean close skips bump+shutdown (deactivate done). */
++  if (!clean_close)
++    goodix_activation_gen_bump (dev);
+ 
    if (priv->timeout)
      g_source_destroy (priv->timeout);
    g_free (priv->data);
-@@ -1292,8 +1496,20 @@ static void
+   g_cancellable_cancel (priv->transfer_cancel_tkn);
+-  goodix_shutdown_tls (dev, error);
++  if (!clean_close)
++    goodix_shutdown_tls (dev, error);
+ 
+   goodix_reset_state (dev);
+   priv->inited = FALSE;
+ 
+-  return g_usb_device_release_interface (fpi_device_get_usb_device (dev),
+-                                         class->interface, 0, error);
++  released = g_usb_device_release_interface (fpi_device_get_usb_device (dev),
++                                              class->interface, 0, error);
++  if (!released)
++    {
++      /* A failed release is a dirty close even if deactivate parked TLS.
++       * Do not carry that context or its generation into the next open. */
++      priv->clean_close = FALSE;
++      if (clean_close)
++        {
++          goodix_activation_gen_bump (dev);
++          goodix_shutdown_tls (dev, NULL);
++        }
++    }
++  return released;
+ }
+ 
+ // ---- DEV SECTION END ----
+@@ -1292,8 +1619,20 @@ static void
  tls_handshake_done (FpiSsm *ssm, FpDevice *dev, GError *error)
  {
    if (error)
@@ -580,7 +715,7 @@ index 236589f..b98bd28 100644
    goodix_send_tls_successfully_established (
      dev, on_tls_successfully_established, NULL);
  }
-@@ -1403,10 +1619,10 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
+@@ -1403,10 +1742,10 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
    g_assert (priv->tls_hop == NULL);
@@ -593,7 +728,22 @@ index 236589f..b98bd28 100644
    priv->tls_ready_callback->callback = G_CALLBACK (callback);
    priv->tls_ready_callback->user_data = user_data;
    GoodixTlsServer *s = priv->tls_hop;
-@@ -1443,7 +1659,6 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
+@@ -1438,12 +1777,21 @@ goodix_shutdown_tls (FpDevice *dev, GError **error)
+     }
+   return TRUE;
+ }
++
++gboolean
++goodix_tls_is_alive (FpDevice *dev)
++{
++  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
++  FpiDeviceGoodixTlsPrivate *priv =
++    fpi_device_goodixtls_get_instance_private (self);
++
++  return priv->tls_hop != NULL;
++}
+ static void
+ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
                                  guint16 length, gpointer user_data,
                                  GError *error)
  {
@@ -601,7 +751,7 @@ index 236589f..b98bd28 100644
    GoodixCallbackInfo *cb_info = user_data;
    GoodixImageCallback callback = (GoodixImageCallback) cb_info->callback;
  
-@@ -1457,9 +1672,30 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
+@@ -1457,9 +1805,30 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
  
@@ -634,7 +784,7 @@ index 236589f..b98bd28 100644
    guint8 *buff = malloc (size);
    GError *err = NULL;
    int read_size = goodix_tls_server_read (priv->tls_hop, buff, size, &err);
-@@ -1467,6 +1703,7 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
+@@ -1467,6 +1836,7 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
    if (read_size <= 0)
      {
        callback (dev, NULL, 0, cb_info->user_data, err);
@@ -643,7 +793,7 @@ index 236589f..b98bd28 100644
        return;
      }
 diff --git a/libfprint/drivers/goodixtls/goodix.h b/libfprint/drivers/goodixtls/goodix.h
-index 08bc254..fae9223 100644
+index 08bc254..5c95fcc 100644
 --- a/libfprint/drivers/goodixtls/goodix.h
 +++ b/libfprint/drivers/goodixtls/goodix.h
 @@ -25,6 +25,10 @@
@@ -732,20 +882,7 @@ index 08bc254..fae9223 100644
  /**
   * @brief Set the device preset psk. May not work for all device firmware versions
   *
-@@ -473,6 +499,12 @@ void goodix_send_preset_psk_read (FpDevice                   *dev,
-                                   guint16                     length,
-                                   GoodixPresetPskReadCallback callback,
-                                   gpointer                    user_data);
-+void goodix_send_preset_psk_read_slice (FpDevice                   *dev,
-+                                        guint32                     flags,
-+                                        guint32                     length,
-+                                        guint32                     offset,
-+                                        GoodixPresetPskReadCallback callback,
-+                                        gpointer                    user_data);
- /**
-  * @brief Request the OTP (One Time Password) from the device
-  *
-@@ -517,6 +549,22 @@ gboolean goodix_dev_deinit (FpDevice *dev,
+@@ -517,6 +543,62 @@ gboolean goodix_dev_deinit (FpDevice *dev,
   */
  void goodix_reset_state (FpDevice *dev);
  
@@ -765,9 +902,72 @@ index 08bc254..fae9223 100644
 +guint goodix_activation_gen_get (FpDevice *dev);
 +guint goodix_activation_gen_bump (FpDevice *dev);
 +
++/**
++ * @brief Device-boot sequence number (ticket 40 warm-activation key).
++ *
++ * Bumped in goodix_dev_init, i.e. once per device open — img_open brackets
++ * the whole open session, NOT each verify (activate/deactivate cycle per
++ * claim while the device stays open), so this survives back-to-back claims
++ * and only turns on reopen/re-enumeration. The 5e0a warm predicate pairs it
++ * with a monotonic timestamp: warmth is host-observed recency, never a
++ * device-key claim.
++ *
++ * @param dev
++ * @return current boot sequence number
++ */
++guint goodix_boot_seq_get (FpDevice *dev);
++
++/**
++ * @brief Clean-vs-dirty session lifetime for the ticket-42 conditional
++ * USB reset (shared priv flag `clean_close`).
++ *
++ * Mark clean ONLY at the single point a session proves clean (the
++ * goodix5e0a_deactivate park branch); mark dirty on every failure funnel
++ * (activate/TLS/chip/scan errors), on suspend entry, on destroy-path
++ * deactivate, and on re-enumeration. The flag is zero-initialized
++ * (FALSE = reset, safe direction) so daemon restarts always reset.
++ */
++void goodix_session_mark_clean (FpDevice *dev);
++
++/**
++ * @brief Mark the current session dirty so the next open resets USB state.
++ * @param dev
++ */
++void goodix_session_mark_dirty (FpDevice *dev);
++
++/**
++ * @brief Return whether the current session completed a clean close.
++ * @param dev
++ * @return TRUE when the next open may consider skipping reset
++ */
++gboolean goodix_session_is_clean (FpDevice *dev);
++
  // ---- DEV SECTION END ----
  
  // -----------------------------------------------------------------------------
+@@ -554,7 +636,21 @@ void goodix_tls_init (FpDevice          *dev,
+  * @return gboolean TRUE if ok, FALSE otherwise
+  */
+ gboolean goodix_shutdown_tls (FpDevice *dev,
+-                              GError  **error);
++                               GError  **error);
++
++/**
++ * @brief Check whether a negotiated TLS session context is currently alive.
++ *
++ * Ticket 38 park gate: deactivate parks the session only when the context
++ * exists, and activate attempts reuse only when it still exists. This is a
++ * pointer test only — liveness of the reply path is proven by the
++ * QUERY_MCU_STATE health check, not here (the device-side key can die
++ * while the host context looks alive).
++ *
++ * @param dev
++ * @return gboolean TRUE when priv->tls_hop != NULL, FALSE otherwise
++ */
++gboolean goodix_tls_is_alive (FpDevice *dev);
+ 
+ /**
+  * @brief Read a TLS encrypted image from the device and decrypt it
 diff --git a/libfprint/drivers/goodixtls/goodix511.c b/libfprint/drivers/goodixtls/goodix511.c
 index a19379c..f5e4901 100644
 --- a/libfprint/drivers/goodixtls/goodix511.c
@@ -807,10 +1007,10 @@ index a19379c..f5e4901 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..4a55870
+index 0000000..eb0a3db
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,1053 @@
+@@ -0,0 +1,1536 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -868,6 +1068,41 @@ index 0000000..4a55870
 +  gboolean              session_started;
 +  FpiSsm               *scan_ssm;
 +  GSource              *down_timeout;
++
++  /* Ticket 38 parked TLS session: deactivate leaves a live negotiated
++   * context in place and stamps it; the next activate inside the TTL
++   * health-checks it instead of paying the full ladder. Cleared on any
++   * fallback, on destroy-path deactivate, and unconditionally on suspend
++   * (sleep safety). tls_parked_gen pins the park to the post-deactivate
++   * activation generation (ticket-34 counter). */
++  gboolean              tls_parked;
++  gint64                tls_parked_at;
++  guint                 tls_parked_gen;
++
++  /* Ticket 40 warm activation fast path: host-observed recency of the last
++   * clean chip-enable (stamped ONLY in on_chip_enabled success — the last
++   * host→device proof, not TLS-ready). warm_ok + same boot_seq + age <
++   * GOODIX_5E0A_WARM_TTL_US lets the next claim skip RESET/CHIP_ID/OTP +
++   * config upload (READ_AND_NOP + FW check + TLS kept). This is NEVER a
++   * device-key claim — the handshake always runs, and warmth costs at most
++   * one ladder, never a sticky dead session. warm_down_reason names the
++   * last invalidation for the expired journal line; warm_attempted /
++   * warm_retried bound the silent once-per-claim full-ladder retry. */
++  gboolean              warm_ok;
++  gint64                last_clean_mono;
++  guint                 warm_boot_seq;
++  const char           *warm_down_reason;
++  gboolean              warm_attempted;
++  gboolean              warm_retried;
++
++  /* Ticket 39 best-of-N per-touch state: non-enroll touches collect up to
++   * GOODIX_5E0A_FRAMES_PER_TOUCH frames in SCAN_5E0A_GET_IMAGE, retain the
++   * highest-minutiae frame in best_img, and submit only that winner.
++   * Enrollment never touches these fields. */
++  guint               frame_count;
++  FpImage            *best_img;
++  guint               best_minutiae;
++  guint               best_frame_no;
 +};
 +
 +G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a, FPI,
@@ -876,7 +1111,23 @@ index 0000000..4a55870
 +G_DEFINE_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a,
 +               FPI_TYPE_DEVICE_GOODIXTLS5XX);
 +
++static void goodix5e0a_reset_touch_frames (FpiDeviceGoodixTls5e0a *self);
++
 +// ---- ACTIVATE SECTION START ----
++
++/* Ticket 38 parked-TLS session: a deactivated claim leaves its negotiated
++ * TLS context alive for GOODIX_5E0A_TLS_PARK_TTL_US; the next claim inside
++ * the window sends ONE QUERY_MCU_STATE probe with a short
++ * GOODIX_5E0A_TLS_PARK_HEALTH_TIMEOUT_MS timeout and reuses the session on
++ * success instead of paying the full ladder. Suspend never parks. */
++#define GOODIX_5E0A_TLS_PARK_TTL_US (G_USEC_PER_SEC * 30)
++#define GOODIX_5E0A_TLS_PARK_HEALTH_TIMEOUT_MS 500
++
++/* Ticket 40 warm activation: a clean chip-enable inside this window on the
++ * same device boot may skip RESET + CHIP_ID/OTP reads + config upload (the
++ * FW check is kept as the warm-path discriminator). 60s outlasts the
++ * back-to-back verify gap yet yields to idle/suspend drift. */
++#define GOODIX_5E0A_WARM_TTL_US (G_USEC_PER_SEC * 60)
 +
 +enum activate_states {
 +  ACTIVATE_READ_AND_NOP,
@@ -884,91 +1135,41 @@ index 0000000..4a55870
 +  ACTIVATE_READ_CHIP_ID,
 +  ACTIVATE_READ_OTP,
 +  ACTIVATE_CHECK_FW_VER,
-+  ACTIVATE_READ_PSK,
-+  ACTIVATE_PROVISION_PSK,
 +  ACTIVATE_UPLOAD_CONFIG,
 +  ACTIVATE_NUM_STATES,
 +};
 +
-+static void
-+on_psk_read (FpDevice *dev, gboolean success, guint32 flags, guint8 *psk,
-+             guint16 length, gpointer user_data, GError *error)
-+{
-+  FpiSsm *ssm = user_data;
++/* Ticket 26 upstream-clean strip: activation-time PSK reconciliation
++ * (READ_PSK / PROVISION_PSK via 0xe4 / 0xe0) removed. Hardware record: the
++ * single cold-boot bad-record-MAC event never reproduced across later
++ * reboots and a true poweroff boot; the 0xe4-visible bb020001 slot always
++ * reports factory bytes even while TLS with the host key succeeds (not the
++ * TLS slot); 0xe0 writes are rejected in both encodings. The extra
++ * round-trips cost two per-activation USB transactions plus journal noise
++ * for zero benefit, and the factory-key table plus hardcoded provisioning
++ * have no accepted upstream pattern (docs/UPSTREAM.md section 6).
++ * Activation therefore goes CHECK_FW_VER -> UPLOAD_CONFIG -> TLS with the
++ * static host key directly; any future bad-record-MAC recurrence reopens
++ * ticket 26 with a pasted journal line. */
 +
-+  if (error)
-+    {
-+      g_message ("5e0a PSK read failed (%s), attempting provision", error->message);
-+      g_error_free (error);
-+      fpi_ssm_next_state (ssm);
-+      return;
-+    }
-+
-+  if (!success)
-+    {
-+      g_message ("5e0a PSK read: device reports no key, provisioning host key");
-+      fpi_ssm_next_state (ssm);
-+      return;
-+    }
-+
-+  if (flags != GOODIX_5E0A_PSK_FLAGS || length != sizeof (goodix_5e0a_psk))
-+    {
-+      g_message ("5e0a PSK mismatch: flags=0x%08x len=%u, provisioning host key",
-+                 flags, length);
-+      fpi_ssm_next_state (ssm);
-+      return;
-+    }
-+
-+  if (memcmp (psk, goodix_5e0a_psk, sizeof (goodix_5e0a_psk)) == 0)
-+    {
-+      g_message ("5e0a PSK status: device key matches host key, skipping provision");
-+      fpi_ssm_jump_to_state (ssm, ACTIVATE_UPLOAD_CONFIG);
-+      return;
-+    }
-+
-+  {
-+    gboolean is_factory = (length == sizeof (goodix_5e0a_psk_default) &&
-+                           memcmp (psk, goodix_5e0a_psk_default,
-+                                   sizeof (goodix_5e0a_psk_default)) == 0);
-+    g_message ("5e0a PSK mismatch: device has %s key (flags=0x%08x len=%u), provisioning host key",
-+               is_factory ? "factory-default" : "unknown", flags, length);
-+  }
-+  fpi_ssm_next_state (ssm);
-+}
-+
-+/* PSK-reconciliation robustness (ticket 26.3): never brick warm to chase
-+ * cold. Provision-reject / transport-error are soft-fail (warn + advance to
-+ * UPLOAD_CONFIG/TLS with the host key) so a rejected 0xe0 cannot wedge
-+ * warm logins; cold-boot TLS may still MAC-fail and that is diagnosed
-+ * downstream, not here. */
-+static void
-+on_psk_write (FpDevice *dev, gboolean success, gpointer user_data, GError *error)
-+{
-+  FpiSsm *ssm = user_data;
-+
-+  if (error)
-+    {
-+      g_message ("5e0a PSK provision failed (%s), continuing with host key", error->message);
-+      g_error_free (error);
-+      fpi_ssm_next_state (ssm);
-+      return;
-+    }
-+
-+  if (!success)
-+    {
-+      g_message ("5e0a PSK provision rejected by MCU, continuing with host key (cold boot may fail TLS)");
-+      fpi_ssm_next_state (ssm);
-+      return;
-+    }
-+
-+  g_message ("5e0a PSK provisioned: host key written (flags=0x%08x)",
-+             GOODIX_5E0A_PSK_FLAGS);
-+  fpi_ssm_next_state (ssm);
-+}
++static void activate_complete (FpiSsm *ssm, FpDevice *dev, GError *error);
 +
 +static void
 +activate_run_state (FpiSsm *ssm, FpDevice *dev)
 +{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
++  /* Ticket 40 warm fast path: READ_AND_NOP is mandatory (deactivate stops
++   * the read loop, jumping past state 0 hangs) and CHECK_FW_VER is kept as
++   * the warm-path discriminator (fails warm fast on wrong FW). The one
++   * variable — whether READ_CHIP_ID/READ_OTP also skip — resolves to skip:
++   * both are zero-validation round-trips with no discriminating power on a
++   * device that proved itself seconds ago. fpi_ssm_jump_to_state from inside
++   * run_state has in-tree precedent (SCAN_5E0A_SESSION_D6 conditionally
++   * jumps to SCAN_5E0A_FDT_DOWN); jumping to ACTIVATE_NUM_STATES completes
++   * the SSM into activate_complete, i.e. the TLS handoff. The enum is NOT
++   * reduced (no duplicated callbacks, no renumbered states, journal
++   * continuity preserved). */
 +  switch (fpi_ssm_get_cur_state (ssm))
 +    {
 +    case ACTIVATE_READ_AND_NOP:
@@ -977,14 +1178,29 @@ index 0000000..4a55870
 +      break;
 +
 +    case ACTIVATE_RESET:
++      if (self->warm_attempted)
++        {
++          fpi_ssm_jump_to_state (ssm, ACTIVATE_CHECK_FW_VER);
++          return;
++        }
 +      goodix_send_reset (dev, TRUE, 20, goodixtls5xx_check_reset, ssm);
 +      break;
 +
 +    case ACTIVATE_READ_CHIP_ID:
++      if (self->warm_attempted)
++        {
++          fpi_ssm_jump_to_state (ssm, ACTIVATE_CHECK_FW_VER);
++          return;
++        }
 +      goodix_send_read_sensor_register (dev, 0x0000, 4, goodixtls5xx_check_none_cmd, ssm);
 +      break;
 +
 +    case ACTIVATE_READ_OTP:
++      if (self->warm_attempted)
++        {
++          fpi_ssm_jump_to_state (ssm, ACTIVATE_CHECK_FW_VER);
++          return;
++        }
 +      goodix_send_read_otp (dev, goodixtls5xx_check_none_cmd, ssm);
 +      break;
 +
@@ -992,18 +1208,12 @@ index 0000000..4a55870
 +      goodix_send_query_firmware_version (dev, goodixtls5xx_check_firmware_version, ssm);
 +      break;
 +
-+    case ACTIVATE_READ_PSK:
-+      goodix_send_preset_psk_read_slice (dev, GOODIX_5E0A_PSK_FLAGS, 32, 0, on_psk_read, ssm);
-+      break;
-+
-+    case ACTIVATE_PROVISION_PSK:
-+      goodix_send_preset_psk_write (dev, GOODIX_5E0A_PSK_FLAGS,
-+                                    (guint8 *) goodix_5e0a_psk,
-+                                    sizeof (goodix_5e0a_psk), NULL,
-+                                    on_psk_write, ssm);
-+      break;
-+
 +    case ACTIVATE_UPLOAD_CONFIG:
++      if (self->warm_attempted)
++        {
++          fpi_ssm_jump_to_state (ssm, ACTIVATE_NUM_STATES);
++          return;
++        }
 +      goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config,
 +                                     sizeof (goodix_5e0a_config), NULL,
 +                                     goodixtls5xx_check_config_upload, ssm);
@@ -1014,19 +1224,167 @@ index 0000000..4a55870
 +static void
 +on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
 +{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
 +  if (error)
 +    {
++      /* Ticket 40: a dead enable poisons recency — the next claim ladder-checks. */
++      self->warm_ok = FALSE;
++      self->warm_down_reason = "failed-last";
++      self->warm_attempted = FALSE;
++      goodix_session_mark_dirty (dev);
 +      fp_err ("failed to enable chip: %s (code: %d)", error->message, error->code);
 +      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
 +      return;
 +    }
++  /* Ticket 40: the last host→device proof — stamp warmth for the next claim. */
++  self->warm_ok = TRUE;
++  self->last_clean_mono = g_get_monotonic_time ();
++  self->warm_boot_seq = goodix_boot_seq_get (dev);
++  self->warm_attempted = FALSE;
 +  fp_dbg ("Chip enabled! Activation complete.");
 +  fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), NULL);
++}
++
++/* Ticket 40 warm predicate: host-observed recency on the same device boot.
++ * img_open (goodix_dev_init) brackets the whole open session, not each
++ * claim, so boot_seq survives back-to-back verifies and only turns on
++ * reopen/re-enumeration. TTL expiry is applied lazily by the caller. */
++static gboolean
++goodix5e0a_warm_fresh (FpDevice *dev)
++{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
++  return self->warm_ok
++         && self->warm_boot_seq == goodix_boot_seq_get (dev)
++         && (g_get_monotonic_time () - self->last_clean_mono) < GOODIX_5E0A_WARM_TTL_US;
++}
++
++static void
++goodix5e0a_log_warm_taken (FpDevice *dev)
++{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
++  g_message ("5e0a warm activation: reusing MCU config (age=%.1fs, boot_seq=%u)",
++             (g_get_monotonic_time () - self->last_clean_mono) / (gdouble) G_USEC_PER_SEC,
++             self->warm_boot_seq);
++}
++
++/* Ticket 40 warm bring-up: the SAME SSM/engine/callbacks as the full ladder
++ * — activate_run_state skips RESET/CHIP_ID/OTP/CONFIG while warm_attempted
++ * is set, so this is READ_AND_NOP + FW check + TLS by construction. There
++ * is never a third half-bring-up path, and the handshake is never skipped:
++ * SSL_accept failure stays loud via the funnels below. */
++static void
++goodix5e0a_start_warm_activation (FpDevice *dev)
++{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
++  self->session_started = FALSE;
++  self->scan_ssm = NULL;
++  self->down_timeout = NULL;
++  self->warm_attempted = TRUE;
++
++  g_message ("5e0a warm path: skipping RESET + config upload, entry=CHECK_FW_VER");
++  fpi_ssm_start (fpi_ssm_new (dev, activate_run_state, ACTIVATE_NUM_STATES),
++                 activate_complete);
++}
++
++/* Ticket 38: today's full bring-up ladder, unchanged (reset -> config
++ * upload -> handshake -> enable). Both cold activate and parked-session
++ * fallback funnel through here; there is never a third half-bring-up path
++ * (warm reset/config skipping is ticket 40's lane, not this one). */
++static void
++goodix5e0a_start_full_activation (FpDevice *dev)
++{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
++  self->session_started = FALSE;
++  self->scan_ssm = NULL;
++  self->down_timeout = NULL;
++  /* Ticket 40: the full ladder never skips — a stale warm flag from an
++   * orphaned attempt must not leak into this run. */
++  self->warm_attempted = FALSE;
++
++  fpi_ssm_start (fpi_ssm_new (dev, activate_run_state, ACTIVATE_NUM_STATES),
++                 activate_complete);
++}
++
++/* Ticket 38 parked-session health probe reply (GoodixNoneCallback, fed via
++ * goodix_receive_none like every other 0xae sender). Generation-tagged
++ * like the ticket-34 TLS guard: a mismatch means a deactivate/teardown
++ * landed while the probe was in flight, so drop without touching hardware
++ * or completing activation. Any live error (notably the short-timeout
++ * expiry on a dead device-side key, or a TLS/bus fault) shuts the parked
++ * context down and runs today's full ladder exactly once — tls_parked was
++ * already cleared at reuse entry, so the fallback cannot loop back here.
++ * Ticket 40 refines the error half: a transport-grade miss (short-timeout
++ * expiry — the device went silent) also clears warmth before the full
++ * ladder; a crypto-grade miss (device answered, session key dead) preserves
++ * warmth and enters the warm ladder when fresh, else the full ladder. */
++static void
++on_parked_health_reply (FpDevice *dev, gpointer user_data, GError *error)
++{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++  guint gen = GPOINTER_TO_UINT (user_data);
++
++  if (gen != goodix_activation_gen_get (dev))
++    {
++      fp_dbg ("dropping stale parked-TLS health reply");
++      if (error)
++        g_error_free (error);
++      return;
++    }
++
++  if (error)
++    {
++      const char *reason = "tls-error";
++      gboolean transport_miss = FALSE;
++      if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT))
++        {
++          reason = "timeout";
++          transport_miss = TRUE;
++        }
++      g_error_free (error);
++      goodix_shutdown_tls (dev, NULL);
++      goodix_reset_state (dev);
++      if (transport_miss)
++        {
++          /* Ticket 40: the device went silent — the MCU may have rebooted,
++           * so config recency is void. Falls through to today's full
++           * ladder, unchanged. */
++          self->warm_ok = FALSE;
++          self->warm_down_reason = "transport-miss";
++        }
++      /* Ticket 40: crypto-grade miss — the device answered but the parked
++       * session key is dead, so MCU config recency still holds. A fresh
++       * warm ladder (FW check + new handshake) is the right next step, not
++       * a full reset; a stale/cold device falls through to the full ladder.
++       * (The taken + entry journal lines are the specified ticket-40 lines;
++       * no extra park-miss line is logged.) */
++      else if (goodix5e0a_warm_fresh (dev))
++        {
++          goodix5e0a_log_warm_taken (dev);
++          goodix5e0a_start_warm_activation (dev);
++          return;
++        }
++      g_message ("5e0a parked TLS session unhealthy (%s), full re-handshake", reason);
++      goodix5e0a_start_full_activation (dev);
++      return;
++    }
++
++  g_message ("5e0a TLS session reused (parked %.1fs, gen=%u)",
++             (g_get_monotonic_time () - self->tls_parked_at) / (gdouble) G_USEC_PER_SEC,
++             gen);
++  fp_dbg ("parked TLS session healthy, confirming chip enable");
++  goodix_send_enable_chip (dev, TRUE, on_chip_enabled, NULL);
 +}
 +
 +static void
 +on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
 +{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
 +  /* Ticket 34 stale-activation guard: a deactivate/teardown that landed
 +   * while the TLS handshake was in flight bumped the generation, so a
 +   * mismatch means this completion is orphaned — drop it without touching
@@ -1041,6 +1399,28 @@ index 0000000..4a55870
 +
 +  if (error)
 +    {
++      goodix_session_mark_dirty (dev);
++      /* Ticket 40 warm fallback: a failed WARM handshake retries the FULL
++       * ladder once, silently (no user-visible error), loop-guarded by
++       * warm_retried — warmth costs at most one ladder, never a sticky
++       * dead session. The shutdown precedes the restart because
++       * goodix_tls_init asserts tls_hop == NULL. */
++      if (self->warm_attempted && !self->warm_retried)
++        {
++          self->warm_ok = FALSE;
++          self->warm_down_reason = "failed-last";
++          self->warm_attempted = FALSE;
++          self->warm_retried = TRUE;
++          g_message ("5e0a warm attempt failed (%s), retrying full ladder", error->message);
++          g_error_free (error);
++          goodix_shutdown_tls (dev, NULL);
++          goodix_reset_state (dev);
++          goodix5e0a_start_full_activation (dev);
++          return;
++        }
++      self->warm_ok = FALSE;
++      self->warm_down_reason = "failed-last";
++      self->warm_attempted = FALSE;
 +      fp_err ("failed during TLS activation: %s (code: %d)", error->message, error->code);
 +      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
 +      return;
@@ -1053,6 +1433,8 @@ index 0000000..4a55870
 +static void
 +activate_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
 +{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
 +  G_DEBUG_HERE ();
 +  if (!error)
 +    {
@@ -1062,6 +1444,25 @@ index 0000000..4a55870
 +    }
 +  else
 +    {
++      goodix_session_mark_dirty (dev);
++      /* Ticket 40 warm fallback: a failed WARM ladder (notably the kept FW
++       * check rejecting the device) retries the FULL ladder once, silently
++       * and loop-guarded — same shape as the TLS funnel above, minus the
++       * TLS teardown (no session exists yet on this path). */
++      if (self->warm_attempted && !self->warm_retried)
++        {
++          self->warm_ok = FALSE;
++          self->warm_down_reason = "failed-last";
++          self->warm_attempted = FALSE;
++          self->warm_retried = TRUE;
++          g_message ("5e0a warm attempt failed (%s), retrying full ladder", error->message);
++          g_error_free (error);
++          goodix5e0a_start_full_activation (dev);
++          return;
++        }
++      self->warm_ok = FALSE;
++      self->warm_down_reason = "failed-last";
++      self->warm_attempted = FALSE;
 +      fp_err ("failed during activation: %s (code: %d)", error->message, error->code);
 +      fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
 +    }
@@ -1073,15 +1474,103 @@ index 0000000..4a55870
 +  FpDevice *dev = FP_DEVICE (img_dev);
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 +
-+  /* Ticket 34: invalidate any in-flight activation from a previous session. */
-+  goodix_activation_gen_bump (dev);
++  /* Ticket 34: invalidate any in-flight activation from a previous session.
++   * Ticket 38: capture the pre-bump generation first — a parked session is
++   * pinned to exactly that generation at park time, so equality proves no
++   * deactivate/teardown raced between park and this claim. */
++  guint pre_gen = goodix_activation_gen_get (dev);
++  guint new_gen = goodix_activation_gen_bump (dev);
 +
-+  self->session_started = FALSE;
-+  self->scan_ssm = NULL;
-+  self->down_timeout = NULL;
++  /* Ticket 39: a stale burst winner must never survive across claims. */
++  goodix5e0a_reset_touch_frames (self);
 +
-+  fpi_ssm_start (fpi_ssm_new (dev, activate_run_state, ACTIVATE_NUM_STATES),
-+                 activate_complete);
++  /* Ticket 40: each claim gets exactly one silent warm-to-full retry. */
++  self->warm_retried = FALSE;
++
++  if (self->tls_parked && self->tls_parked_gen == pre_gen
++      && goodix_tls_is_alive (dev)
++      && (g_get_monotonic_time () - self->tls_parked_at) < GOODIX_5E0A_TLS_PARK_TTL_US)
++    {
++      GoodixCallbackInfo *cb_info;
++      GoodixQueryMcuState payload;
++
++      /* Ticket 38 reuse attempt: claim the park now so the probe's fallback
++       * below can never loop back into this branch. */
++      self->tls_parked = FALSE;
++      self->scan_ssm = NULL;
++      self->down_timeout = NULL;
++      fp_dbg ("5e0a parked TLS session candidate fresh, health-checking (gen=%u)", new_gen);
++      goodix_start_read_loop (dev);
++      /* ONE QUERY_MCU_STATE round-trip with a short timeout. NOTE: this
++       * deliberately bypasses goodix_send_query_mcu_state, whose timeout is
++       * hardcoded to GOODIX_TIMEOUT (1000ms); a dead parked session must
++       * fail fast into the full-ladder fallback. Payload matches
++       * goodix_send_query_mcu_state byte-for-byte. */
++      cb_info = malloc (sizeof (GoodixCallbackInfo));
++      cb_info->callback = G_CALLBACK (on_parked_health_reply);
++      cb_info->user_data = GUINT_TO_POINTER (new_gen);
++      payload.unused_flags = 0x55;
++      goodix_send_protocol (dev, GOODIX_CMD_QUERY_MCU_STATE,
++                            (guint8 *) &payload, sizeof (payload),
++                            NULL, TRUE,
++                            GOODIX_5E0A_TLS_PARK_HEALTH_TIMEOUT_MS,
++                            FALSE, goodix_receive_none, cb_info);
++      return;
++    }
++
++  if (self->tls_parked)
++    {
++      /* Ticket 38 fallback: the park is void — name the reason, shut the
++       * parked context down (goodix_tls_init asserts tls_hop == NULL), and
++       * run today's full ladder unchanged. */
++      const char *reason;
++      if (self->tls_parked_gen != pre_gen)
++        reason = "gen-mismatch";
++      else if (!goodix_tls_is_alive (dev))
++        reason = "tls-error";
++      else
++        reason = "expired";
++      self->tls_parked = FALSE;
++      g_message ("5e0a parked TLS session unhealthy (%s), full re-handshake", reason);
++      goodix_shutdown_tls (dev, NULL);
++    }
++
++  /* Ticket 40 warm fast path (branch 2 of 3 — the 38 parked-session check
++   * above dominates and runs first because its gate is cheaper; the full
++   * ladder below is the default). Cold session but warm device: READ_AND_NOP
++   * + FW check + TLS, via the shared SSM with warm_attempted set. */
++  if (goodix5e0a_warm_fresh (dev))
++    {
++      goodix5e0a_log_warm_taken (dev);
++      goodix5e0a_start_warm_activation (dev);
++      return;
++    }
++
++  /* Branch 3: today's full ladder unchanged. Name why warmth didn't apply
++   * (TTL expiry invalidates lazily here; a reopened device reads as a cold
++   * start — the pre-reopen recency is meaningless on the new boot). */
++  {
++    const char *reason;
++    if (self->warm_ok && self->warm_boot_seq == goodix_boot_seq_get (dev))
++      {
++        reason = "ttl-expired";
++        self->warm_ok = FALSE;
++        self->warm_down_reason = "ttl-expired";
++      }
++    else if (self->warm_ok)
++      {
++        reason = "cold-start";
++        self->warm_ok = FALSE;
++        self->warm_down_reason = "cold-start";
++      }
++    else
++      {
++        reason = self->warm_down_reason ? self->warm_down_reason : "cold-start";
++      }
++    self->warm_attempted = FALSE;
++    g_message ("5e0a warm expired: reason=%s", reason);
++    goodix5e0a_start_full_activation (dev);
++  }
 +}
 +
 +// ---- ACTIVATE SECTION END ----
@@ -1288,16 +1777,89 @@ index 0000000..4a55870
 +  return pixel_idx;
 +}
 +
++/* Ticket 39: drop any half-collected burst (unref the retained winner
++ * candidate) and zero the per-touch counters. Called at touch start, claim
++ * entry, and every teardown path so a stale winner never leaks. */
++static void
++goodix5e0a_reset_touch_frames (FpiDeviceGoodixTls5e0a *self)
++{
++  if (self->best_img != NULL)
++    {
++      g_object_unref (self->best_img);
++      self->best_img = NULL;
++    }
++  self->frame_count = 0;
++  self->best_minutiae = 0;
++  self->best_frame_no = 0;
++}
++
++/* Ticket 39: hand the burst winner to the deliver tail (logs the single
++ * best-frame journal line). Callers guarantee at least one banked frame. */
++static FpImage *
++goodix5e0a_claim_best_frame (FpiDeviceGoodixTls5e0a *self)
++{
++  FpImage *best;
++
++  g_return_val_if_fail (self->best_img != NULL, NULL);
++  best = self->best_img;
++  g_message ("5e0a best frame %u/%u: minutiae=%u score-proxy=%u (submitting)",
++             self->best_frame_no, (guint) GOODIX_5E0A_FRAMES_PER_TOUCH,
++             self->best_minutiae, self->best_minutiae);
++  self->best_img = NULL;
++  self->best_minutiae = 0;
++  self->best_frame_no = 0;
++  return best;
++}
++
++/* Ticket 39: minutiae-count proxy judging for one non-enroll frame. Takes
++ * ownership of img in every case: the winner is retained in best_img and
++ * losers are unrefed immediately. Re-issues GET_IMAGE on the same SSM while
++ * fewer than GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked (TRUE means
++ * another frame was already requested and the caller must return without
++ * touching the SSM; FALSE means the burst is complete and the caller claims
++ * the winner for the single deliver call). The proxy reuses
++ * goodix5e0a_count_minutiae, the same get_minutiae parameters core matching
++ * runs, because the driver never sees the core verdict. Prototyped here and
++ * defined after the read callback below, so no forward declaration shadows
++ * the callback definition for plain-text lookup. */
++static gboolean
++goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm, FpImage *img,
++                            guint16 declen, guint active, guint range);
++
 +static void
 +goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 +                        gpointer ssm, GError *err)
 +{
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++  FpiDeviceAction action = fpi_device_get_current_action (dev);
++  FpImage *img;
 +
++  /* Ticket 39: a mid-burst read error (finger lifted between frames) falls
++   * back to the best frame collected so far. With zero frames the failure
++   * is reported exactly as today. */
 +  if (err)
 +    {
++      if (action != FPI_DEVICE_ACTION_ENROLL && self->best_img != NULL)
++        {
++          g_error_free (err);
++          img = goodix5e0a_claim_best_frame (self);
++          goto deliver;
++        }
 +      fpi_ssm_mark_failed (ssm, err);
 +      return;
++    }
++
++  /* Ticket 39: a short mid-burst read (lift between frames) submits the
++   * best frame so far instead of decoding a runt. */
++  if (action != FPI_DEVICE_ACTION_ENROLL && self->best_img != NULL
++      && (data == NULL || len < GOODIX_5E0A_FRAME_WIRE_BYTES))
++    {
++      g_message ("5e0a frame %u/%u: short declen=%u, submitting best-so-far %u/%u",
++                 self->frame_count + 1, (guint) GOODIX_5E0A_FRAMES_PER_TOUCH,
++                 len, self->best_frame_no,
++                 (guint) GOODIX_5E0A_FRAMES_PER_TOUCH);
++      img = goodix5e0a_claim_best_frame (self);
++      goto deliver;
 +    }
 +
 +  goodix5e0a_last_declen = len;
@@ -1328,6 +1890,10 @@ index 0000000..4a55870
 +
 +  guint total_nonzero = 0;
 +  guint16 raw_min = 65535, raw_max = 0;
++  /* Ticket 39: contact-pixel (v > 30, the same definition process_raw_frame
++   * uses) active/range for the per-frame journal line. */
++  guint frame_active = 0;
++  guint16 frame_min = 65535, frame_max = 0;
 +  for (guint32 i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
 +    {
 +      if (raw_frame[i] > 0)
@@ -1338,7 +1904,17 @@ index 0000000..4a55870
 +          if (raw_frame[i] > raw_max)
 +            raw_max = raw_frame[i];
 +        }
++      if (raw_frame[i] > 30)
++        {
++          frame_active++;
++          if (raw_frame[i] < frame_min)
++            frame_min = raw_frame[i];
++          if (raw_frame[i] > frame_max)
++            frame_max = raw_frame[i];
++        }
 +    }
++  guint frame_range = (frame_min != 65535 && frame_max > frame_min)
++                      ? (guint) (frame_max - frame_min) : 0;
 +  g_message ("5e0a wire layout: decoded_px=%u blocks=%u active_bytes=%u padding_nonzero=%u footer_bytes=%u",
 +             decoded_pixels, MIN ((guint32) len / GOODIX_5E0A_BLOCK_BYTES,
 +                                  (guint32) GOODIX_5E0A_FRAME_BLOCKS),
@@ -1348,7 +1924,7 @@ index 0000000..4a55870
 +             decoded_pixels, total_nonzero, raw_min == 65535 ? 0 : raw_min, raw_max,
 +             GOODIX_5E0A_WIDTH, GOODIX_5E0A_HEIGHT);
 +
-+  FpImage *img = process_raw_frame (raw_frame);
++  img = process_raw_frame (raw_frame);
 +  free (raw_frame);
 +
 +  if (img == NULL)
@@ -1358,7 +1934,6 @@ index 0000000..4a55870
 +      img->ppmm = 500.0 / 25.4;
 +    }
 +
-+  FpiDeviceAction action = fpi_device_get_current_action (dev);
 +  if (action == FPI_DEVICE_ACTION_ENROLL)
 +    {
 +      guint minutiae_count = goodix5e0a_count_minutiae (img);
@@ -1375,10 +1950,22 @@ index 0000000..4a55870
 +        }
 +    }
 +
++  /* Ticket 39 best-of-N: non-enroll touches re-issue GET_IMAGE from the
++   * keep helper until GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked; the
++   * SSM does not advance between frames and only the winner reaches the
++   * deliver tail below. Enrollment never enters here. */
++  if (action != FPI_DEVICE_ACTION_ENROLL)
++    {
++      if (goodix5e0a_keep_best_frame (dev, ssm, img, len, frame_active, frame_range))
++        return;
++      img = goodix5e0a_claim_best_frame (self);
++    }
++
 +  /* In verify mode (and all non-enroll actions), unconditionally pass the captured image
 +   * to fpi_image_device_image_captured without calling retry_scan. Complete the scan SSM
 +   * and report finger release immediately so that libfprint can finish authentication and
 +   * deactivate without waiting 2-5 seconds for finger lift polls (Ticket 20 latency fix). */
++deliver:
 +  fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);
 +
 +  if (action != FPI_DEVICE_ACTION_ENROLL)
@@ -1391,6 +1978,48 @@ index 0000000..4a55870
 +    {
 +      fpi_ssm_next_state (ssm);
 +    }
++}
++
++/* Ticket 39: minutiae-count proxy judging for one non-enroll frame. Takes
++ * ownership of img in every case: the winner is retained in best_img and
++ * losers are unrefed immediately. Re-issues GET_IMAGE on the same SSM while
++ * fewer than GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked (TRUE means
++ * another frame was already requested and the caller must return without
++ * touching the SSM; FALSE means the burst is complete and the caller claims
++ * the winner for the single deliver call). The proxy reuses
++ * goodix5e0a_count_minutiae, the same get_minutiae parameters core matching
++ * runs, because the driver never sees the core verdict. */
++static gboolean
++goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm, FpImage *img,
++                            guint16 declen, guint active, guint range)
++{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++  guint minutiae = goodix5e0a_count_minutiae (img);
++
++  self->frame_count++;
++  g_message ("5e0a frame %u/%u: declen=%u active=%u range=%u minutiae=%u score-proxy=%u",
++             self->frame_count, (guint) GOODIX_5E0A_FRAMES_PER_TOUCH,
++             declen, active, range, minutiae, minutiae);
++
++  if (self->best_img == NULL || minutiae > self->best_minutiae)
++    {
++      if (self->best_img != NULL)
++        g_object_unref (self->best_img);
++      self->best_img = img;
++      self->best_minutiae = minutiae;
++      self->best_frame_no = self->frame_count;
++    }
++  else
++    {
++      g_object_unref (img);
++    }
++
++  if (self->frame_count < GOODIX_5E0A_FRAMES_PER_TOUCH)
++    {
++      goodix_tls_read_image (dev, goodix5e0a_on_read_img, ssm);
++      return TRUE;
++    }
++  return FALSE;
 +}
 +
 +static void
@@ -1477,6 +2106,8 @@ index 0000000..4a55870
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 +
 +  self->scan_ssm = NULL;
++  /* Ticket 39: never carry a burst winner past SSM completion. */
++  goodix5e0a_reset_touch_frames (self);
 +  if (self->down_timeout)
 +    {
 +      g_source_destroy (self->down_timeout);
@@ -1485,6 +2116,9 @@ index 0000000..4a55870
 +
 +  if (error)
 +    {
++      /* Ticket 42: scan error voids reset-skipping. */
++      goodix_session_mark_dirty (dev);
++      self->warm_ok = FALSE;
 +      fp_err ("5e0a failed to scan: %s (code: %d)", error->message, error->code);
 +      fpi_image_device_session_error (FP_IMAGE_DEVICE (dev), error);
 +      return;
@@ -1503,6 +2137,9 @@ index 0000000..4a55870
 +      return;
 +    }
 +
++  /* Ticket 39: each touch starts with an empty burst. */
++  goodix5e0a_reset_touch_frames (self);
++
 +  self->scan_ssm = fpi_ssm_new (dev, goodix5e0a_scan_run_state, SCAN_5E0A_NUM_STATES);
 +  fpi_ssm_start (self->scan_ssm, goodix5e0a_scan_complete);
 +}
@@ -1519,6 +2156,9 @@ index 0000000..4a55870
 +{
 +  FpDevice *dev = FP_DEVICE (img_dev);
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
++  /* Ticket 39: never carry a burst winner past deactivation. */
++  goodix5e0a_reset_touch_frames (self);
 +
 +  /* Ticket 34: orphan any in-flight TLS activation; its completion will drop. */
 +  goodix_activation_gen_bump (dev);
@@ -1537,6 +2177,25 @@ index 0000000..4a55870
 +      self->scan_ssm = NULL;
 +    }
 +
++  /* Ticket 38 park branch: the negotiated TLS session (and chip-enabled
++   * state) survives across claims while its context is alive — stop the
++   * read loop only, stamp the park, and let the next activate health-check
++   * it. Destroy branch is full shutdown; only a successful chip enable may
++   * park, because failure funnels can leave a host TLS context allocated. */
++  if (goodix_tls_is_alive (dev) && self->warm_ok)
++    {
++      goodix_stop_read_loop (dev);
++      self->tls_parked = TRUE;
++      self->tls_parked_at = g_get_monotonic_time ();
++      self->tls_parked_gen = goodix_activation_gen_get (dev);
++      goodix_session_mark_clean (dev);
++      fp_dbg ("5e0a parking live TLS session (gen=%u)", self->tls_parked_gen);
++      fpi_image_device_deactivate_complete (img_dev, NULL);
++      return;
++    }
++
++  self->tls_parked = FALSE;
++  goodix_session_mark_dirty (dev);
 +  GError *tls_err = NULL;
 +  goodix_shutdown_tls (dev, &tls_err);
 +  goodix_stop_read_loop (dev);
@@ -1551,6 +2210,19 @@ index 0000000..4a55870
 +  self->session_started = FALSE;
 +  self->scan_ssm = NULL;
 +  self->down_timeout = NULL;
++  self->tls_parked = FALSE;
++  self->tls_parked_at = 0;
++  self->tls_parked_gen = 0;
++  self->warm_ok = FALSE;
++  self->last_clean_mono = 0;
++  self->warm_boot_seq = 0;
++  self->warm_down_reason = "cold-start";
++  self->warm_attempted = FALSE;
++  self->warm_retried = FALSE;
++  self->frame_count = 0;
++  self->best_img = NULL;
++  self->best_minutiae = 0;
++  self->best_frame_no = 0;
 +}
 +
 +static double
@@ -1785,6 +2457,17 @@ index 0000000..4a55870
 +  /* Ticket 34 staleness guard: orphan any in-flight TLS handshake/activation */
 +  goodix_activation_gen_bump (dev);
 +
++  /* Ticket 38: sleep safety is non-negotiable — never carry a parked
++   * session across suspend; the unconditional shutdown below stands. */
++  self->tls_parked = FALSE;
++  goodix_session_mark_dirty (dev);
++  /* Ticket 40: sleep safety extends to warmth — suspend always resets warm
++   * state, unconditionally and non-negotiably. */
++  self->warm_ok = FALSE;
++  self->warm_down_reason = "suspended";
++  self->warm_attempted = FALSE;
++  /* Ticket 39: never carry a burst winner across suspend. */
++  goodix5e0a_reset_touch_frames (self);
 +  self->session_started = FALSE;
 +  if (self->down_timeout)
 +    {
@@ -1866,10 +2549,10 @@ index 0000000..4a55870
 +}
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.h b/libfprint/drivers/goodixtls/goodix5e0a.h
 new file mode 100644
-index 0000000..3a93816
+index 0000000..9d287a1
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.h
-@@ -0,0 +1,135 @@
+@@ -0,0 +1,139 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS
 +
@@ -1915,6 +2598,12 @@ index 0000000..3a93816
 +#define GOODIX_5E0A_CONTRAST_GAIN (1.0f)
 +#define GOODIX_5E0A_ENROLL_MIN_MINUTIAE (12)
 +
++/* Ticket 39 best-of-N per-touch capture: non-enroll touches bank this many
++ * back-to-back GET_IMAGE frames inside SCAN_5E0A_GET_IMAGE and submit only
++ * the highest-minutiae one (minutiae-count proxy; the driver never sees the
++ * core verdict). Enrollment stays single-frame-per-stage. */
++#define GOODIX_5E0A_FRAMES_PER_TOUCH 3
++
 +
 +// Sensor Analog Front-End (AFE) Gain/Exposure Register Configuration
 +#define GOODIX_5E0A_REG_GAIN_EXPOSURE (0x022c)
@@ -1923,21 +2612,19 @@ index 0000000..3a93816
 +#define GOODIX_5E0A_REG_GAIN_EXPOSURE_RESET_VAL (0x020a)   /* Little-endian 16-bit: \x0a\x02 */
 +
 +
-+// Active TLS Pre-Shared Key extracted from DPAPI
++/* Host TLS PSK for TLS_PSK_WITH_AES_128_CBC_SHA256 (flags 0xbb020001).
++ * Captured once from the Windows driver stack (DPAPI-decrypted material);
++ * no runtime derivation is known. Per-unit vs per-model scope is unconfirmed
++ * (see docs/UPSTREAM.md section 6 for the upstream disclosure). Required for
++ * the TLS handshake; the driver performs no on-device key provisioning.
++ * Ticket 26 closure: the 0xe4-readable bb020001 slot always reports factory
++ * bytes even while TLS with this key succeeds, and 0xe0 writes are rejected
++ * by the MCU, so activation talks TLS directly with this key. */
 +static const guint8 goodix_5e0a_psk[] = {
 +  0xd8, 0x53, 0xad, 0x19, 0x41, 0xb2, 0xdc, 0x53,
 +  0x50, 0xc7, 0x66, 0xcd, 0x72, 0x6e, 0xf7, 0xa5,
 +  0xdf, 0x7d, 0x5f, 0xa3, 0x90, 0x53, 0xbf, 0xac,
 +  0x26, 0x9c, 0xe7, 0x52, 0xd7, 0xa8, 0xb2, 0xab
-+};
-+
-+// Factory default observed on cold boot via 0xe4 (ticket 26 experiment 26.1),
-+// used only for diagnostic logging, never for TLS.
-+static const guint8 goodix_5e0a_psk_default[] = {
-+  0x68, 0x77, 0x6f, 0xdc, 0xf6, 0x35, 0x2a, 0x21,
-+  0x5c, 0xc1, 0x1c, 0xd5, 0x8d, 0xb2, 0xb3, 0x61,
-+  0xeb, 0x95, 0xa5, 0x06, 0xcb, 0x50, 0x3d, 0xa6,
-+  0x8f, 0xb0, 0x1a, 0xc1, 0x50, 0x6f, 0xf1, 0xc9
 +};
 +
 +// ChicagoH GF3658 DN3 Configuration (256 bytes, wbdi.dll offset 0x197c50, checksum 0x0e53)
@@ -2550,7 +3237,7 @@ index 3b7316f..8f55c8e 100644
  #define GOODIX_CMD_PRESET_PSK_WRITE (0xe0)
  #define GOODIX_CMD_PRESET_PSK_READ (0xe4)
 diff --git a/libfprint/drivers/goodixtls/goodixtls.c b/libfprint/drivers/goodixtls/goodixtls.c
-index 215ef53..4088629 100644
+index 215ef53..4294443 100644
 --- a/libfprint/drivers/goodixtls/goodixtls.c
 +++ b/libfprint/drivers/goodixtls/goodixtls.c
 @@ -24,6 +24,7 @@
@@ -2611,8 +3298,8 @@ index 215ef53..4088629 100644
 +                  return 0;
 +                }
 +              memcpy (psk, cls->psk, cls->psk_len);
-+              g_message ("5e0a PSK callback: using device-specific PSK (%d bytes, identity='%s')",
-+                         cls->psk_len, identity ? identity : "");
++              fp_dbg ("5e0a PSK callback: using device-specific PSK (%d bytes, identity='%s')",
++                      cls->psk_len, identity ? identity : "");
 +              return cls->psk_len;
 +            }
 +        }

@@ -60,6 +60,39 @@ typedef struct
    * it at TLS-init time and drop on mismatch. Zero-initialized. */
   guint         activation_gen;
 
+  /* Ticket 40 warm-activation key: bumped in goodix_dev_init (once per
+   * device open, not per claim). Zero-initialized; first open reads 1.
+   * Ticket 42 couples it to the USB reset actually taken (not the open):
+   * a clean reopen is the same device boot, a real reset is a new boot. */
+  guint         boot_seq;
+
+  /* Ticket 42 conditional USB reset: TRUE only when the previous session
+   * on this USB device closed cleanly (set ONLY in the
+   * goodix5e0a_deactivate park branch — the single point a session proves
+   * clean with a live TLS context + completed deactivate). FALSE is the
+   * safe direction (reset taken). Zero-initialized, so the first open
+   * after a daemon restart always resets. Cleared on every failure funnel
+   * (activate/TLS/chip/scan errors), on suspend entry, and on USB
+   * re-enumeration; destroy-path deactivate also clears (no live context
+   * to prove device health — when in doubt, reset). */
+  gboolean      clean_close;
+
+  /* Ticket 42 re-enumeration key: bus+address+port+vid+pid snapshot from
+   * the last open, via fpi_device_get_usb_device. A mismatch means the
+   * kernel re-enumerated the device (replug / vanish+reappear) so the
+   * flag is forced dirty regardless of clean_close. Choice: bus+address
+   * detects a new kernel address on the same port; port+vid+pid disam-
+   * biguates port moves and foreign devices. If no USB identity can be
+   * read (NULL device — never expected for our USB type), the open is
+   * treated as dirty. usb_identity_valid is FALSE until the first open
+   * snapshots, so daemon restarts stay dirty by construction. */
+  guint8        last_usb_bus;
+  guint8        last_usb_addr;
+  guint8        last_usb_port;
+  guint16       last_usb_vid;
+  guint16       last_usb_pid;
+  gboolean      usb_identity_valid;
+
   GCancellable *transfer_cancel_tkn;
   gboolean      inited;
 } FpiDeviceGoodixTlsPrivate;
@@ -1284,42 +1317,6 @@ goodix_send_preset_psk_read (FpDevice *dev, guint32 flags, guint16 length,
                         NULL);
 }
 
-void
-goodix_send_preset_psk_read_slice (FpDevice *dev, guint32 flags, guint32 length,
-                                   guint32 offset,
-                                   GoodixPresetPskReadCallback callback,
-                                   gpointer user_data)
-{
-  /* 5e0a-only sliced form, byte-identical to vendor goodix.py:
-   * 16-byte LE payload [length, offset, flags, 0]. */
-  guint32 payload[4];
-  GoodixCallbackInfo *cb_info;
-
-  _Static_assert (sizeof (payload) == 16, "sliced PSK read payload must be 16 bytes");
-
-  payload[0] = GUINT32_TO_LE (length);
-  payload[1] = GUINT32_TO_LE (offset);
-  payload[2] = GUINT32_TO_LE (flags);
-  payload[3] = GUINT32_TO_LE (0);
-
-  if (callback)
-    {
-      cb_info = malloc (sizeof (GoodixCallbackInfo));
-
-      cb_info->callback = G_CALLBACK (callback);
-      cb_info->user_data = user_data;
-
-      goodix_send_protocol (dev, GOODIX_CMD_PRESET_PSK_READ, (guint8 *) payload,
-                            sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
-                            goodix_receive_preset_psk_read, cb_info);
-      return;
-    }
-
-  goodix_send_protocol (dev, GOODIX_CMD_PRESET_PSK_READ, (guint8 *) payload,
-                        sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE, NULL,
-                        NULL);
-}
-
 // ---- GOODIX SEND SECTION END ----
 
 // -----------------------------------------------------------------------------
@@ -1343,10 +1340,73 @@ goodix_dev_init (FpDevice *dev, GError **error)
   priv->length = 0;
   priv->transfer_cancel_tkn = g_cancellable_new ();
 
-  g_usb_device_reset (fpi_device_get_usb_device (dev), NULL);
+  /* Ticket 42 conditional USB reset: skip the cold-state repair only when
+   * the previous session on THIS USB device closed cleanly. The reset
+   * wipes the device-side TLS key/config before activate runs, and
+   * boot_seq follows the reset (not the open): a clean reopen is the same
+   * device boot by construction (freezing the counter across a real reset
+   * would fake warmth; bumping it across a skipped reset would fake
+   * coldness and kill tickets 38/40 exactly as observed). Re-enumeration
+   * (bus/address/port/vid/pid mismatch) forces dirty+reset regardless of
+   * the flag; a NULL USB handle (never expected) is also dirty. */
+  {
+    GUsbDevice *usb = fpi_device_get_usb_device (dev);
+    gboolean reenumerated = FALSE;
+    gboolean take_reset;
+    if (usb != NULL)
+      {
+        guint8 bus = g_usb_device_get_bus (usb);
+        guint8 addr = g_usb_device_get_address (usb);
+        guint8 port = g_usb_device_get_port_number (usb);
+        guint16 vid = g_usb_device_get_vid (usb);
+        guint16 pid = g_usb_device_get_pid (usb);
+        if (priv->usb_identity_valid
+            && (bus != priv->last_usb_bus || addr != priv->last_usb_addr
+                || port != priv->last_usb_port || vid != priv->last_usb_vid
+                || pid != priv->last_usb_pid))
+          {
+            reenumerated = TRUE;
+            priv->clean_close = FALSE;
+          }
+        priv->last_usb_bus = bus;
+        priv->last_usb_addr = addr;
+        priv->last_usb_port = port;
+        priv->last_usb_vid = vid;
+        priv->last_usb_pid = pid;
+        priv->usb_identity_valid = TRUE;
+      }
+    else
+      {
+        reenumerated = TRUE;
+        priv->clean_close = FALSE;
+      }
+    take_reset = !priv->clean_close;
+    if (take_reset)
+      {
+        /* Ticket 40 (as amended by 42): counter follows the reset. */
+        priv->boot_seq++;
+        if (reenumerated)
+          g_message ("5e0a USB reset taken (re-enumerated device, boot_seq=%u)",
+                     priv->boot_seq);
+        else
+          g_message ("5e0a USB reset taken (dirty close, boot_seq=%u)",
+                     priv->boot_seq);
+        g_usb_device_reset (fpi_device_get_usb_device (dev), NULL);
+      }
+    else
+      {
+        g_message ("5e0a USB reset skipped (clean close, boot_seq=%u)",
+                   priv->boot_seq);
+      }
+  }
 
-  return g_usb_device_claim_interface (fpi_device_get_usb_device (dev),
-                                       class->interface, 0, error);
+  {
+    gboolean ok = g_usb_device_claim_interface (fpi_device_get_usb_device (dev),
+                                                class->interface, 0, error);
+    if (!ok)
+      priv->clean_close = FALSE;
+    return ok;
+  }
 }
 void
 goodix_reset_state (FpDevice *dev)
@@ -1387,6 +1447,53 @@ goodix_activation_gen_bump (FpDevice *dev)
   return ++priv->activation_gen;
 }
 
+/* Ticket 40 warm-activation key (single shared counter; live paths untouched).
+ * Ticket 42 amends the bump site: goodix_dev_init bumps ONLY when the USB
+ * reset is actually taken (see above). */
+guint
+goodix_boot_seq_get (FpDevice *dev)
+{
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
+  FpiDeviceGoodixTlsPrivate *priv =
+    fpi_device_goodixtls_get_instance_private (self);
+
+  return priv->boot_seq;
+}
+
+/* Ticket 42 clean-vs-dirty session lifetime (single shared flag; live
+ * paths untouched). Set ONLY in the goodix5e0a_deactivate park branch;
+ * cleared on every failure funnel, on suspend entry, on destroy-path
+ * deactivate, and on re-enumeration/claim failure in goodix_dev_init. */
+void
+goodix_session_mark_clean (FpDevice *dev)
+{
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
+  FpiDeviceGoodixTlsPrivate *priv =
+    fpi_device_goodixtls_get_instance_private (self);
+
+  priv->clean_close = TRUE;
+}
+
+void
+goodix_session_mark_dirty (FpDevice *dev)
+{
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
+  FpiDeviceGoodixTlsPrivate *priv =
+    fpi_device_goodixtls_get_instance_private (self);
+
+  priv->clean_close = FALSE;
+}
+
+gboolean
+goodix_session_is_clean (FpDevice *dev)
+{
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
+  FpiDeviceGoodixTlsPrivate *priv =
+    fpi_device_goodixtls_get_instance_private (self);
+
+  return priv->clean_close;
+}
+
 gboolean
 goodix_dev_deinit (FpDevice *dev, GError **error)
 {
@@ -1394,21 +1501,37 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
   FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS (self);
   FpiDeviceGoodixTlsPrivate *priv =
     fpi_device_goodixtls_get_instance_private (self);
+  gboolean clean_close = priv->clean_close;
+  gboolean released;
 
-  /* Ticket 34 teardown entry: orphan any in-flight TLS activation. */
-  goodix_activation_gen_bump (dev);
+  /* Ticket 42: clean close skips bump+shutdown (deactivate done). */
+  if (!clean_close)
+    goodix_activation_gen_bump (dev);
 
   if (priv->timeout)
     g_source_destroy (priv->timeout);
   g_free (priv->data);
   g_cancellable_cancel (priv->transfer_cancel_tkn);
-  goodix_shutdown_tls (dev, error);
+  if (!clean_close)
+    goodix_shutdown_tls (dev, error);
 
   goodix_reset_state (dev);
   priv->inited = FALSE;
 
-  return g_usb_device_release_interface (fpi_device_get_usb_device (dev),
-                                         class->interface, 0, error);
+  released = g_usb_device_release_interface (fpi_device_get_usb_device (dev),
+                                              class->interface, 0, error);
+  if (!released)
+    {
+      /* A failed release is a dirty close even if deactivate parked TLS.
+       * Do not carry that context or its generation into the next open. */
+      priv->clean_close = FALSE;
+      if (clean_close)
+        {
+          goodix_activation_gen_bump (dev);
+          goodix_shutdown_tls (dev, NULL);
+        }
+    }
+  return released;
 }
 
 // ---- DEV SECTION END ----
@@ -1653,6 +1776,16 @@ goodix_shutdown_tls (FpDevice *dev, GError **error)
       return rs;
     }
   return TRUE;
+}
+
+gboolean
+goodix_tls_is_alive (FpDevice *dev)
+{
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
+  FpiDeviceGoodixTlsPrivate *priv =
+    fpi_device_goodixtls_get_instance_private (self);
+
+  return priv->tls_hop != NULL;
 }
 static void
 goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,

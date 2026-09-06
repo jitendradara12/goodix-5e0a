@@ -43,6 +43,12 @@
 #define GOODIX_5E0A_CONTRAST_GAIN (1.0f)
 #define GOODIX_5E0A_ENROLL_MIN_MINUTIAE (12)
 
+/* Ticket 39 best-of-N per-touch capture: non-enroll touches bank this many
+ * back-to-back GET_IMAGE frames inside SCAN_5E0A_GET_IMAGE and submit only
+ * the highest-minutiae one (minutiae-count proxy; the driver never sees the
+ * core verdict). Enrollment stays single-frame-per-stage. */
+#define GOODIX_5E0A_FRAMES_PER_TOUCH 3
+
 
 // Sensor Analog Front-End (AFE) Gain/Exposure Register Configuration
 #define GOODIX_5E0A_REG_GAIN_EXPOSURE (0x022c)
@@ -51,21 +57,19 @@
 #define GOODIX_5E0A_REG_GAIN_EXPOSURE_RESET_VAL (0x020a)   /* Little-endian 16-bit: \x0a\x02 */
 
 
-// Active TLS Pre-Shared Key extracted from DPAPI
+/* Host TLS PSK for TLS_PSK_WITH_AES_128_CBC_SHA256 (flags 0xbb020001).
+ * Captured once from the Windows driver stack (DPAPI-decrypted material);
+ * no runtime derivation is known. Per-unit vs per-model scope is unconfirmed
+ * (see docs/UPSTREAM.md section 6 for the upstream disclosure). Required for
+ * the TLS handshake; the driver performs no on-device key provisioning.
+ * Ticket 26 closure: the 0xe4-readable bb020001 slot always reports factory
+ * bytes even while TLS with this key succeeds, and 0xe0 writes are rejected
+ * by the MCU, so activation talks TLS directly with this key. */
 static const guint8 goodix_5e0a_psk[] = {
   0xd8, 0x53, 0xad, 0x19, 0x41, 0xb2, 0xdc, 0x53,
   0x50, 0xc7, 0x66, 0xcd, 0x72, 0x6e, 0xf7, 0xa5,
   0xdf, 0x7d, 0x5f, 0xa3, 0x90, 0x53, 0xbf, 0xac,
   0x26, 0x9c, 0xe7, 0x52, 0xd7, 0xa8, 0xb2, 0xab
-};
-
-// Factory default observed on cold boot via 0xe4 (ticket 26 experiment 26.1),
-// used only for diagnostic logging, never for TLS.
-static const guint8 goodix_5e0a_psk_default[] = {
-  0x68, 0x77, 0x6f, 0xdc, 0xf6, 0x35, 0x2a, 0x21,
-  0x5c, 0xc1, 0x1c, 0xd5, 0x8d, 0xb2, 0xb3, 0x61,
-  0xeb, 0x95, 0xa5, 0x06, 0xcb, 0x50, 0x3d, 0xa6,
-  0x8f, 0xb0, 0x1a, 0xc1, 0x50, 0x6f, 0xf1, 0xc9
 };
 
 // ChicagoH GF3658 DN3 Configuration (256 bytes, wbdi.dll offset 0x197c50, checksum 0x0e53)

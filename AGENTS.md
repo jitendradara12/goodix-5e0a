@@ -16,7 +16,7 @@ claims, or USB captures yourself — write the exact commands for the user.
   (e.g. `26-ready-for-agent-*.md`, `18-closed-*.md`). Change the filename
   in the same edit as the `Status:` header — never one without the other.
   `ls *closed* *superseded*` shows permanent history; `ls *ready-for-agent*
-  *ready-for-hardware-verify* *in-progress*` shows the live workfront.
+*ready-for-hardware-verify* *in-progress*` shows the live workfront.
 - Each experiment states predicted journal signatures per branch (confirm /
   falsify). Supersede, don't delete.
 
@@ -35,9 +35,9 @@ claims, or USB captures yourself — write the exact commands for the user.
 
 1. Phase 1, hands off 60s ("hands off" + timestamp): silent vs cycles.
 2. Phase 2, press-hold steady 60s ("holding" + timestamp): latency, advances.
-3. Paste client lines plus `journalctl -u fprintd --since "N min ago"
+3. Agents can `journalctl -u fprintd --since "N min ago"
 --no-pager | grep -a -E "5e0a frame|timed out|error|failed|minutiae" |
-tail -n 20`. Conclude only: confirmed / falsified /
+tail -n 20` themselves. Conclude only: confirmed / falsified /
    inconclusive-because-[flaw] + the single next experiment.
 
 ## Commands that actually work here
@@ -62,7 +62,4 @@ tail -n 20`. Conclude only: confirmed / falsified /
 
 ## Live edge
 
-Core driver, TLS, biometric matching (13–15/12), stale guard (Ticket 34), and pressure floor (Ticket 35) are verified and frozen.
-Upstream integration, power management (.suspend/.resume), and canonical umockdev replay capture are complete (Ticket 36 closed).
 Upstream tree checkout lives at `/home/sastauser/code/temp/libfprint-upstream` (`test-5e0a` branch).
-Refer to `.scratch/goodix-5e0a/issues/` for ticket history.

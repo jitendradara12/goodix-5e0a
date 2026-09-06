@@ -499,12 +499,6 @@ void goodix_send_preset_psk_read (FpDevice                   *dev,
                                   guint16                     length,
                                   GoodixPresetPskReadCallback callback,
                                   gpointer                    user_data);
-void goodix_send_preset_psk_read_slice (FpDevice                   *dev,
-                                        guint32                     flags,
-                                        guint32                     length,
-                                        guint32                     offset,
-                                        GoodixPresetPskReadCallback callback,
-                                        gpointer                    user_data);
 /**
  * @brief Request the OTP (One Time Password) from the device
  *
@@ -565,6 +559,46 @@ void goodix_reset_state (FpDevice *dev);
 guint goodix_activation_gen_get (FpDevice *dev);
 guint goodix_activation_gen_bump (FpDevice *dev);
 
+/**
+ * @brief Device-boot sequence number (ticket 40 warm-activation key).
+ *
+ * Bumped in goodix_dev_init, i.e. once per device open — img_open brackets
+ * the whole open session, NOT each verify (activate/deactivate cycle per
+ * claim while the device stays open), so this survives back-to-back claims
+ * and only turns on reopen/re-enumeration. The 5e0a warm predicate pairs it
+ * with a monotonic timestamp: warmth is host-observed recency, never a
+ * device-key claim.
+ *
+ * @param dev
+ * @return current boot sequence number
+ */
+guint goodix_boot_seq_get (FpDevice *dev);
+
+/**
+ * @brief Clean-vs-dirty session lifetime for the ticket-42 conditional
+ * USB reset (shared priv flag `clean_close`).
+ *
+ * Mark clean ONLY at the single point a session proves clean (the
+ * goodix5e0a_deactivate park branch); mark dirty on every failure funnel
+ * (activate/TLS/chip/scan errors), on suspend entry, on destroy-path
+ * deactivate, and on re-enumeration. The flag is zero-initialized
+ * (FALSE = reset, safe direction) so daemon restarts always reset.
+ */
+void goodix_session_mark_clean (FpDevice *dev);
+
+/**
+ * @brief Mark the current session dirty so the next open resets USB state.
+ * @param dev
+ */
+void goodix_session_mark_dirty (FpDevice *dev);
+
+/**
+ * @brief Return whether the current session completed a clean close.
+ * @param dev
+ * @return TRUE when the next open may consider skipping reset
+ */
+gboolean goodix_session_is_clean (FpDevice *dev);
+
 // ---- DEV SECTION END ----
 
 // -----------------------------------------------------------------------------
@@ -602,7 +636,21 @@ void goodix_tls_init (FpDevice          *dev,
  * @return gboolean TRUE if ok, FALSE otherwise
  */
 gboolean goodix_shutdown_tls (FpDevice *dev,
-                              GError  **error);
+                               GError  **error);
+
+/**
+ * @brief Check whether a negotiated TLS session context is currently alive.
+ *
+ * Ticket 38 park gate: deactivate parks the session only when the context
+ * exists, and activate attempts reuse only when it still exists. This is a
+ * pointer test only — liveness of the reply path is proven by the
+ * QUERY_MCU_STATE health check, not here (the device-side key can die
+ * while the host context looks alive).
+ *
+ * @param dev
+ * @return gboolean TRUE when priv->tls_hop != NULL, FALSE otherwise
+ */
+gboolean goodix_tls_is_alive (FpDevice *dev);
 
 /**
  * @brief Read a TLS encrypted image from the device and decrypt it

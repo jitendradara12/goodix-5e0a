@@ -80,8 +80,8 @@ tls_server_psk_server_callback (SSL           *ssl,
                   return 0;
                 }
               memcpy (psk, cls->psk, cls->psk_len);
-              g_message ("5e0a PSK callback: using device-specific PSK (%d bytes, identity='%s')",
-                         cls->psk_len, identity ? identity : "");
+              fp_dbg ("5e0a PSK callback: using device-specific PSK (%d bytes, identity='%s')",
+                      cls->psk_len, identity ? identity : "");
               return cls->psk_len;
             }
         }

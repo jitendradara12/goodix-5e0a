@@ -155,7 +155,9 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
 
         img_cb_idx = content.find("goodix5e0a_on_read_img")
         self.assertNotEqual(img_cb_idx, -1)
-        img_cb_body = content[img_cb_idx:img_cb_idx + 4500]
+        # Ticket 39: best-of-N burst logic lengthened this callback; the
+        # window covers the whole body through the shared deliver tail.
+        img_cb_body = content[img_cb_idx:img_cb_idx + 8000]
 
         # retry_scan must be guarded by ACTION_ENROLL only
         self.assertIn("if (action == FPI_DEVICE_ACTION_ENROLL)", img_cb_body)
@@ -182,7 +184,7 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
         with open(self.repo_patch, "rb") as f:
             repo_hash = hashlib.sha256(f.read()).hexdigest()
 
-        expected_hash = "94f5186850f4f0d879ce5af6c20bf54d0b32fe3f97e0913bf886af4c54c9be5a"
+        expected_hash = "1f4de3f7bb680ed4bebb5cfe5edf59b0f7ad004989eaf1cd772fe0eeb2d4205e"
         self.assertEqual(repo_hash, expected_hash, "Patch checksum must match known hardened hash")
 
         if not os.path.exists(self.nixos_patch):

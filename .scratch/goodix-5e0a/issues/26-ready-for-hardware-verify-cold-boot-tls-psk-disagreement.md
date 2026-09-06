@@ -5,7 +5,7 @@ Resolve the post-reboot / cold-boot TLS 1.2 PSK handshake failure. On machine co
 
 **Blocked by:** None. Supersedes the cold-boot OTP hypothesis from Ticket 20.
 
-**Status:** closed
+**Status:** ready-for-hardware-verify
 
 **Verdict (2026-09-05): could-not-reproduce + mechanism dismantled.**
 The systematic-cold-failure premise (one post-reboot event) never reproduced
@@ -319,3 +319,56 @@ were the brick, not hardware.)
 Remaining optional gates: (a) one `fprintd-verify` with the RIGHT finger
 post-reboot to close the warm loop with a match; (b) a true poweroff+wait
 cold boot if the single-event theory is ever to be fully buried.
+
+## Recurrence 2026-09-06 (reopened — 37's reopen rule triggered)
+
+Pasted `bad record mac` recurrence, no PSK states involved (37's strip is
+deployed: zero `5e0a PSK` lines anywhere). Fresh boot (~22:25, uptime 17m
+at 22:42), deployed build `3c4ed07e`. EVERY handshake since boot fails:
+
+```
+Sep 06 22:29:00 fprintd[1675]: 5e0a TLS accept failed: error:1C800066:Provider routines::cipher operation failed
+Sep 06 22:29:00 fprintd[1675]: 5e0a TLS accept failed: error:0A000119:SSL routines::decryption failed or bad record mac
+Sep 06 22:29:00 fprintd[1675]: 5e0a TLS accept failed: error:0A000139:SSL routines::record layer failure
+```
+
+Repeated identically 22:28→22:40 across pids 1675/3727/6465 (hyprlock +
+4× `fprintd-verify`, all `verify-unknown-error`; cascade `failed to scan:
+Command timed out: 0x20` = MCU_GET_IMAGE with no session, not a separate
+signal). NOT a single transient: failing for 12+ minutes, never one
+`TLS connection ready`. This breaks the "single post-reboot event"
+theory — second event, and this one is persistent, not self-clearing
+within the boot.
+Strip-independence: the original event ran PRE-strip code (with 0xe4/0xe0
+reconciliation), this one runs POST-strip code (37) — identical signature
+both ways. The strip neither causes nor prevents it; 37's code stands,
+37's cold-close verdict is what's falsified.
+Open questions for the reboot test: (a) was this boot a reboot or a cold
+poweron (user to confirm — second post-reboot event vs first post-poweroff
+failure); (b) does a warm reboot clear it (26 pattern) or does it persist
+(new territory → poweroff-drain test); (c) 0xe4 slot bytes in the failing
+state (`experiments/test_register.py` before rebooting — banks the
+failing-state evidence even if the reboot clears it).
+
+## Banked failing-state data + reboot verdict 2026-09-06
+
+- Slot read in failing state (fprintd stopped, pre-reboot):
+  `bb020001: success=True, flags=0xbb020001,
+  data=68776fdcf6352a215cc11cd58db2b361eb95a506cb503da68fb01ac1506ff1c9`
+  — factory bytes (`68 77 6f` = "hwo" prefix, matches the deleted factory
+  table). 26.4 showed factory-bytes-while-TLS-succeeds; this shows
+  factory-bytes-while-TLS-fails. Decoupled in BOTH directions: the
+  0xe4-visible slot is definitively not the operational TLS key slot.
+  `bb020003`/`bb020007` reads crashed in script parsing (`NoneType` reply)
+  — harness limitation, void as device signal.
+- Reboot CLEARED it: post-reboot `fprintd-verify` → no-match then
+  `verify-match` on left-middle-finger (TLS healthy again). Third
+  reboot-linked event, same shape as the original: failure stuck for the
+  whole boot (here 12+ min), gone after reboot.
+- PENDING: boot type of the failing boot (reboot vs cold poweron) — user
+  to confirm in one word.
+- Banked hypothesis (NOT tested, needs a live failure): on some reboots
+  the device fails to load its real key and falls back to the factory-slot
+  key → host static-key handshake MAC-fails. Probe if it recurs: one
+  verify with the factory key swapped in as host PSK. Do NOT pre-build —
+  one build under test at a time.

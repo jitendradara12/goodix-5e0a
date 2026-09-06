@@ -97,7 +97,10 @@ class TestF28ActivationGeneration(unittest.TestCase):
 
         # 5e0a check
         cb_start = src_5e0a.index("on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)")
-        cb_body = src_5e0a[cb_start:cb_start + 1200]
+        # Ticket 40: the warm-fallback funnel lengthened this function, so the
+        # window grows 1200 -> 2200. The asserted property is unchanged: the
+        # stale-generation drop returns before any hardware touch.
+        cb_body = src_5e0a[cb_start:cb_start + 2200]
         self.assertIn("GPOINTER_TO_UINT (user_data) != goodix_activation_gen_get (dev)", cb_body)
         self.assertIn("dropping stale TLS activation completion", cb_body)
         self.assertIn("g_error_free (error);", cb_body)

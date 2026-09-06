@@ -1,32 +1,37 @@
 """
-Tier 1 - Feature 27: activation-time PSK reconciliation wire/header/source-presence (ticket 26).
+Tier 1 - Feature 27: upstream-clean activation without PSK reconciliation (ticket 26 follow-up).
 
-Verifies WITHOUT hardware (hermetic: no USB, no openssl):
-(a) header goodix_5e0a_psk bytes equal the mock CANONICAL_PSK fixture;
-(b) goodix_send_preset_psk_write sizes the 0xe0 send with sizeof(GoodixPresetPsk);
-(c) activation orders READ_PSK -> PROVISION_PSK -> UPLOAD_CONFIG and the
-    key-match branch jumps to ACTIVATE_UPLOAD_CONFIG;
-(d) mock 0xe4 reply shape carries flags 0xBB020001 plus a 32-byte key.
-(e) ticket 26.3: ACTIVATE_READ_PSK dispatches the sliced 16-byte 0xe4 read
-    (GOODIX_5E0A_PSK_FLAGS, 32, 0), the slice helper builds [len,off,flags,0],
-    provision-reject is soft-fail, and the old 511 helper still exists.
+Verifies WITHOUT hardware (hermetic: no USB, no openssl) that the ticket-26
+READ_PSK / PROVISION_PSK instrumentation is gone and activation talks TLS
+directly with the static host key:
+
+(a) header goodix_5e0a_psk bytes equal the mock CANONICAL_PSK fixture
+    (TLS still needs the host key);
+(b) activation orders CHECK_FW_VER -> UPLOAD_CONFIG with no PSK states,
+    callbacks, or slice dispatch in between;
+(c) no factory-default key table ships in the tree;
+(d) the 5e0a-only sliced 0xe4 helper is gone while the shared 511
+    read/write transport helpers remain.
+
+Context: ticket 26 closed as could-not-reproduce (single cold-boot
+bad-record-MAC event, true-poweroff boot clean); Exp 26.4 falsified the
+bb020001 slot as the TLS slot and Exp 26.5 proved 0xe0 rejected in both
+encodings. The strip removes two per-activation USB round-trips plus
+journal noise and the factory secret (docs/UPSTREAM.md section 6).
 
 Not covered here: live activation sequencing (needs hardware/fprintd).
 """
 
 import os
 import re
-import struct
 import unittest
 
-from tests.test_utils import (
-    MockGoodixMCU, encode_pack, encode_protocol, decode_pack, decode_protocol,
-    FLAGS_MSG_PROTOCOL, CMD_PRESET_PSK_READ, CANONICAL_PSK,
-)
+from tests.test_utils import CANONICAL_PSK
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HEADER_PATH = os.path.join(REPO_ROOT, "libfprint-driver", "goodix5e0a.h")
 GOODIX_C_PATH = os.path.join(REPO_ROOT, "libfprint-driver", "goodix.c")
+GOODIX_H_PATH = os.path.join(REPO_ROOT, "libfprint-driver", "goodix.h")
 GOODIX_5E0A_C_PATH = os.path.join(REPO_ROOT, "libfprint-driver", "goodix5e0a.c")
 
 
@@ -42,7 +47,7 @@ def parse_c_array(header_content: str, array_name: str) -> bytes:
     return bytes(int(b, 16) for b in hex_bytes)
 
 
-class TestF27PskProvision(unittest.TestCase):
+class TestF27UpstreamCleanNoPskReconciliation(unittest.TestCase):
 
     def test_a_header_psk_matches_mock_fixture(self):
         """Header goodix_5e0a_psk must be 32 bytes equal to CANONICAL_PSK."""
@@ -52,104 +57,65 @@ class TestF27PskProvision(unittest.TestCase):
         self.assertEqual(len(psk), 32)
         self.assertEqual(psk, CANONICAL_PSK)
 
-    def test_b_preset_psk_write_uses_struct_sizeof(self):
-        """0xe0 send sites must size with the packed struct, never the pointer.
-
-        goodix_send_preset_psk_write must pass
-        sizeof (GoodixPresetPsk) + length at both send sites; the fixed code
-        also uses it for the g_malloc, so the bare pattern occurs 3 times
-        (malloc + both sends) in the function body. The send-site pattern
-        (with the g_free destroy notify) occurs exactly twice. The bug was
-        sizeof (payload) + length where payload is guint8*: on x86_64 both
-        are 8 so the wire was accidentally correct, but on a 4-byte-pointer
-        arch it would send 4+32=36 truncated bytes.
-        """
-        with open(GOODIX_C_PATH, "r", encoding="utf-8") as f:
-            src = f.read()
-        start = src.index("goodix_send_preset_psk_write (FpDevice")
-        end = src.index("goodix_send_preset_psk_read (FpDevice")
-        body = src[start:end]
-        self.assertEqual(body.count("sizeof (GoodixPresetPsk) + length"), 3)
-        self.assertEqual(body.count("sizeof (GoodixPresetPsk) + length, g_free"), 2)
-        self.assertEqual(body.count("sizeof (payload) + length"), 0)
-        # Packed-struct oracle: flags(4B) + length(4B) = 8; wire pin 8+32=40.
-        self.assertEqual(struct.calcsize("<II"), 8)
-        self.assertEqual(8 + 32, 40)
-
-    def test_c_activation_psk_state_ordering(self):
-        """Activation must order READ_PSK -> PROVISION_PSK -> UPLOAD_CONFIG."""
+    def test_b_no_psk_reconciliation_states_or_callbacks(self):
+        """Activation must not contain READ_PSK / PROVISION_PSK states or handlers."""
         with open(GOODIX_5E0A_C_PATH, "r", encoding="utf-8") as f:
             src = f.read()
-        i_read = src.index("ACTIVATE_READ_PSK")
-        i_provision = src.index("ACTIVATE_PROVISION_PSK")
-        i_upload = src.index("ACTIVATE_UPLOAD_CONFIG")
-        self.assertLess(i_read, i_provision)
-        self.assertLess(i_provision, i_upload)
+        for absent in (
+            "ACTIVATE_READ_PSK",
+            "ACTIVATE_PROVISION_PSK",
+            "on_psk_read",
+            "on_psk_write",
+            "goodix_send_preset_psk_read_slice",
+            "goodix_send_preset_psk_write",
+            "goodix_5e0a_psk_default",
+        ):
+            self.assertNotIn(absent, src, f"{absent} must be stripped from goodix5e0a.c")
+
+    def test_c_activation_orders_fw_ver_then_upload_config(self):
+        """Enum and dispatch must place UPLOAD_CONFIG directly after CHECK_FW_VER."""
+        with open(GOODIX_5E0A_C_PATH, "r", encoding="utf-8") as f:
+            src = f.read()
+        enum_start = src.index("enum activate_states")
+        enum_end = src.index("};", enum_start)
+        enum_body = src[enum_start:enum_end]
+        enumerators = re.findall(r"ACTIVATE_\w+", enum_body)
+        self.assertIn("ACTIVATE_CHECK_FW_VER", enumerators)
+        self.assertIn("ACTIVATE_UPLOAD_CONFIG", enumerators)
+        self.assertEqual(
+            enumerators.index("ACTIVATE_UPLOAD_CONFIG"),
+            enumerators.index("ACTIVATE_CHECK_FW_VER") + 1,
+        )
         run = src[src.index("activate_run_state"):]
-        j_read = run.index("goodix_send_preset_psk_read")
-        j_write = run.index("goodix_send_preset_psk_write")
-        j_upload = run.index("goodix_send_upload_config_mcu")
-        self.assertLess(j_read, j_write)
-        self.assertLess(j_write, j_upload)
-        self.assertIn("fpi_ssm_jump_to_state (ssm, ACTIVATE_UPLOAD_CONFIG)", src)
+        j_fw = run.index("goodix_send_query_firmware_version")
+        j_up = run.index("goodix_send_upload_config_mcu")
+        self.assertLess(j_fw, j_up)
+        # The next activation case after the FW_VER dispatch must be UPLOAD_CONFIG.
+        next_case = re.search(r"case (ACTIVATE_\w+)", run[j_fw:])
+        self.assertIsNotNone(next_case)
+        self.assertEqual(next_case.group(1), "ACTIVATE_UPLOAD_CONFIG")
 
-    def test_d_mock_0xe4_reply_shape_flags_and_key_length(self):
-        """Mock 0xe4 reply shape: flags 0xBB020001 plus a 32-byte key.
+    def test_d_no_factory_key_in_tree(self):
+        """Factory-default key table and bytes must not ship anywhere in the driver."""
+        for path in (HEADER_PATH, GOODIX_5E0A_C_PATH, GOODIX_C_PATH):
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.assertNotIn("goodix_5e0a_psk_default", content, path)
+            # Factory bytes 68776fdc...ff1c9 must not appear in any driver file.
+            self.assertNotIn("0x68, 0x77, 0x6f, 0xdc", content, path)
 
-        Uses literals only (no fixture import) so this pins the wire shape
-        independently of shared mock constants.
-        """
-        mcu = MockGoodixMCU()
-        pkt = encode_pack(FLAGS_MSG_PROTOCOL, encode_protocol(CMD_PRESET_PSK_READ, b""))
-        reply = mcu.handle_out_packet(pkt)
-        ok, _, body, _ = decode_pack(reply)
-        self.assertTrue(ok)
-        p_ok, cmd, payload, _, _ = decode_protocol(body)
-        self.assertTrue(p_ok)
-        self.assertEqual(cmd, CMD_PRESET_PSK_READ)
-        self.assertGreaterEqual(len(payload), 4 + 32)
-        flags_val = struct.unpack("<I", payload[:4])[0]
-        self.assertEqual(flags_val, 0xBB020001)
-        self.assertEqual(len(payload[4:]), 32)
-
-    def test_e_sliced_psk_read_and_soft_fail_provision(self):
-        """Ticket 26.3: sliced 16-byte 0xe4 read + soft-fail provision.
-
-        (a) ACTIVATE_READ_PSK dispatches goodix_send_preset_psk_read_slice
-            with (GOODIX_5E0A_PSK_FLAGS, 32, 0);
-        (b) goodix.c defines the slice helper building a 16-byte LE payload
-            [length, offset, flags, 0] for GOODIX_CMD_PRESET_PSK_READ;
-        (c) on_psk_write soft-fails (warn + advance, no fpi_ssm_mark_failed);
-        (d) the old goodix_send_preset_psk_read helper still exists (511 compat).
-        """
-        with open(GOODIX_5E0A_C_PATH, "r", encoding="utf-8") as f:
-            src = f.read()
+    def test_e_shared_psk_helpers_preserved_for_511(self):
+        """Generic 0xe4/0xe0 transport stays for 511; 5e0a-only slice helper is gone."""
         with open(GOODIX_C_PATH, "r", encoding="utf-8") as f:
             gsrc = f.read()
-
-        # (a) slice dispatch with proven ticket-26.1 bytes.
-        self.assertIn(
-            "goodix_send_preset_psk_read_slice (dev, GOODIX_5E0A_PSK_FLAGS, 32, 0",
-            src)
-
-        # (b) slice helper definition: 4-field LE packing + 16-byte size +
-        # 0xe4 command + shared read trampoline.
-        start = gsrc.index("goodix_send_preset_psk_read_slice (FpDevice")
-        body = gsrc[start:start + 2500]
-        self.assertGreaterEqual(body.count("GUINT32_TO_LE"), 4)
-        self.assertIn("GOODIX_CMD_PRESET_PSK_READ", body)
-        self.assertIn("16", body)
-        self.assertIn("goodix_receive_preset_psk_read", body)
-
-        # (c) soft-fail: warn + advance, never wedge warm logins.
-        wstart = src.index("on_psk_write (FpDevice")
-        wend = src.index("activate_run_state", wstart)
-        wbody = src[wstart:wend]
-        self.assertIn("continuing with host key", wbody)
-        self.assertNotIn("fpi_ssm_mark_failed", wbody)
-
-        # (d) 511 compat: old 8-byte helper definition untouched.
+        with open(GOODIX_H_PATH, "r", encoding="utf-8") as f:
+            ghdr = f.read()
         self.assertIn("goodix_send_preset_psk_read (FpDevice", gsrc)
+        self.assertIn("goodix_send_preset_psk_write (FpDevice", gsrc)
+        self.assertIn("goodix_send_preset_psk_read (FpDevice", ghdr)
+        self.assertIn("goodix_send_preset_psk_write (FpDevice", ghdr)
+        self.assertNotIn("goodix_send_preset_psk_read_slice", gsrc)
+        self.assertNotIn("goodix_send_preset_psk_read_slice", ghdr)
 
 
 if __name__ == "__main__":
