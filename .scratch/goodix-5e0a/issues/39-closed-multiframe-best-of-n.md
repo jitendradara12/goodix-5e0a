@@ -12,7 +12,11 @@ threshold).
 this ticket raises the attempt's best genuine score; 41 decides where the
 bar sits.
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
+
+**Verdict:** confirmed operationally on hardware 2026-09-07. Complete 3-frame
+bursts and best-frame selection were repeatedly observed without transport
+errors.
 
 **Live-scope:** capture count + best-of-N selection only. No matcher swaps,
 no template changes, no enrollment changes. FDT gating unchanged (frames
@@ -81,3 +85,13 @@ are captured back-to-back while the finger is down — no extra touches).
 - Verdict: `inconclusive-because-no-verify-match-or-success-rate`.
   Next experiment: repeat six natural-pressure attempts with the client
   result for each attempt pasted alongside all three frame lines.
+
+### Final close evidence
+
+The later paste contains more than six complete bursts in PID 7122, all with
+`declen=10564`, followed by a `best frame` submission. Best-frame selection
+chose frames 1, 2, and 3 across different bursts, demonstrating that the
+selection path is active rather than fixed. A later PID 8589 showed the same
+behavior with winners of 30, 22, and 22 minutiae and no timeout/error lines.
+The feature is closed as operationally confirmed; no statistical match-rate
+improvement claim is made.
