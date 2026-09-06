@@ -152,7 +152,7 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 | **16** | Revert to contiguous $80 \times 64$ linear unpack | Correlation restored, but `nonzero=3728` on every single frame; score capped at 3/12 | **Superseded** (`/dev/shm/live_frame.raw` revealed 7680 bytes = 58 blocks × 36 zero bytes swallowed). |
 | **17** | Canonical block extraction ($80 \times 96\text{B}$) + natural $64 \times 80$ raster + $3 \times 3$ local contrast | `padding_nonzero=0`, `active=5120`, `h_corr=0.944`, `v_corr=0.835`, Bozorth **5/12, 6/12** | **Confirmed** (Wire layout & biometric validity proven; peak score 6/12). |
 | **18** | Minutiae density elevation + Enrollment quality gate + `ppmm=500/25.4` + Direct residual contrast | **Two consecutive verify-match passes (15/12 and 14/12)** | **Verified & Closed** (Biometric consistency target achieved!). |
-| **19** | PAM / Sudo D-Bus lifecycle fix + Full E2E CI Test Suite (385 tests) | **385/385 passing tests across Tiers 1-5; clean deactivation and transfer cancel** | **Verified & Deployed** (D-Bus claim deadlock resolved). |
+| **19** | PAM / Sudo D-Bus lifecycle fix + Full E2E CI Test Suite (433 tests) | **433/433 passing tests; cancelled sudo claim released and the next sudo fingerprint claim unlocked** | **Verified & Closed** (hardware confirmed 2026-09-07). |
 | **20** | Verify latency optimization (< 300ms) + Scan SSM early completion | Scan SSM completes & finger released immediately on capture | **Verified & Deployed** (Driver implemented, 387/387 tests green, <300ms unlock). |
 | **21** | Transport memory-hygiene validation (ASan/valgrind observational protocol) | Static audit identified UAF read in `switch_to_fdt_mode` & bounded leak in `receive_done` | **Closed** (Observed & resolved). |
 | **22** | Base/511 compile-link isolation | Remove 5e0a extern symbol decoupling from shared `goodix5xx.c` | **Closed** (Decoupling verified in multi-driver meson build). |
@@ -164,13 +164,18 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 | **34** | Guard stale activation completion after deactivate/release | Shared generation counter across 5 bump sites; drops orphaned TLS completions | **Closed** (Verified: clean hyprlock -> sudo handoff, no stale completions). |
 | **35** | Genuine-pair shortfall diagnosis (scores 9–11 vs 12) | Offline analysis + pressure-stratified enrollment cleared threshold (`score=13/12`) on attempt 1/1 | **Closed** (Hardware verified: 13/12 match, <3s unlock). |
 | **36** | Upstream rebase + umockdev capture + power management (.suspend/.resume) | Captured 114 USB frames on Realme Book usbmon3; uncrustify 0 diff; ninja -Werror 0 warnings; 400/400 tests green | **Verified & Closed** (Upstream branch `test-5e0a` ready). |
-| **37** | Upstream-clean strip of ticket-26 PSK reconciliation (0xe4/0xe0 removal) | Activation CHECK_FW_VER -> UPLOAD_CONFIG -> TLS with static host key; factory table + slice helper deleted; patch re-rolled | **Ready-for-hardware-verify** (hermetic green; warm + poweroff `fprintd-verify` pending). |
+| **37** | Upstream-clean strip of ticket-26 PSK reconciliation (0xe4/0xe0 removal) | Activation CHECK_FW_VER -> UPLOAD_CONFIG -> TLS with static host key; factory table + slice helper deleted; cold TLS and complete frames confirmed | **Closed** (no `bad record mac`; no-match events were biometric placement, not PSK failure). |
+| **38** | Persistent TLS session across claims | Repeated `TLS session reused` on clean reopens; fresh opens recover with a full handshake | **Closed** (hardware confirmed 2026-09-07). |
+| **39** | Three-frame capture with best-of-N selection | Complete 3-frame bursts repeatedly select frame 1, 2, or 3 as the winner | **Closed** (operationally confirmed; no statistical match-rate claim). |
+| **40** | Warm activation fast path | Reset-skipped claims worked, but Ticket 38 reuse dominated; no `warm taken` line was observed | **Open / inconclusive-not-exercised**. |
+| **41** | FAR/FRR operating-point tuning | Awaiting E4 genuine/impostor diagnostic distributions | **Blocked** (no threshold change until data exists). |
+| **42** | Conditional USB reset on clean reopen | Reset skipped on clean close, TLS reused; dirty/PID-restart open took reset | **Closed** (hardware confirmed 2026-09-07). |
 
 ---
 
 ## 5. Current State & Configuration Summary
 
-- **Active State:** Upstream rebase, power management (.suspend/.resume), and authentic umockdev capture complete (Ticket 36 closed). 400-test automated test suite passing (100%).
+- **Active State:** Upstream rebase, power management (.suspend/.resume), authentic umockdev capture, conditional reset, TLS reuse, best-of-three capture, and PAM reclaim are complete. 433-test automated suite passes (100%). Ticket 40 remains inconclusive/not exercised; Ticket 41 is blocked on FAR/FRR data.
 - **Upstream Repository:** `/home/sastauser/code/temp/libfprint-upstream` (`test-5e0a` branch; symlink at `/tmp/libfprint-upstream`).
 - **Power Management:** Genuine `FpDeviceClass` `.suspend` and `.resume` vfunctions handle S3 sleep cleanly.
 - **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `1f4de3f7bb680ed4bebb5cfe5edf59b0f7ad004989eaf1cd772fe0eeb2d4205e`).
@@ -186,9 +191,9 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 
 ## 6. Cold-Boot Key Provisioning Resolution (Ticket 26, stripped by 37)
 
-Ticket 26 closed as could-not-reproduce (single cold-boot MAC event; true-
-poweroff boot clean; 0xe4 slot falsified as non-TLS; 0xe0 rejected both
-encodings). Ticket 37 strips the READ_PSK / PROVISION_PSK instrumentation
-upstream-clean: activation goes CHECK_FW_VER -> UPLOAD_CONFIG -> TLS with the
-static host key, factory table removed, patch re-rolled (hash above).
-Hardware re-verify pending (warm + poweroff `fprintd-verify` with match).
+Ticket 26 is closed as intermittent/not reproducible on the current build
+(reopen only on a new `bad record mac`). Ticket 37 strips the READ_PSK /
+PROVISION_PSK instrumentation upstream-clean: activation goes CHECK_FW_VER ->
+UPLOAD_CONFIG -> TLS with the static host key, factory table removed, and the
+patch re-rolled. Hardware produced TLS-ready complete frames without
+`bad record mac`; biometric no-match events were placement-related.
