@@ -19,38 +19,6 @@ A reverse-engineered Linux driver for the **Goodix 27c6:5e0a** fingerprint scann
 
 ---
 
-## Repository Structure
-
-```text
-goodix/
-├── libfprint-driver/        # Production C driver sources for libfprint
-│   ├── goodix5e0a.c         # Model-specific driver implementation
-│   ├── goodix5e0a.h         # Model constants, registers & tables
-│   ├── goodix5xx.c/h        # Goodix TLS 5xx base class
-│   └── goodixtls.c/h        # TLS 1.2 PSK transport layer
-├── tests/                   # 5-Tier Master End-to-End Test Suite
-│   ├── run_all_tests.sh     # Master end-to-end test runner
-│   ├── test_utils.py        # Authoritative protocol mock & framing library
-│   ├── repo_paths.py        # Portable repo-root / external-tree paths
-│   ├── tier1_feature/       # Feature unit tests in isolation (165 tests)
-│   ├── tier2_boundary/      # Boundary value & buffer limits (130 tests)
-│   ├── tier3_combination/   # Cross-feature pairwise integration (24 tests)
-│   ├── tier4_realworld/     # PAM auth, enrollment, & lifecycle scenarios (5 tests)
-│   └── tier5_adversarial/   # Fuzzing, fault injection, & stress tests (63 tests)
-├── experiments/             # Reverse-engineering prototypes and sample data
-├── specs/                   # Reverse-engineering gap specs (research, read-only)
-├── docs/                    # Progress & architecture documentation
-├── .scratch/goodix-5e0a/issues/  # Experiment tickets (01–37, status-tracked)
-├── goodix_protocol.py       # Hardware USB bulk transport for experiments
-├── libfprint-goodix.nix     # Nix package derivation for libfprint with driver
-├── nixos-module.nix         # NixOS module configuration
-└── 0001-Add-driver-support-for-Goodix-27c6-5e0a.patch  # Unified libfprint patch
-```
-
-Upstream `libfprint` tree with canonical `umockdev` replay fixtures is maintained at `/home/sastauser/code/temp/libfprint-upstream` (`test-5e0a` branch).
-
----
-
 ## Running the Test Suite
 
 The test suite runs hermetically without requiring hardware access:
