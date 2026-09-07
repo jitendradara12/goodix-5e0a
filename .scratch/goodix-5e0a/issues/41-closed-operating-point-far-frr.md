@@ -9,7 +9,17 @@ One variable: the operating point (12 → 11).
 
 **Blocked by:** None. User hardware logs provided clear operating point distribution.
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
+
+**Verdict:** falsified-hold-12 (2026-09-07). Live-journal cross-print
+matrix (4,387 evals) shows impostors reaching 11/12 (36 events),
+overlapping the genuine 8–10 band — the ticket's own falsify condition.
+The 12→10→11 calibrations are reverted: driver holds
+`bz3_threshold = 12`, tests re-synced, patch re-rolled (f25 green,
+suite green modulo pre-existing f21 env failure). Genuine-side
+compensation is ticket 39's best-of-N (live 12/12–18/12 matches),
+not threshold lowering. Next lane for FRR is a real pipeline ticket,
+per the live-scope clause.
 
 **Live-scope:** measurement analysis + threshold/ladder decision only.
 Pipeline (gain/geometry/upscale) stays frozen per tickets 17/35. If data

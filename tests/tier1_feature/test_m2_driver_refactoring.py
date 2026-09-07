@@ -50,7 +50,7 @@ class TestM2DriverRefactoring(unittest.TestCase):
             "img_dev_class->activate = dev_activate;",
             "img_dev_class->change_state = goodix5e0a_change_state;",
             "img_dev_class->deactivate = goodix5e0a_deactivate;",
-            "img_dev_class->bz3_threshold = 11;",
+            "img_dev_class->bz3_threshold = 12;",
             "img_dev_class->img_width = GOODIX_5E0A_SCALED_WIDTH;",
             "img_dev_class->img_height = GOODIX_5E0A_SCALED_HEIGHT;",
         ]

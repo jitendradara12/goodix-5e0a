@@ -32,7 +32,7 @@ class TestF23PAMReliability(unittest.TestCase):
         """Verify minutiae matching bz3_threshold is calibrated to 12."""
         with open(repo("libfprint-driver", "goodix5e0a.c"), "r") as f:
             content = f.read()
-        self.assertIn("bz3_threshold = 11", content)
+        self.assertIn("bz3_threshold = 12", content)
 
     def test_multi_stage_enroll_state_progression(self):
         """Simulate complete 8-stage enrollment workflow with touch and release cycle per stage."""

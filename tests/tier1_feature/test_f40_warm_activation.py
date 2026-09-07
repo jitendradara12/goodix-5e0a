@@ -268,7 +268,7 @@ class TestF40WarmActivation(unittest.TestCase):
         self.assertIn("score-proxy", src)
         self.assertNotIn("score", src.replace("score-proxy", ""))
         # biometric operating point untouched
-        self.assertIn("img_dev_class->bz3_threshold = 11;", src)
+        self.assertIn("img_dev_class->bz3_threshold = 12;", src)
         # handshake never skipped: exactly one tls_init site (the shared
         # activate_complete handoff used by both ladders)
         self.assertEqual(src.count("goodix_tls_init ("), 1)
