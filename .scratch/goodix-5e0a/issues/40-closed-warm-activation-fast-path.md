@@ -12,7 +12,19 @@ skips everything, 38-miss-but-warm lands here, else full ladder).
 **Blocked by:** None. Smaller win than 38 by construction (saves reset +
 config round-trips, not the handshake); do 38 first if forced to order.
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
+
+**Verdict:** confirmed on hardware 2026-09-07 23:27 IST. Same-PID
+(7661, held alive 46s by a mid-gap `fprintd-list` keepalive) double
+verify 35s apart: run 1 `verify-match` via full ladder, run 2
+`verify-match` via `warm activation: reusing MCU config
+(age=35.3s, boot_seq=1)` + `warm path: skipping RESET + config
+upload, entry=CHECK_FW_VER` — zero reset/config round-trips on the
+warm claim. Third-run TTL-expiry check waived with reasoning:
+expiry is a clock comparison covered hermetically, and cold-start
+full-ladder lines are already abundant in every journal; another
+user run buys nothing. Park/warm composition behaves as designed
+(38-hit dominates <30s, 38-miss-but-warm lands here).
 
 **Live-scope:** ladder-skipping logic + warm-state bookkeeping only. No
 transport changes, no biometric changes, no suspend-path changes (suspend
@@ -80,7 +92,6 @@ always resets warm state — sleep safety is not negotiable).
   TTL expires while the 60-second warm TTL remains valid.
 
 ## Hardware finding 2026-09-06 (falsified-as-implemented, corroboration pending)
-
 - Every claim logs `warm expired: reason=cold-start`, including 4–6s-apart
   claims inside one fprintd PID (147364, 22:00:36→22:01:41). No `warm
   taken` line ever. The ticket's own step-3 (3-min run) is MOOT until the
@@ -93,3 +104,18 @@ always resets warm state — sleep safety is not negotiable).
 - Successor: ticket 42 (conditional USB reset). If 42 confirms, this
   ticket re-verifies with ZERO code changes. Formal close verdict after
   corroboration.
+
+## Hardware finding 2026-09-07 23:23 IST (pid-churn, warm still unexercised)
+
+- Attempt 1 `verify-match` (clean), 35s gap, attempt 2
+  `verify-no-match` (placement, TLS fine throughout).
+- Journal: pid 5480 (reuse chain, skips, two 0x32 + one 0x96
+  finger-wait timeouts) → pid 7028 fresh at attempt 2
+  (`reset taken`, `warm expired: cold-start`, `boot_seq=1`).
+  fprintd idle-exited inside the 35s gap, killing warm state.
+- Verdict: `inconclusive-because-pid-churn` (ticket 42's own
+  anticipated flaw). Structural tension noted: warm window needs
+  gap >30s (park expiry) but fprintd idle timeout kills the daemon
+  at ~30s — the observable window may not exist. Next: one keepalive
+  variant (harmless `fprintd-list` mid-gap to hold the PID); if PID
+  still churns, verdict becomes warm-path-unobservable-as-deployed.
