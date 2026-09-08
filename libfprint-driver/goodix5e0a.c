@@ -165,12 +165,11 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
       break;
 
     case ACTIVATE_RESET:
-      if (self->warm_attempted)
-        {
-          fpi_ssm_jump_to_state (ssm, ACTIVATE_CHECK_FW_VER);
-          return;
-        }
-      goodix_send_reset (dev, TRUE, 20, goodixtls5xx_check_reset, ssm);
+      /* Windows wire parity (ticket 45): wbdi.dll has McuResetMcu unimplemented
+       * and sends zero 0xa2 commands across all captures. CMD 0xa2 (reset_sensor=1)
+       * on cold boot desyncs MCU crypto state causing bad record mac on TLS accept.
+       * Proceed directly to CHECK_FW_VER on both cold and warm. */
+      fpi_ssm_jump_to_state (ssm, ACTIVATE_CHECK_FW_VER);
       break;
 
     case ACTIVATE_READ_CHIP_ID:

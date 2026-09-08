@@ -115,9 +115,12 @@ class TestF40WarmActivation(unittest.TestCase):
         src = _read(GOODIX5E0A_C)
         run = _slice(src, "activate_run_state (FpiSsm *ssm, FpDevice *dev)",
                      "on_chip_enabled")
-        # RESET + CHIP_ID + OTP jump to the kept FW discriminator
-        for state in ("case ACTIVATE_RESET:",
-                      "case ACTIVATE_READ_CHIP_ID:",
+        # Ticket 45: RESET jumps unconditionally to CHECK_FW_VER (eliminating CMD 0xa2)
+        reset_case = run[run.index("case ACTIVATE_RESET:"):run.index("break;", run.index("case ACTIVATE_RESET:"))]
+        self.assertIn("fpi_ssm_jump_to_state (ssm, ACTIVATE_CHECK_FW_VER);", reset_case)
+
+        # CHIP_ID + OTP jump to the kept FW discriminator on warm
+        for state in ("case ACTIVATE_READ_CHIP_ID:",
                       "case ACTIVATE_READ_OTP:"):
             case = run[run.index(state):run.index("break;", run.index(state))]
             self.assertIn("if (self->warm_attempted)", case)
