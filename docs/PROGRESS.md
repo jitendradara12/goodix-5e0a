@@ -10,8 +10,8 @@ Support for the Goodix 27c6:5e0a fingerprint sensor (Realme Book / ChicagoH / GF
 | Subsystem | Status | Proven Mechanism / Parameters |
 |---|---|---|
 | **USB Transport** | Frozen | Bulk endpoints `EP 0x83` (IN) / `0x01` (OUT), interface 0 |
-| **Reset Phasing** | Frozen | NOP -> Reset (number 2048) -> Read chip ID -> Read OTP (`ACTIVATE_READ_OTP`) -> Query FW version (`GFUSB_GM168SEC_APP_10036`); primes MCU OTP registers for cold-boot TLS PSK handshake |
-| **TLS Handshake** | Frozen | TLS 1.2 PSK (`PSK-AES128-CBC-SHA256`), PSK extracted from DPAPI, PSK flags `0xbb020001` |
+| **Reset Phasing** | Frozen | NOP -> (reset skipped, ticket 45) -> Read chip ID (cold only) -> Read OTP (cold only) -> Query FW version (`GFUSB_GM168SEC_APP_10036`); Geneva PSK-latch read pre-TLS on cold path (ticket 48) |
+| **TLS Handshake** | Frozen | TLS 1.2 PSK (`PSK-AES128-CBC-SHA256`), device-specific PSK (32B); Geneva 16-byte CMD `0xe4` latch of slot `0xbb020001` pre-TLS, config upload post-TLS on cold path (ticket 48) |
 | **Chip Provisioning** | Frozen | Base ChicagoH table from `wbdi.dll:0x197c50` (VMA `0x180198a50`), 256 bytes, checksum `0x0e53` (`53 0e`) |
 | **Touch Gating** | Frozen | Dynamic 16-bit channel energy on D32 (`data[2] != 0xff && channel_energy > 0`); blocking hardware interrupt in empty air |
 | **Frame Decryption** | Frozen | Full 10564-byte decrypted frames (`declen=10564`), 7040 decoded 12-bit values with active contact area |
@@ -159,7 +159,7 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 | **23** | Base runtime hardening | Activation error completion + `linear_subtract_inplace` arithmetic underflow floor | **Closed** (Defensive guard landed). |
 | **24** | Remove per-frame debug file dumps | Drop unconditional `/dev/shm` and `/tmp` writes from `goodix5e0a_on_read_img` hot path | **Closed** (Cleaned up for upstream). |
 | **25** | Upstream foundation alignment | Documented architecture guide, ADRs (0001-0003), and upstream gap spec | **Closed** (Docs committed on `master`). |
-| **26** | Cold-boot / post-reboot TLS PSK disagreement & provisioning lifecycle | Single cold-boot MAC event; 0xe4 slot falsified as non-TLS, 0xe0 rejected both encodings | **Closed** (could-not-reproduce; instrumentation stripped upstream-clean by 37). |
+| **26** | Cold-boot / post-reboot TLS PSK disagreement & provisioning lifecycle | Single cold-boot MAC event; 0xe4 slot falsified as non-TLS, 0xe0 rejected both encodings | **Closed then superseded by 48** (the 8-byte framing was the failure, not the slot; Geneva 16-byte `0xe4` read of `0xbb020001` latches MCU crypto pre-TLS — hardware-verified true cold boot 2026-09-09). |
 | **33** | Unlock latency: kill per-attempt multipliers | De-duplicated gallery; per-attempt driver cost is ~1s; root-cause promoted to 35 | **Closed** (Dedup confirmed, single-finger variance analyzed). |
 | **34** | Guard stale activation completion after deactivate/release | Shared generation counter across 5 bump sites; drops orphaned TLS completions | **Closed** (Verified: clean hyprlock -> sudo handoff, no stale completions). |
 | **35** | Genuine-pair shortfall diagnosis (scores 9–11 vs 12) | Offline analysis + pressure-stratified enrollment cleared threshold (`score=13/12`) on attempt 1/1 | **Closed** (Hardware verified: 13/12 match, <3s unlock). |
@@ -167,19 +167,26 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 | **37** | Upstream-clean strip of ticket-26 PSK reconciliation (0xe4/0xe0 removal) | Activation CHECK_FW_VER -> UPLOAD_CONFIG -> TLS with static host key; factory table + slice helper deleted; cold TLS and complete frames confirmed | **Closed** (no `bad record mac`; no-match events were biometric placement, not PSK failure). |
 | **38** | Persistent TLS session across claims | Repeated `TLS session reused` on clean reopens; fresh opens recover with a full handshake | **Closed** (hardware confirmed 2026-09-07). |
 | **39** | Three-frame capture with best-of-N selection | Complete 3-frame bursts repeatedly select frame 1, 2, or 3 as the winner | **Closed** (operationally confirmed; no statistical match-rate claim). |
-| **40** | Warm activation fast path | Reset-skipped claims worked, but Ticket 38 reuse dominated; no `warm taken` line was observed | **Open / inconclusive-not-exercised**. |
-| **41** | FAR/FRR operating-point tuning | Awaiting E4 genuine/impostor diagnostic distributions | **Blocked** (no threshold change until data exists). |
+| **40** | Warm activation fast path | Reset-skipped claims worked, but Ticket 38 reuse dominated; no `warm taken` line was observed | **Closed** (hardware-confirmed; warm path taken on fresh claims). |
+| **41** | FAR/FRR operating-point tuning | Awaiting E4 genuine/impostor diagnostic distributions | **Blocked then frozen** (no threshold change until data exists; matching pipeline frozen per operator constraint 2026-09-09). |
 | **42** | Conditional USB reset on clean reopen | Reset skipped on clean close, TLS reused; dirty/PID-restart open took reset | **Closed** (hardware confirmed 2026-09-07). |
+| **43** | PAM impostor leakage (FAR ~70% at threshold 11, 96 gallery sub-templates) | Threshold 14 rejects impostors (max 8/14 over 36 comparisons); genuine clears 14/14; stages 5 | **Closed** (verdict confirmed on hardware 2026-09-09; operating point frozen since). |
+| **44** | TLS PSK recurrence, fourth event (bad-record-mac on scratch rebuild, pasted signature) | Operational PSK intact in MCU; WhiteBox + wire protocol solved; successor 45 | **Closed** (verdict confirmed on hardware; fix landed in 48). |
+| **45** | Remove cold-activation reset (CMD `0xa2`) for Windows wire parity | Zero `0xa2` on the wire like `wbdi.dll`; warm-sensor verified | **Closed** (superseded as cold-boot proof by 48, fix stands). |
+| **46** | Parked-TLS reuse desync (`0x96`/`0x32` timeouts on 0.0s-gap reuse) | Park gated to idle deactivation; clean warm/full bring-up otherwise | **Closed** (hardware confirmed 2026-09-09: 5 rapid verifies, zero errors). |
+| **47** | Verify-retry burn on continuous touch | Retry guard parks retries in FDT-UP; `0x34` timeout re-issues, cancel drops | **Closed** (hardware confirmed 2026-09-09: attempts withheld until lift). |
+| **48** | Cold-boot TLS handshake (Geneva slot latch + post-TLS config order) | `0xe4` latch of `0xbb020001` pre-TLS, config upload post-TLS | **Closed** (hardware confirmed 2026-09-09: true cold boot + debug re-run). |
+| **49** | PAM end-to-end retry guard at real ~15ms retry cadence | `sudo -v` unlocks on tap; held wrong finger: one fail, ~18s hold, password fallback | **Closed** (hardware confirmed 2026-09-09; firm-vs-light falsified contact-sampling). |
 
 ---
 
 ## 5. Current State & Configuration Summary
 
-- **Active State:** Upstream rebase, power management (.suspend/.resume), authentic umockdev capture, conditional reset, TLS reuse, best-of-three capture, and PAM reclaim are complete. 433-test automated suite passes (100%). Ticket 40 remains inconclusive/not exercised; Ticket 41 is blocked on FAR/FRR data.
+- **Active State:** Tickets 01–49 closed (43 pins threshold 14 / 5 stages, 46–49 harden session reuse and cold boot, all hardware-confirmed 2026-09-09). 448-test automated suite passes (100% via `bash tests/run_all_tests.sh`). Ticket 41 frozen, not just blocked: no matching-pipeline tuning per operator constraint.
 - **Upstream Repository:** `/home/sastauser/code/temp/libfprint-upstream` (`test-5e0a` branch; symlink at `/tmp/libfprint-upstream`).
 - **Power Management:** Genuine `FpDeviceClass` `.suspend` and `.resume` vfunctions handle S3 sleep cleanly.
-- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `1f4de3f7bb680ed4bebb5cfe5edf59b0f7ad004989eaf1cd772fe0eeb2d4205e`).
-- **Activation Sequence:** 6-state SSM: NOP -> Reset -> Read Chip ID -> Read OTP -> Query FW Version -> Upload Config -> TLS PSK Handshake -> Enable Chip.
+- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `7e87da42317713be9928f070b1d0ef0922ae121b0635874c33c20968ae5be106`; single base `goodix-fp-linux-dev@c343b69` shared with the repo derivation — one patch cannot serve two bases).
+- **Activation Sequence:** 7-state SSM: NOP -> (reset skipped) -> Read Chip ID (cold only) -> Read OTP (cold only) -> Query FW Version -> PSK-latch read (cold only) -> TLS PSK Handshake -> Upload Config (cold, post-TLS) -> Enable Chip.
 - **Verify Latency:** Sub-300ms instant unlock via immediate scan SSM completion and finger status reporting.
 - **Frame Decoder:** Strip each 132-byte block's first 96 bytes, discard 36-byte zero pad; unpack sequentially into 5,120 pixels.
 - **Dimensions:** Native $64 \times 80$ (WxH), upscaled 2x via bilinear interpolation to $128 \times 160$.
@@ -187,9 +194,9 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 - **Normalization:** 3x3 local mean subtraction (`val - local_mean`) with direct non-saturating residual contrast ($G=1.0$), clamped to [0, 255].
 - **Enrollment Quality Floor:** `GOODIX_5E0A_ENROLL_MIN_MINUTIAE = 12`. Faint touches rejected with retry prompt.
 - **Flags:** `scaled->flags = FPI_IMAGE_COLORS_INVERTED` (capacitive high ADC inverted to black ink 0; `FPI_IMAGE_PARTIAL` omitted to retain edge minutiae).
-- **Matching Invariants:** `bz3_threshold = 12`, `MIN_COMPUTABLE_BOZORTH_MINUTIAE = 10` (strict biometric standards).
+- **Matching Invariants:** `bz3_threshold = 14`, `MIN_COMPUTABLE_BOZORTH_MINUTIAE = 10`. Frozen — no tuning without impostor data (operator constraint 2026-09-09).
 
-## 6. Cold-Boot Key Provisioning Resolution (Ticket 26, stripped by 37)
+## 6. Cold-Boot Key Provisioning Resolution (Ticket 26, stripped by 37, reinstated by 48)
 
 Ticket 26 is closed as intermittent/not reproducible on the current build
 (reopen only on a new `bad record mac`). Ticket 37 strips the READ_PSK /
@@ -197,3 +204,10 @@ PROVISION_PSK instrumentation upstream-clean: activation goes CHECK_FW_VER ->
 UPLOAD_CONFIG -> TLS with the static host key, factory table removed, and the
 patch re-rolled. Hardware produced TLS-ready complete frames without
 `bad record mac`; biometric no-match events were placement-related.
+
+Supersession 2026-09-09 (ticket 48): 26's falsification used 8-byte `0xe4`
+framing against a slot holding `SHA256(psk)`, so the `memcmp` could never
+pass. With Geneva 16-byte framing the MCU answers happily; the pre-TLS
+`0xbb020001` read latches MCU crypto registers and true cold boot
+handshakes clean (hardware-verified). 26's 8-byte result stands; its
+conclusion is reversed.

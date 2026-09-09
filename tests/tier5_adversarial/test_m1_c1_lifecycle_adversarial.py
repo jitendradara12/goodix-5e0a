@@ -39,7 +39,9 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
 
         deact_idx = content.find("goodix5e0a_deactivate (FpImageDevice *img_dev)")
         self.assertNotEqual(deact_idx, -1, "goodix5e0a_deactivate must exist")
-        deact_body = content[deact_idx:deact_idx + 800]
+        # 2026-09-09: window 800 -> 1600; the 46 idle-gate comment block
+        # pushes the SSM free below the old window. Invariant unchanged.
+        deact_body = content[deact_idx:deact_idx + 1600]
 
         # Must check scan_ssm != NULL
         self.assertIn("if (self->scan_ssm != NULL)", deact_body)
@@ -58,7 +60,13 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
 
         fdt_up_idx = content.find("goodix5e0a_on_fdt_up_reply")
         self.assertNotEqual(fdt_up_idx, -1)
-        fdt_up_body = content[fdt_up_idx:fdt_up_idx + 800]
+        # 2026-09-09: was a fixed 800/1600-char window; the 47 re-issue
+        # block outgrew windows. Slice the whole function instead —
+        # ordering invariant within it is unchanged.
+        fdt_up_end = content.find(
+            "goodix5e0a_scan_run_state", fdt_up_idx)
+        self.assertNotEqual(fdt_up_end, -1)
+        fdt_up_body = content[fdt_up_idx:fdt_up_end]
 
         null_pos = fdt_up_body.find("self->scan_ssm = NULL;")
         next_pos = fdt_up_body.find("fpi_ssm_next_state (ssm);")

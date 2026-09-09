@@ -1,6 +1,6 @@
 # Ticket 48: Cold-Boot TLS Handshake Fix (Geneva CMD 0xe4 Slot Latch & Wire Parity)
 
-Status: closed
+**Status:** closed
 
 Verdict: CONFIRMED on hardware 2026-09-09 (deployed driver).
 Opened: 2026-09-09

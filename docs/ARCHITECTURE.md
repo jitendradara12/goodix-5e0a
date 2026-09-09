@@ -7,9 +7,7 @@ template storage, enroll, or match.
 
 ## Pipeline
 
-1. **Transport**: bulk endpoints, interface 0; flush-tolerant NOP, reset,
-   chip-ID read, OTP identification read (`0xa6`), firmware check, ChicagoH provisioning,
-   chip enable, then TLS 1.2 PSK session (`TLS_PSK_WITH_AES_128_CBC_SHA256`).
+1. **Transport**: bulk endpoints, interface 0; flush-tolerant NOP, FW check (RESET skipped, ticket 45; chip-ID/OTP reads cold-path only), Geneva 16-byte PSK-latch read of slot `0xbb020001` (cold path, ticket 48), then TLS 1.2 PSK session (`TLS_PSK_WITH_AES_128_CBC_SHA256`), post-TLS config upload (cold path), chip enable.
 2. **Touch gating**: sampled finger-down replies; touch iff the channel byte
    is live and channel energy is positive — never the status byte. Idle
    replies re-sample on a short silent timer.
@@ -24,7 +22,7 @@ template storage, enroll, or match.
 6. **Match (host)**: NBIS minutiae extraction; enrollment admits only touches
    clearing the enrollment floor of twelve (faint touches retry with a
    firmer-press prompt); verification forwards every capture to the matcher;
-   match threshold twelve with the in-tree floor of ten.
+   match threshold fourteen with the in-tree floor of ten.
 
 ## Decisions
 
@@ -50,20 +48,24 @@ template storage, enroll, or match.
 
 - USB transport shape, reset phasing, TLS-PSK handshake wiring and cipher,
   ChicagoH provisioning blob and checksum, firmware identity, PSK flags.
-  Key agreement: ticket 26 closed (cold-boot MAC failure never reproduced;
-  0xe4-readable slot is not the TLS key, 0xe0 rejected both encodings; read +
-  soft-fail kept as instrumentation). Reopen only on a pasted record-MAC
-  recurrence.
+  Key agreement: ticket 48 (cold-boot `bad record mac` root-caused to
+  unlatched MCU crypto registers; Geneva 16-byte `0xe4` read of `0xbb020001`
+  pre-TLS latches them, config uploads post-TLS; ticket 26's 8-byte-framing
+  falsification stands, its conclusion is reversed). Reopen only on a pasted
+  record-MAC recurrence.
+- Session lifecycle: idle-only TLS park gating (46), 0x34-timeout re-issue
+  with cancel-drop in the retry guard (47), warm fast path (40). Retry
+  claims park in FDT-UP until genuine release.
 - Channel-energy gating rule; silence on empty air.
 - Canonical wire layout and native raster geometry with inverted polarity.
 - Synchronous teardown: reset state, shut down TLS, stop the read loop,
   complete immediately.
-- Class shape: image device, press scan type, eight enrollment stages,
-  128x160 image, match threshold twelve.
+- Class shape: image device, press scan type, five enrollment stages,
+  128x160 image, match threshold fourteen.
 
 ## Active (the only legal workfront)
 
-- All core driver tickets (01–36) closed. Upstream rebase, power management, and authentic umockdev capture complete.
+- All driver tickets (01–49) closed. Upstream rebase, power management, and authentic umockdev capture complete.
 - Upstream repo checkout: `/home/sastauser/code/temp/libfprint-upstream` (`test-5e0a` branch).
 - Next legal workfront: upstream GitLab Merge Request against `freedesktop.org/libfprint/libfprint`.
 
@@ -78,17 +80,17 @@ template storage, enroll, or match.
 
 ## Errata (traps for future readers)
 
-- TLS works only while MCU SRAM holds the warm key; after power loss the
-  MCU reports a different key and rejects the record MAC. The
-  OTP-read-as-crypto-fix hypothesis is falsified in ticket 26.
+- Cold-boot TLS now works via the ticket-48 PSK latch; the "warm key only"
+  era ended 2026-09-09 (hardware-verified true cold boot + debug re-run).
+  Reopen only on a pasted record-MAC recurrence.
 - The OTP priming command is `0xa6`, not `0x94` (`0x94` is the
   powerdown-scan frequency command). Some progress notes say `0x94`; the code
   is correct.
 - Native geometry is 64 wide by 80 tall; early notes using 80x64 describe the
   falsified transpose era.
-- Test-suite totals drift across notes (375 / 385 / 387). Recount from the
-  source of truth with per-module runs (`python3 -m unittest
-  tests.tier1_feature.test_<name>` from the repo root) instead of quoting a
+- Test-suite totals drift across notes (375 / 385 / 387 / 433). Recount from
+  the source of truth with the runner (`bash tests/run_all_tests.sh`;
+  448 across tiers 1–5, all green as of 2026-09-09) instead of quoting a
   note.
 - Contrast gain and enrollment floor changed between the first-match era
   (gain 2.5, floor fifteen) and the current tree (unity gain, enroll-only

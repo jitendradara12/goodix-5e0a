@@ -71,7 +71,16 @@ class TicketFilenameStatusTest(unittest.TestCase):
         live |= set(glob.glob(
             os.path.join(ISSUES_DIR, "*ready-for-hardware-verify*")))
         live |= set(glob.glob(os.path.join(ISSUES_DIR, "*in-progress*")))
-        self.assertTrue(live, "live workfront glob finds nothing")
+        # The glob workfront must agree with header-scanned live tickets —
+        # including the legitimate terminal state of none (all verified).
+        expected = {
+            os.path.join(ISSUES_DIR, name)
+            for name in _tickets()
+            if _status_of(os.path.join(ISSUES_DIR, name)) in (
+                "ready-for-agent", "ready-for-hardware-verify",
+                "in-progress")
+        }
+        self.assertEqual(live, expected, "glob workfront disagrees with headers")
 
 
 if __name__ == "__main__":
