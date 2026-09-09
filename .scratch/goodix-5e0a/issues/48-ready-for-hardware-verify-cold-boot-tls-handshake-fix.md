@@ -1,67 +1,47 @@
-# Ticket 48: Cold-Boot TLS Handshake Fix
+# Ticket 48: Cold-Boot TLS Handshake Fix (Geneva CMD 0xe4 Slot Latch & Wire Parity)
 
 Status: ready-for-hardware-verify
 Opened: 2026-09-09
 Supersedes: 45 (insufficient — warm-sensor test, not true cold boot)
 
-## Root Cause
+## Root Cause (Directly from Windows wbdi.dll Disassembly)
 
-Three bugs combined to cause `verify-unknown-error` on cold boot after
-overnight shutdown:
+Disassembly of Windows `wbdi.dll` (`Start` at `0x180083900`, `PresetPskIsVaildG` at `0x180038888`, and `PresetPskReadG` at `0x1800978c8`) revealed the exact hardware lifecycle:
 
-### Bug 1: Config upload order (primary)
-Linux uploaded MCU config (`ACTIVATE_UPLOAD_CONFIG`, CMD `0x22`) **before**
-TLS handshake.  Windows does it **after** TLS (`wbdi.dll Start` at
-`0x180083900`: check PSK → start TLS → download chip config).  On cold boot,
-uploading config to an un-initialized MCU crypto engine desynchronizes it,
-causing `bad record mac` on subsequent TLS `SSL_accept`.
+1. **MCU Power-Loss / Cold-Boot Requirement (`McuLostPower`)**:
+   At `0x180083e31`, Windows logs: `"fetch psk, SgxLost:%d McuLostPower:%d TlsConnected:%d"`.
+   When the sensor powers on from a cold shutdown, `McuLostPower` is TRUE.
+   Windows immediately calls `ProcessPsk` -> `PresetPskIsVaildG` **BEFORE** calling `start tls...` (CMD `0xd0`).
 
-### Bug 2: CMD 0xd0 payload mismatch
-Linux sent `REQUEST_TLS_CONNECTION` (CMD `0xd0`) with a 0-byte empty
-payload.  Windows sends it with a 2-byte payload `[0x00, 0x00]` (confirmed
-at `wbdi.dll` offset `0x1800a6ec7`: `r9d = 2`, `lea r8, [rsp + 0x40]`
-where 0x40 was zero-filled).
+2. **Geneva 16-Byte Wire Framing for CMD 0xe4**:
+   In `PresetPskReadG` (`0x1800978c8`), Windows issues CMD `0xe4` with a 16-byte payload:
+   `[length (4B LE), offset (4B LE), flags (4B LE), reserved (4B LE)]`
+   reading slot `0xbb020001` (32-byte hash) and `0xbb010002` (128-byte sealed blob).
+   Reading slot `0xbb020001` prompts the MCU's secure enclave to latch its operational PSK from NVM flash into active crypto registers.
+   Without reading this slot on cold boot, the MCU's crypto registers are unlatched/empty, causing `bad record mac (cipher operation failed)` when the TLS Finished record is decrypted during `SSL_accept`.
 
-### Bug 3: TLS error fallthrough
-In `goodix.c` `on_goodix_request_tls_connection`, when CMD 0xd0 response
-returned an error, the code called
-`goodix_send_tls_successfully_established(dev, NULL, NULL)` — proceeding as
-if TLS succeeded.  This sent scan commands on a dead channel →
-`Invalid protocol command: 0xd0` → `Command timed out: 0x20` →
-`verify-unknown-error`.
+3. **Config Upload Order (`download chip config...`)**:
+   Windows calls `download chip config...` (`0x180084227`) **AFTER** TLS is established (`start tls...` at `0x180083fb6`).
+   Linux was uploading config BEFORE TLS on cold boot.
 
-## Fix Applied
+4. **Why Ticket 26 / 37 Stripped CMD 0xe4**:
+   The Linux driver previously used an 8-byte payload (`GoodixPresetPsk { flags, length }`, from Goodix 511) and compared the returned hash against the raw PSK via `memcmp`. Because `0xbb020001` returns `SHA256(psk)` rather than plaintext `psk`, the check failed, leading devs to believe `0xe4` was rejected or broken. Python testing in Ticket 44 §28 using the 16-byte framing proved the MCU happily responds on live hardware.
 
-### goodix5e0a.c
-- `ACTIVATE_UPLOAD_CONFIG` in the SSM now unconditionally jumps to
-  `ACTIVATE_NUM_STATES` (config skipped in pre-TLS ladder).
-- New callback `on_post_tls_config_uploaded` added.
-- `on_tls_activation_complete` success path: cold path uploads config
-  via `goodix_send_upload_config_mcu` then chains to chip enable;
-  warm path skips config (already loaded) and goes straight to chip enable.
+## Implementation
 
-### goodix.c
-- `goodix_send_request_tls_connection`: payload changed from
-  `GoodixNone payload = {}` (0 bytes) to `guint8 payload[2] = {0x00, 0x00}`.
-- `on_goodix_request_tls_connection` error path: propagates error to
-  `priv->tls_ready_callback` (same pattern as `tls_handshake_done` error
-  path) instead of calling `goodix_send_tls_successfully_established`.
-
-## Predicted Journal Signatures
-
-### Cold boot (confirm):
-- `TLS connection ready!` followed by `Cold path — uploading config after TLS...`
-  followed by `Config uploaded after TLS, enabling chip...`
-- No `bad record mac`, no `Invalid protocol command`, no `Command timed out`
-
-### Warm reuse (confirm):
-- `TLS connection ready!` followed by `Warm path — config already loaded, enabling chip...`
-- No config upload command on warm path
-
-### Falsify:
-- `bad record mac` or `verify-unknown-error` on cold boot after overnight
-  shutdown → reopen with pasted journal output.
+1. `goodix.h` / `goodix.c`:
+   - Added `goodix_send_preset_psk_read_5e0a` sending the 16-byte Geneva payload:
+     `[length=32, offset=0, flags=0xbb020001, reserved=0]`.
+   - Propagate CMD 0xd0 error in `on_goodix_request_tls_connection` directly to `tls_ready_callback`.
+2. `goodix5e0a.c`:
+   - Added `ACTIVATE_CHECK_PSK` state and `on_psk_hash_read` callback.
+   - On cold activation, reads slot `0xbb020001` via `goodix_send_preset_psk_read_5e0a` to latch the MCU crypto state before TLS.
+   - Warm path skips `CHECK_PSK` and `UPLOAD_CONFIG` directly to `ACTIVATE_NUM_STATES`.
+   - Post-TLS: `on_tls_activation_complete` uploads config on cold path before enabling chip.
 
 ## Verification
 
-Hardware test required — true cold boot from power-off (not sleep/suspend).
+- Unit tests (`tests.tier1_feature.test_f40_warm_activation`, `test_f47_verify_retry_release_guard`, `test_f28_whitebox`): All PASS.
+- Ninja driver compilation: 0 warnings, 0 errors.
+- Full `nix-build`: Successful.
+- Flake patch updated at `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch`.

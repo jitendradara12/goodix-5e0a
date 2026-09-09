@@ -128,23 +128,44 @@ enum activate_states {
   ACTIVATE_READ_OTP,
   ACTIVATE_CHECK_FW_VER,
   ACTIVATE_UPLOAD_CONFIG,
+  ACTIVATE_CHECK_PSK,
   ACTIVATE_NUM_STATES,
 };
 
-/* Ticket 26 upstream-clean strip: activation-time PSK reconciliation
- * (READ_PSK / PROVISION_PSK via 0xe4 / 0xe0) removed. Hardware record: the
- * single cold-boot bad-record-MAC event never reproduced across later
- * reboots and a true poweroff boot; the 0xe4-visible bb020001 slot always
- * reports factory bytes even while TLS with the host key succeeds (not the
- * TLS slot); 0xe0 writes are rejected in both encodings. The extra
- * round-trips cost two per-activation USB transactions plus journal noise
- * for zero benefit, and the factory-key table plus hardcoded provisioning
- * have no accepted upstream pattern (docs/UPSTREAM.md section 6).
- * Activation therefore goes CHECK_FW_VER -> TLS -> UPLOAD_CONFIG (post-TLS,
- * in on_tls_activation_complete) -> enable chip; any future bad-record-MAC
- * recurrence reopens ticket 26 with a pasted journal line. */
+/* Ticket 48: Windows PresetPskIsVaildG (pskunify.c, 0x180038888) reads
+ * the MCU PSK hash slot (0xbb020001) before every TLS handshake. This
+ * read appears to initialize the MCU's TLS crypto subsystem — without
+ * it, cold-boot TLS fails with bad record mac (cipher operation failed).
+ * Activation: CHECK_FW_VER → CHECK_PSK (0xe4 read 0xbb020001) → TLS →
+ * UPLOAD_CONFIG (post-TLS) → enable chip. */
 
 static void activate_complete (FpiSsm *ssm, FpDevice *dev, GError *error);
+
+/* Ticket 48: PSK hash read callback — we don't validate the result.
+ * The read's sole purpose is to poke the MCU's TLS crypto subsystem
+ * into an initialized state before we attempt SSL_accept. */
+static void
+on_psk_hash_read (FpDevice *dev, gboolean success, guint32 flags,
+                  guint8 *psk, guint16 length, gpointer user_data,
+                  GError *error)
+{
+  FpiSsm *ssm = user_data;
+
+  if (error)
+    {
+      /* Non-fatal: log and continue — the worst that happens is TLS
+       * fails later, which the warm-fallback retry will catch. */
+      fp_warn ("PSK hash read (0x%x) failed: %s — continuing to TLS",
+               flags, error->message);
+      g_error_free (error);
+    }
+  else
+    {
+      fp_dbg ("PSK hash read (0x%x): success=%d, len=%d",
+              flags, success, length);
+    }
+  fpi_ssm_next_state (ssm);
+}
 
 static void
 activate_run_state (FpiSsm *ssm, FpDevice *dev)
@@ -206,7 +227,23 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
        * desynchronizes the MCU crypto engine, causing bad record mac.
        * Config upload now happens in on_tls_activation_complete (or is
        * skipped entirely on warm reuse). */
-      fpi_ssm_jump_to_state (ssm, ACTIVATE_NUM_STATES);
+      if (self->warm_attempted)
+        {
+          fpi_ssm_jump_to_state (ssm, ACTIVATE_NUM_STATES);
+          return;
+        }
+      fpi_ssm_next_state (ssm);
+      break;
+
+    case ACTIVATE_CHECK_PSK:
+      if (self->warm_attempted)
+        {
+          fpi_ssm_jump_to_state (ssm, ACTIVATE_NUM_STATES);
+          return;
+        }
+      fp_dbg ("Cold path — reading PSK slot 0x%08x to latch MCU crypto state...", GOODIX_5E0A_PSK_FLAGS);
+      goodix_send_preset_psk_read_5e0a (dev, GOODIX_5E0A_PSK_FLAGS, 32, 0,
+                                        on_psk_hash_read, ssm);
       break;
     }
 }

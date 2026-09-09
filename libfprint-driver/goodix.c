@@ -1320,6 +1320,48 @@ goodix_send_preset_psk_read (FpDevice *dev, guint32 flags, guint16 length,
                         NULL);
 }
 
+void
+goodix_send_preset_psk_read_5e0a (FpDevice                   *dev,
+                                  guint32                     flags,
+                                  guint32                     length,
+                                  guint32                     offset,
+                                  GoodixPresetPskReadCallback callback,
+                                  gpointer                    user_data)
+{
+  /* Ticket 48: 5e0a / Geneva CMD 0xe4 wire framing reversed from wbdi.dll
+   * PresetPskReadG (0x1800978c8): 16 bytes consisting of
+   * length (4B LE) + offset (4B LE) + flags (4B LE) + reserved (4B LE). */
+  struct __attribute__((__packed__)) {
+    guint32 length;
+    guint32 offset;
+    guint32 flags;
+    guint32 reserved;
+  } payload = {
+    .length = GUINT32_TO_LE (length),
+    .offset = GUINT32_TO_LE (offset),
+    .flags = GUINT32_TO_LE (flags),
+    .reserved = 0,
+  };
+  GoodixCallbackInfo *cb_info;
+
+  if (callback)
+    {
+      cb_info = malloc (sizeof (GoodixCallbackInfo));
+
+      cb_info->callback = G_CALLBACK (callback);
+      cb_info->user_data = user_data;
+
+      goodix_send_protocol (dev, GOODIX_CMD_PRESET_PSK_READ, (guint8 *) &payload,
+                            sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
+                            goodix_receive_preset_psk_read, cb_info);
+      return;
+    }
+
+  goodix_send_protocol (dev, GOODIX_CMD_PRESET_PSK_READ, (guint8 *) &payload,
+                        sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE, NULL,
+                        NULL);
+}
+
 // ---- GOODIX SEND SECTION END ----
 
 // -----------------------------------------------------------------------------

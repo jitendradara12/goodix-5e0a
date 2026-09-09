@@ -1,4 +1,4 @@
-From 3f76a8ced3d3893238354b01ad71f51a9516ec3f Mon Sep 17 00:00:00 2001
+From 28c7841d6b343445f923dda01dd46c8732c87411 Mon Sep 17 00:00:00 2001
 From: Nix User <jitendradara4464@gmail.com>
 Date: Sun, 6 Sep 2026 13:07:23 +0530
 Subject: [PATCH] drivers/goodixtls: upstream integration, power management,
@@ -9,8 +9,9 @@ Subject: [PATCH] drivers/goodixtls: upstream integration, power management,
 - Add authentic umockdev capture replay fixtures (capture.pcapng, device, capture.png).
 ---
  enrolled.pgm                             |   3 +
- libfprint/drivers/goodixtls/goodix.c     | 244 +++++--
- libfprint/drivers/goodixtls/goodix5e0a.c | 892 ++++++++++++++++++-----
+ libfprint/drivers/goodixtls/goodix.c     | 248 ++++++-
+ libfprint/drivers/goodixtls/goodix.h     |  68 +-
+ libfprint/drivers/goodixtls/goodix5e0a.c | 899 ++++++++++++++++++-----
  libfprint/drivers/goodixtls/goodix5xx.c  |  42 +-
  libfprint/drivers/goodixtls/goodix5xx.h  |   1 +
  libfprint/drivers/goodixtls/goodixtls.c  |  39 +-
@@ -23,7 +24,7 @@ Subject: [PATCH] drivers/goodixtls: upstream integration, power management,
  tests/goodixtls5e0a/capture.png          | Bin 14919 -> 27610 bytes
  tests/goodixtls5e0a/device               |  36 +-
  verify.pgm                               |   8 +
- 15 files changed, 1081 insertions(+), 427 deletions(-)
+ 16 files changed, 1187 insertions(+), 400 deletions(-)
  create mode 100644 enrolled.pgm
  create mode 100644 test-storage.variant
  delete mode 100644 tests/goodixtls5e0a/capture.ioctl
@@ -41,7 +42,7 @@ index 0000000..5464f00
 +=?445XY72IL9+$?|’‚vn^D3,&#YÈæ³šav •U@XYEF\\E?JRWP=Jv{YC;51<VS58^_<Eys12t~lWWk}Œ‹{}ššœŸ¡¢š‰~xvw ¯°¥©¾ªmVgpr`84R\QUfbG3&2WX4)74"=ic-#GO9.-Dr~g\^S:/1-$WÇã«n‚«WB]aMPjrh`\XRE2BveSIVx‚tcNf¬¬fd¦¡WFn{miq˜©²©Œ–ÅÕÆÆ×ŞÚÔÊÅÂ¹¨¤®ÀÚåáâéİ½µÆ¼—t|—«¸ÂËÂ¨ŒnsŸxoƒxNGe|~MFirad{ ”kk—Ÿ…zxf…Öæ´šl«W@X_TXktsjXT^S3>u‚eWVj’‹wa{ÄÁqn¸ºrXknabr†Ÿ±½®„ĞâÆÇåíàÙÙÓÆº®­µÉéùùôëİÊÇÖË§“ÃŞğúûìÌ¬Œ“ÃÄ˜¢šsgx†“„XOirhoˆ–™‡^g¢²™Šˆ|g…Öæ³™]sŸ•U<IT[_`ch[>HzxA@t|YO`q™pw¥œ\c²¼ƒgjfZVXe–¬›dk°ÀšÈĞ³ªµ¨…z‰˜¦½İííßÃª“Œ•£›†™Ôôúû÷ß³”€’ÈÈ’”˜y[[zvM>IOOQUY]UAOvaK8'WÇâ©Œ`u “M/9I]e__f`MW}zNKnqSQlz|Š¡Ÿ„†§œgq¼Ç’xzpYOPZmƒ›ŒTZœ¦wuŸ¦Š‚„aYm~‹œ²ÄÓÈ¥‡ok{ŒŸš}“ÛûôîêÏ…‰ ÉÆ—‹£¦“vQLheC:KOF@==A>5@afP?3$F¾Úœ|tˆ¯—>(=[ihjoy†eX[_d`T\x…„¤©©ÉÂ‘˜ÖØŸ‹œ^M[ejwŒU[“”]Oipc`hf[WZ_ehi«°s\b†™s‹ØôİÒÓºˆ¦¾ÇÀ§­ÒÄƒ`YW[Q7AnrM<?BEC:;G?%%=?)S»ÎŒks†«“=5DL`‚…’´¨p_vuZORaz‡‡–´ÃÀÈÛÎ¡¨âç¶¡§‘^N_geiqgKNpmG;IMFEJOUQB>DFCTzdUQ]zˆ‰~e~ÇàÈ¸±–gm§ÅÈ¿­ºèÕ`smM>BRoucRC@IH<9?28?)Mª¹z[^o’†J>b]1K«Ê§¬ÖÒ¡S>N_r… ÒëêåÛÁ– ßò×º›{[Q]b`XI=621248?=304>OF$)5>B?5%-N\VYdbRi§Àµ¡†d;H‹¶ÊÆ¨³æØ‹x Œ<.bmNWˆƒG5MO=;J>"$6ŒgL]m‡XWƒx7PÅêÁÁêê¿°¿¥bJ^nz‡–´ßõöîßÃ›¥áøêÎ¥ˆujgipgPCB>7:GMLH@>AL^U1"):UV=.+=cjRQfgTd—©›ˆpX>N‡´ÓÖ¼Ãëİš‘Ã¯VKŒ–hq³¬\Efd@<XU3)611|ŒaKp•hi™•^qĞğÒÒğğÑÇÑ¼‡t„‘¡¼ĞÜâäååÓ°¶çúğßÆ¶­š~|“—†yps‚†€yrnmnpw„hTDU‡‘sjvƒˆnpŒjm—›{mqrp~¾ãñéëøä­ªÛÖ›”¿Í½ÄâÌ‚o”†G=hxmktd9@{ˆgV‰˜µ®‚~¢›jvÀßÕÚğïÖÈÆ²Œ~‡Š†–»ÍÌÊÆÇÍÀŸ¨Ûë×Å³®µ¤{w™ Œ€|‚‘”Œ†€~†”xaKY‹“qhy‚…~ntˆ]]‡‰cWcoz†‘­Øéàãòà®¨ĞÒ®®Óäáè÷á¥”¯–KB{€~‰~\]€…l`¨¸ÖĞ¦•Š\_•¸ÉÚìçÌ´‡rhjdXg’«±¬œ•˜Šk|¾Ê lq‰][‚…aXhmeemtxyurox†bJ?Gb\5'2<EMT^k[.2grSDFN]de²¾¢«×Òœ£¤šÇÚÓÛóìÅ´·”ML‘oau€ƒ‡†qg¹ÉèæÂ¦”yTZ‰¥¯¾ÓÎ°”{gYRQJ=LyŒ…{hFWš¦zYDIijLMoj?6Q]Zcw……}v‚ šoUIHQH-!#)1?R\^L%/luK;DLTTNc’—r~º¹zpš ƒ¾ÑÅÏïîË¹¶—]a¦ªl]{Œ”˜’ƒ{ºËìïÔ±†gTf›¦……¦¤€i_RC<><6GooGIv„tX18n}cM:7CHFN_Q$6Rq¨»ÆÁ­Ÿ–¤ËÊ¡k]ZXXUNJJTgok[@T•“N<^i_VMXxtO\œ•HR³ÆŒˆºÊ¹Äëç¶£­ zƒ¹¶ypœ£†…¡ª¡œ§¹İß¼•iSTi“’d`††bJA:7418ITZI%\mW<#Q^L>53:@FNXO3',Ft’ ·ØàĞº §ÍÏ¬ynns}€{p^[ij_VN]…z>0P\TI<BZY>J{p(3“¦mp­¹“™ËÍŸœ›‹•»¹ˆ¡ †„›£œ˜~“¼´{S<<RdqiLOrtT8 69*>ut;49$	AK4,3?OSLOZdk[47es_{ÅëìĞ—‰¦©‘€uzšœ¢¬šmVVN=<LL;+&1-;FAHYJ9?'E™TO †|ƒ‰˜ª²±£Š„‘…|tpn„±¡T*%3ThmaCHotY?&+OQ0EE#)1<7"+WX. /Hmxjejw}DBvzPe»èíÑ“…¦®›Œ±Á¼ÁÑÀuvo``n^.!518?*,DSWYYK/'3/<“F=xƒˆ’¨°½ÎÁ”«¯›Œ„€uŒ»¤H#8Zt†xJL|ˆq_R^„{DL”¢xhtwreQFB\’‡:'O”®Ÿ’‡Š]e¥©rw¹ØÔ¾•šÍİÉ³¨ÕæÛİêà¾¶ÈÏÊÁ³’^\Œ5.i}jhwzqdiuLV“™hb‰›—œ«¶¼ÃËØéá¿¼ÖàÜÕÌÇr‰·¡F#7L_uŒ~LItƒvoo€¡–`fª½ ’”—š“€mZm§Q2Am·ÖÊ»©§µ¢mm¢¦xx¦¹°ÂÕÇ³˜¢ĞäÜâôôáßîôğæÖ¹‹­•D;z~w|}zy|ztzƒ\^ˆom…’“›©²µ¹¾ÊŞÚ¿¼ÓãíêÜÕdz§˜N;anchtI?Wdfo’¨¤…”ĞŞ¾¢‰µ¿®\_–œrh|¡ØñìáĞÍ×ºsZmobg€‰pV\ƒ—–Šrz¤»ÀÑïûõîèŞÒÏÕÑÁ®—rA>ivdXRKBI_f][^ZMTnq][luw{†ŠŠ‡“®­“¢·ÌË´¨_tŸI>mx\^{vNF^nw¯©‹™ÔçÒ»¡¨ÏÜÏªkd•Ÿ„•±ÕìõòãâìÇrO_bZ\inj\DE_llfYc„š£´ÎãòîÙÌÅÈÔÕË¯ƒ`ED^idYH>;?IKFB@?=G]]GCR^ef`bjkdk€‚ojtŒ³¶–†dw‰8)^iMU‚„\^Š£¨¦œ¡¶¥ou·ÚİŞÜßèéäÃ‡|£¦†}‹œ®ÇäîäæôÊjNx~_UaimcKFTUJGN[p~…‹‘«×ßÃ¼ËÒÓÆ¬r]PNXg|x\Ud[9*-032+7UQ-$8K\[FEW\TRWWSMGc¡¬„oh{ŸŠ9'TcUa‡Šhk’¬¸¸ª«¼§liŸÃÕâêæÖÕáÒ©¢¾¶‹— œ°İëÚÒÔ­]Js}eVPUddRLQM@>FLQX_gn†°¼©«ÃĞÑÇ²•p]ZZ]infj^E647@@8<NF&&6LM83>CB?8=MH,Hœ­|dm~¢‘N8Odvƒ‹†tov‰§¶¶ºÁ®€uŒ£¸ÆÌ¾›ÇØÓ×åÏ•º¿¨ŞèÅ§pMBP^l^62Q^YWXUPJA6'&3Gdv~…‹™¯ÁÏÙßÀ}_dimomr~qLJkpZWgjcXH<3( 5=6- !.0%4_Y%=¢¸€dƒ”µ¨nVby¦“‡„z‡¦·»¾Á°Šy|Œª¶®˜uz¦ÂÌÓÙ¿‡ˆÃË £ÕÛ´“vbYPHW}q2(QkwwmhhcYI0,;Qoxnqƒ—®¿ÌÖİ¾zg„’“Š¤JK¥ˆ„˜Ÿ˜YGK@&'BNKD86<<5Huk,C¯Ê•z«ºÙÎšƒŠ£ÍÌ —§·½¹¹»¬Œwn«°udh€“–˜†aq´Æ¥£ÀÂ©–‹„t[g™D6cŠ«®’…†‰…njy…€‘¦ÀËÈ¾¬gu¸ÖÎÎÔÚá¹dbµÔ½½Ôİ×¸€gmaCIs‚vw‡‚kbix~D[Ââº¦«»ÛÖ­˜–©ÒÌ—…–  ¤ª§œœ¨~miyš€hUSbjjoxkHZŸ°Œ­°“{|ƒ{cl–YLh¾Å¤”–œ§¢ƒƒ‹›–~™«µ´ªŸ“e}ÈéàâïøıÔ}{ÎìÕÖñøëÌš‚yfl‹‘~Šlco{‰vBXº×¯›„–º¿§”„­¦xkˆ€}€wbg†…bZnxy|oF:LTQ^zo<C„‹X]œ£rTGJ^e_dswri_v°¾¡”—œ¥ vYb“knœ¦‹zrz’r~´ÌÈÍÛêøÜ––ÚîĞĞïñÖ½¦•ŒŠ‹}fYUL?=EQaS%<–©tZxŒ²²Šrlw”Œ^Skob]bW<CklEAak^^l]1(BJ?Lpf..ei9<ryR;48GS[\X`ss^e†–“Œ”ƒlLT†…RQ‚ŠjUM[}em—°·»¾ÎìÙ–•ØëÌÍîëÄ¯¯¢ˆ~…„|reVC7007>F70cF‡œÄ¬T4Lh†|J<SWGERJ+/WT'"ERHCA2CK5:YPCJ0'0427BE@EUVFI^hgZBM{ˆunttme[c|m5*KXPF;@TS=Hs”¬­˜¦ØÊ{{ÉãÊÍîæ´¤µ¦vWHJ_p|u\I=<DB6$5Ÿ·}`—Ã§C4One4,MR:6D=")RU/#0:?<1%,dj>9[T%9A3,+2CUgeMMfcF>M]p\"#^nSQjlULQZgY--<KF-0OQ65Mjmv©W_¸ÙÁÇéÚ™‰¬\ALYi€Ÿz`NHPK:%4´{_f~®¡Y/#-LG$X`<.72!/^n^E#"BK>63W¤¥YIusB4GLCJat…•¤˜plŒ…W@@Tzk(=B%7wx;"-9HH<0'5\V$,myP4%1X]??]V(C¦Ì³¹ŞÆq`“‡:>‘¯˜£ÎÍŸ{aVZYR;-†–_Cj€­¢`:/7SL"-mvH9LI2=j~x['"Nefb[~ÍÌ~n¡|hfa\j‹¦¸ÇÒº|¬¦jOUh†w<-LO6H†„B*=INONE4Dtm05|iO>Ec^62QR5P¤Á§­Ó¼g\š’FR·Ú»Àêé¼›‡ypidI.†—bHÁªY>Xn‚sAJ“\WƒƒUQv…~e::dˆ§ª¢İá¬§ÑàÓ»•|Š«ÆŞëğÌ€ÇÇk‹™”€_bŠ–…†—jeˆznd\Ug”ŒQKzŒ…™¦­‘SO…”~ˆ²¹¢È»|~¿¿~¾ÙĞØòïĞÁÂ²’|nO9·†m{‰¥“TFh|ƒuQ^š¥„´µ‡z‘™’_Zp‹¬´¥µæïÎÎïûóÛ´œ“›³Íç÷üÛ”ÍÈr™§œz„¬¿¾»¸¦„~”—Š|naVjšbUt€yŠ²À´’[V„•Š‘«ª‘´«u~ÅÆ|¸ÒÉÓğñÕÍÚÍ¥‹~\$>©Ç˜4@Y^PQ_aWRSi–­¯ÀßáÅ¹»ºµ¨”‚rmt‚—¹èöååöóÚÉÀ²Ÿš¦¹Õêøé½®½©qc“ ‹‘²ÌßèçÊ’uux}yiT9M—bShhS^Š’xbNHPUYl’xz˜‹R]¬¦LM§Å¦°åíÊÁĞÈ¨—•p)<ªÉš‚6@SYRUa\FDUn¦³ÊéïİÖØÑÁ°†gZ^pµßğèçîâÂ¶¿±ƒ•¬ÊÜâÕ¶ª²m^n•—…­ÅÕæ÷Ş›yxy|zr\:J“ZLhdBEnsRDIKKE:M}‚\Xuk9I›“12•³˜ÔãÅ¿ĞÌ±¥¨0?¯Ñ¢‹‚‡’‚YRnnQJXk…Š¡ÒáÏÑçŞ¶–~fPQk§ÌÛÖÕÖÈª¢°™]U€¦ÆÌº €ƒ«¦vagp{yiu­¡µæà¢‹œš†€‡{[d•JArsE>`aB;K_ud-4xy9)KK*B”/+~‰¾ÒÅÈÚ×Àµ¹8F»ß²›˜›¡“srqj}šœ”¥ĞÙÁÇêàªˆxdJLkŠš®²¦¤¬¢…‘|B?s•¥ª£Š]a—šlVY\_[Nc›«“ ÓÓ ¢¦š›vzRHqn=3PUD=@Uzj%*y{08<';yr& a~u‚¥³­±¾À¶·ÄŸIUÃä· x{€ ´ÉÄ¥¥ÆÔÍÌĞ×â×´·à×„~UJ^r†‡tVTpoRNb\;AlyhtŸ’NEvzO=CEC=4V£¿©©¾¸—ˆ‰œÂÈ®š‹¥›r`eS+$=NVI'-ZW"1‚ˆC*<>/3KB5Vs„‰‡~z~‡•«É²dkÈß²›{}•¸ÔèÜ±±ÚâÈÀÉĞÕÄŸ¥ÖË…q‡]O_luxu]1/X^A@ZY>Dmv`k—ŠD;mwZMQQKE>c´ÖÇÁÆº‰¡ÖáÂ±®±»®ŠsiX?:IYi^85RQ2F‹O;QXNJK?%"6T|‘Š|phs‘°Ï»u{Îâ¹¥ ¡¢«»ÑíÙ—Œ¸¸‹x~§£Í¾cLy€a[omUYxm75fpRUxtIIt‹Œr@Bz“Œ‡„xqlŠÎîëêìÚ´¡¡´ÙåØÖßâßÇš‚|xusu{{tlbZUi•UMw‰…€yjSPcx¦¼¼¨’|„¬ÆÔ¼}†ÕìÌ¼ÁÂÅÈÍÜóÙ­®‚h_h…‡p…Å·ZCsg`jeQ\†|>;sebxsSW}”œ–ƒiGQ†Ÿœ–•zÑíãàãÕ¶¢š«ÕãÖÚğôæÍ¨—›œ›š››œ ‘rhs…‘_Y‘Šƒwgi~‰‹ÁÅª‘zƒ«ÁÄ¬zˆ×ğÑÂÜàèíîóûÜ—‹¸Ä®j^mrm‡À¶jV{ƒo^QTh€ŠGC~xfYV]oŠ“‰|oZf’ˆzq¤jt½Ñ¯¢«¬¥“vˆÈÚ¾ÀáçĞ¿´³¾º§©ÁÌÊÄº¤yŠ™¥–l^jnjhifamˆˆnv¡¥‚lcoŸŸkƒÖíÉ·ÂÊÙÚËÆÍ³yr«˜{TDMRRfˆUH`eWF39Vnm8<y‡iN76J\mn`YZUKTryk_Tb‰KOŒœqruykL]Ÿ®‰†¤¨”’ ·´—›ÁÕÖÈ­qjz‹Ÿ“iRNNPNIGGSjhOTxxUCAKalmbLf±Âš†q~™bUi^44_cA)$&"/-#%%*$'af6$% &3EF76C;=OVN901*+Y^:-7815C^‡‹kq›µ¾©wUB;B\ŠˆV7+.@<$#).7E?% '.+1hnE0eu•ˆL6FA'(FJ3#&(  #%*3763.Bqo>(-0/+# #(//'!+JQ@3)&).7>D@31:7)1PM) !&/Ky„ku¡¼Å®vVLMXs ŸqWPNOF3#%6;5/(#!+11+.\_8%œ­ĞÄ‰hb[ROR]piIBTZTK==HI@G\io~™¥£š‰§£€wˆ€iahwvdYa|nW<Bj}|kIF`z“‘to„|WLYab_Wg—¨Òéì×©’‘Ÿ»Ğß×¹°½¬}kxjA7K[g`FF_fYc‚‰vbN\Œ”ue“¥ÉÀ‹mhfhbR\€~UMg{Š‚d]prdlŠ§·ÎÛİ×ÈÆÒÉ«Ÿ¡¤š…}‚—º»š‡…•”„mQSuˆ{PQ}µµ™¨~qyƒ~ƒš¥¢¸åüıïĞ½¶ÆìÿÿñÖÔëØš…™Œ^Uo}}nPV€Œ²¹ ‡pxŸ¥Š}J\}QEWdk`DFea;:`Á¿‡w’‚Š«ÁÍÓÔÙäéêìğáÀœtfsxwuq†±¶•Š•˜”ŒuhZHOmpYaˆŸ¢¦¯¼¶Š|†¨²¥˜¤ÙõúöêÖ»ÂëÿÿíÈÂÛÑ¦’•ˆlk†ŠxfT`‹››»Â¯š„‚”‘ym4Fic5+DV`W<@cb=Bp¥áà¡‹Ÿ¡’˜±ÇÙàİâíóöøùíÔ©lS`mz|·¾¤œ§¡Œzvub@>]h_h„Šœ¨±­›ƒej‘¢—„wˆ¹ÔÙàéØ««Øòûä¯¡»º‘”~€•s^R^„–”£ÀÊ¿ªŒ†—”}rSb‚s7!0<FF:Kz\d•Âëå²›¢Ÿ”“¯ÉİëôùöìéììèÆ‡imyŒš¢²ÊÑÇ¾¶ |lnrun[V_ccgqvvz€…ˆƒw]5/J^hnpi[e†˜š¬ÎÂ‡‚´ÙòØŠq“‚–œ””œmWKRj~Œ£ÂÑĞ¸Š…©¯˜Œp}˜‡K4BO[\SbŠt~®ÕñíÉµ²ªš¡°Ç×âéîçÓĞİåèÎ—ys{‘£±ÁÓİàØÅ®”‚yz…‹‹Š‡{d\ahosrtxulU2%/@Xdc^V^v~‹ª oo¡ÅİÄxb„’—¯µª§¬—gNKNWbq¶ÈÃ­†‹¼Ç­Ÿ‹–¬Ÿoc|›ˆ…”“ƒ¼İô÷çÚĞÁ­¬¼ÉÑÎÁÁÍÆ«­ÌÙÔÀ„rs‡™©½ÓäïêÔÌÓÂ˜¥ºÎØ×°cEVfvzru‚ƒxk]N>Hlwidiuˆ…|sdr·¼§wt·ÃĞßÙ¿¸Å§aDQSHCCa¯˜ˆ™ÑÜ¼¬…–uw›°¶¯œ’’‹™¸ÏßæåÛÈ³œ­³¯¦˜—¤Ÿ‡³¼©•m`cu†–©¿ÑàßÏÏßÒ§²ÄÒ×Ò¯nMKP\^V\qwogaR:=Z`QNXdrxukYNIZ‡uZ`ˆ¦¼Óìå¿¶Ë«W5EF80-Cs}cY_€¼É¥“^com^n¯£™‰ƒ…–¡ª²ºÂ·šnirpc`flrqiu”gK:5=J[jxˆ˜¦±···¶±¦¥®©—†wv„rA&#*FSQJ=0"! #+3?NN@0 &CK>0!(D`z¢×Ú¨Ÿ¾¡J"')')0583&  @€iVcgqtq†´Ã²¤™‚€ˆŠˆ‰²«ŠyxtnaMHPVY[\i‚|Y=(&6ER`m|•—¡´¶¨¡¢ªºµ›†w€¡‘Q-%'2D]heZH><5(#(*))(2HND6"!59.#$AXgÒÚ©¢Å²iB;746=<3+"8w†cQ”™¤«¯ÀŞêâÒ¹¢‚|ummv´·˜™º¼ †n^VTX\`k}ƒ~kJ?JT[fu‡œŸÆÍ³£œ­ÖæŞ×ÒËÄ©{ddu•«µ´ª™{ˆƒnjyyj]QSdjg^NKSWVQFUƒœÛçÀ½àİ³•‚p`WVZedWNJf£²”„¢ª¹¾¹Â×ßÚÍ¸njcZZb}©¯•ÀÃ‚n]MIS[bjrwylQJW^_er„›–w‚·Æ®™…™ÓîêëóëÒ²‹wvˆ¬ÉÜáØ¾’‰¤£†~Œ‹yi[^s~vc]ehfddu˜„–ÔåÉÌîîÍ´¢Šm_apn__w¥°—Š˜°­‘ŒŸ£™•–€SDRUONSj’“ol‹‰gSMC46HWcfaXJA<E\d^^etŠ|JN‡ ™„_o²Í¿ÄÜŞË«€eY_wÓïğÉ{h‘“p_a^VNFTw‰Œ~_Yjk\_t„„k}½ÔÄÌîç¸Ÿœ…[N^~®§iOYi}~kb‹›»®vdw}wy‚n<-CLJFBSx{[P[]XK8,)0AO[]TG5/4BZc^ZW^ob8<p‹‹{[g °˜š¶Á¼£w[PUk–ÕøüÕhŠŒm^``_WISv„}q`_omZ_|…yiUi¥»«·Ş×¡‹”ˆe^t–Å½_]ajh[Tœ±ÙÁhG^muz|f9+=HJB/8]gTB1Aqk.-8<CKNKD:6:CR\_XGBJI?Mt†ƒ~wšvo‚”¥™p[Xh‰²ãüıß£ˆŒ}|‰‘”…d]qnTQeqsmaezx^LCYŒ™€Œ¾¼‡w‹’Š£ºÓÑ³‘k^kmeaš±ßÂZ.>N\b`P4*29>9+3QWG3.km5!1;?ABHUUGACGLWhdL;304B\gaadn}w[R[hzuZNRf‰¬ÍİÛË­œ™•“™¦«¦”tfkZ57an^VX]f\?26MvyV_•–b_’˜°ÅÕÏµ˜xnz}wt…Ì±L,2/--)! %-7DSM3"$CQLD68IK?Msx\NPNHVx~fJ*)-'$#+>GGE@<9635<Olƒ”›—™¡¥¤§®´¹¯•„{obH#RW0(>F@3-EbZ-1ee2Cš¬{u›·É¹‡v„––Œlƒ±I3:36CC88CP^gl_B2/6HWccX_wxcnš¡ƒttsq€ ¦‘rH.$#.1--242:JQQG5,/6CVo~†Š”¢®·¾ÁÆÎÄ©›š|`<Aoi0&MU=/)/AP\Q.-PL!A«¾|t¤ÃÒÀ~œ¦¦™OdˆR9<Oqzljtxv˜£Ÿ›td]dy€y€—°ÉÈ­­ÉÎ½²¯µÇÕßÜÌ±pZXjtt~’‡[Ocx‰lXLQdz’›•´º°¸ÒØËĞåëâÚÓÇ·£Œ’¶¤]R…‰^P`krpf^XUVJ1XÀÕ–“ËêïåÉ°˜•©­¡œRe‹„O>Piˆ•‘‹›¬ÄÌÃ¼·§{rw‹…•¾Üíì×ÕçæÑÆÅÓğşıòİÃ¤‰qm}ƒ‹§œk]r†˜’uc]bsƒ”—Œ—¸½¦®ÔİÈËæõùóå×Ê»ª±Î»xl˜šreryzticd^SH>f¾Î••Íêêä×Á¡ŸºÂ´®wˆ©‘A,SlxŠ¢¡†ˆ¦ºÆËÊÆ¿¬Œxnp}…ˆ ÍãäãàæóçÀ±¸ÌîıùæÄ§zhbf`PUoscdw{rcNM`knquqfr•›ƒ¿Ì·¸ÑâìæÑÁµ§˜·®‚t„†zm_XY]daRIEEJj¤©z{¬ÄÃ¿¸±ª¸Ûå×Ï€«9$Qlv¹»“²ÆÏÕØ×Ğ»˜€qnx„™¿Ößääêøã®´ÌåîåÑ±—„sc[ZP>=NUPXmlUD;@T^`ab_Xc„mt—¦ «ÇÖ×Ğ¿²ª›…¶µ‹~Œ‹zj]TQU`YA;GJDXˆŒef§±µµ°§µØàÍÃmy“|6%Jh€¥ÖÚ²¨¾ĞàêğğêÕ±“zr|~y€•µàïáãôÜš¹ÑÖĞÁ±¡’„tbXXRHCF@29UXA7;;7<HSZ_bk|ze\]j…¤ÊÑ»°¯¬©•qƒÊÏ“‰°¨q\jmd^\M04YV+2kwWVt“´ÇÍ½˜”±²—Šfq‡xF=\uŠ­ŞåÀ²»ÊßçàØÎ¾§wiffgp€ÈÏ´·ØÈ†z£° ™›•‰zhXIEMNIFE8%JVIGOG-);DEIRX\XK?4?`ƒ©ª‡’ ‹^qÆÕšÇ½z`mmb_cYABZO "VaC=Ng‰¥–op˜›{jlu‡ƒij‡”“§ÑÙÀ¯¨²ÍÊ©|uzugR87Pi–„]g£§sbsjEHs}gM0"9DCFL=Lgntwb5&65!(*#$2Hd`<?i„}KZªÅ«¯ÑÉ—udVLVt~sbK6#*KK+#19=9-HŒ›we‰™–‚†¤®¥¯ÌÓÆ¯«ª‹sbanpfR27_x‚‚xa=I…lXTC%2jzaL901A`oppoY.1c…™¢¡‹_O[S6,31'(56-,2AYS/1Z{”ˆVc­ÍÃÇ×Ï°’tedt—£˜}O60<XW9%$'('M›®‡s¦­»±‘‘²ÂÁÅÎÓÔ³n\{‰†ƒ€€ƒ€ugUd”‚rndU]|‚p\F=AX€‹yw…’£ÀÏÏÄ¬‹`a²ÈÑÍÁ­¤¨…vsngrŠeV^nˆƒaVd¬¬ŒÏíçàØĞÇ·Ÿš¨¸ÊÈ±‘gOHX~…mXFEU^bb]~ÅÓ¨“´ºÈÂ©£¯¸¿¿º¹¾¡aPnzrry~€}teRb•Ÿ~lg`Wd‡ŒrZC;AVz‰‹¨¹¾ÏíúøêĞ«|~³ÖçîêàÏÆÅÁ¹«™Š}‰­¦s_j|–‘m\^xª¯‡”Öïß×ÙÕÌÃº¿ÓßáÚË®„kcl…‰xjabntsoh†ÈÓ§‘©±ÀÉË»š‡„yfj„|P@MYehbN*1byundVE`¦­sRL<#,Xqy‰¢±µÇåğêâÙ¹‚ˆÌñ÷ùøçÆ´²¼ÒË¦…ilˆWFVk„|SBG`‘hyÂÓ¬®ØŞ¿¸ÇÖæèÛÚåÔ¥‰€wndYZiole[QGc¤¯ƒn¤¬¼ÈĞ»Šw‚€qcVS\fpb;,7DU]^HF^dd`P5P¢®rQK=(4`x~¤µÀÑèîâÙÕº‰Š¼ßòüşìÆµ·ÆáØ¬‚YVxtI;H]yn=,<W~~Xe¥³–Ì×¶²ÍàëëßßëØ§‰}o^URV`_SIA90N’t_¤¬¼À¸¢noj_M41EE1+476>Q^fU*$BNJNZM%5{qW@>Qm’’˜®Æßğ÷òàĞÄ¯“„ƒŸ×öüïĞÇÕßåÔ¬€OGhiJ<@Rtf*<[ywWZ„´¾¯´ÍÜâèïëÛ»Šj[TW\d]F2"&("E‘¢zfŒ”¤©¢nYPOWH!@B# 9B::DLTM74CKN[rmKR„”ƒlNFTkŠ‘€… ¹ÑâêæÖÀ¦—”‚bt¸ÔÇÀ¾ÃÏÕÔÂ¡xI;PSD<<Jg[%0HabLHV_coƒ•¨³¿ËÖÒ¾ z]JFPaypG/)"6|iW\ew„V7#/ZUO]FALLB8.)(1DLIUpŒ§°¤¨¼¼¨sT3.HPGTx–§ÁÊÄª{q…X^––`^¨¥§®¥‹lG3/19<<CRK. 7?8/$#,4;Mjo^e„”••“‰vbLDJd‘‘bUhW" R]?0PYlz…tH)-gh/-avjhpogU:.1Cen\d†©ËÛÙÛáÔ³“vF6EIBQv…­¸­‘cfš–[W‹„AE‘®œ•›š’eRJLXbimmgZD%$CQO<(3F_eW^z‹‘‰…ƒxc`nŠµ¸”Œ¢‹H''7VZC8ir„Š…mD00KQNw—¦«§‘h\mƒš{w²ŞğèéòÛ¤”­«‚ƒ}r{˜”±°‘u]tº·ka™œjvÁÖ³Ÿš¡µ¶¢› £¤¯ÄÆ¶­ªYV„˜p6"2Kl{v}‘œ ®ÉÄŸ”¡ ™»ÕåçÛÖ×¿uu{†„unpz’†mG44Oƒuv”§¯¼ÎÕÒº£À¿ ™«ÄãìßâõÛ’ƒ­¹¦˜…z€˜œ‹’®¦y`\zº´g]•Ÿ|…¼Å¡ˆ˜º¼š²¼¸Èíõá×Ö½‹ƒ¤¯¤@);Tv€t{—œÆÆ›Œ˜œ«Ìàêñ÷öï×¯™•”˜•Œ‡gs‰ˆrQ7$9u–›¦·ÃÊÖéîæÑ°›”¥ÏÜËÉ×İÜÑ¾ÇìÔj“ˆwk`X_v~y†¦›eQ_w™ŒQL}‹vs€{d]f}¡•WP€–”®äùîåßÑ»«£˜‹k8&7EPWY_h`GU‰–}mfo‡—Ÿ®ÃÖçíèÓ¯•…‚Š‹‡„v˜›ˆnL3%>}¥¶ÁÇÎØáìñğÜ¶›˜½ÏÏÕàŞÑ¼Ÿ£È³ePt|h\YUOQ]_Ye†RCQ`pgEEfpbZWOCCOfˆy77w“Š ÕñóîãÙÏÁ®‘rC1>B?CMOI=)5aslaSVk{‡–¨¿ÜéæÓ°•~ŒŒ‰œ¦»±ˆ_7*8]š½ÆÈÃÉÙŞØŞğÜ €{~‰˜­¼ÆÉÄ¬u‡wC6OTDFZb^VL>+0MR@626?DEIPM?;BC=>DTpi>N˜²™ÀÛñóäÕÈÄÈÃµ”aJOMBBNK:35>M\ij]RHXƒ˜™­ÕéèÖ²™‰Š£›–„¢–lH*%;e£ÇÏÊ¹¾ÛÚº»İÑ—vpljv›˜šŸdSZN.+EL@BS\_U=(<D3++,-4BE<2')9>86:Jf`9Eƒ—€š·ÖÛÅ»¿ÇÑÍ¹x]L>5;QP82>B=BQY[L.>z{„ªÇÚ×¿¤‡‡¦¯¢›-7KJ4'#%.U™ÃÒÉ¨¯àÖ’ˆ¸½˜~ndagvpWRb^H>A9'0VdZOBCSL0&SU+#<C97>:)$>B2-4Hh^)8D>Ieƒ¤¥†‹´ÉË¼Œ‰l3-W^B:D@/%#0LF+kwNE[‚»×Ö¸|v¦´ –"-A@)&7=8VšÆÚÒ¬³æÒwg¡´ ˆlagloeMIYWD=@@<Hesq`>?ceD44Itq>5U`TMJE><@FOL=8?Pla--:AN_up}´ÑÓÂ–¨M-0DkqVNXQ8'.XX.6nwOAKl¢ÆØ¾yt°À¦˜cn„xIDhoVh¥ĞéæÆÈíÍjX™¶®•kc~†{x|€„wZPYcmrpw…uHP|nt… ˜mbx}tghyŠ™n\YXZcsiECbyŠˆ‹™–ƒ‘ÀŞëà¾ºÖËš|€Što|sVFCU~^_ƒy|„¤Å¸~‚ÄÔ²¡ƒª™]XŠglœ¾ĞÌ³¹ßÂdT”±«__š€v|€…|f^bjvwmpuL[¡³‘„‹œ·³€…‹‘Šwt“©ŸvaacgtŠZSl‚“”ƒ‚‚µÓèß¸´ÔÖ¸¨¥¤¥‡Šf[]k…`a†’‡ƒ‡‡’º´€ŠÑâ¾¬„“²£fcœka€„s…¼±f[¤˜yIT›©~_LK\fjg]WUVZ_f_K^š§†vxºÁ¤}}{hVXote\VZfƒ°¨mNMS_^RXpwkt’¯ÌÁ„¥±©§¬¯±¬£•‚sfdmpmY4>uƒg_luy·²ŒÖêÈ·•¥Å¶wt¬ªo_{q`Pe¢Ÿ]Py…v[5Jšª|\KDFO]`VOIKVXQKEZ‰˜†}–ÃÍµ›{Š‡v][p}ƒy_SUo¢ iH?=CC>EZefq†œ³§ys–§§¬·ÀÆÁ±£–†qghihP &akF@Xir•lƒÑå¿¬·ÅâÑ‘Šº³rfŒ“y`IY‹H4OUF6&BŠœznykD6@HPSQVb[C8;Mo†‘™±ÑÖÁª‘…„‹›Ÿ˜œª»Í¸{O39`gNA@??AFJKXq„˜›‘{ƒ¨¸²·ÇÖåÛ¸±Æ¸†cOUve$GK$$KbkfTIGoÂÓ¢‰¬¼İÌ‹ƒ´¯teƒˆs\AJuq@/>@5*:zˆbYlb;/@RhhTUle@3>X€œ­³¯·ÌÎ½¦‡vr|“Ÿ¢®ÃÚóÛ”`?@aa>8NTJC?:4>Yjpqkgfx¨™¶Ïèßµ®ËÂ”kGM~q&39!!9GMB& /`³ÂruŠ³§e`™Ÿs^_`aS87NSE@EFC7!2kl6$(+<]~QHuuH;Oy»ÛÚÌ±©³´ªcPU_nvy»Üóâ¨…y„¦9-j|eI'#%&$*9Rtw[_„¨ÍÌ¦˜£¤šRSs&%5=7!$U¥³en„²¦a_®‘zibfX85OXPLMR\T;Eqg(&39Ln“»³yq›™l[fÓğåÑ³¨²µ³–_KZgr|ƒÈæ÷è¹¢¡¯Ì­SG‹Ÿ…fB260  13'&1FgkTYz ÈÏ³§«¯µ¦Ÿ‹C+CYl_1%#*V¨w^—­×ÉÁÛÏ»ŸŒƒjBFvaSVe‚nq‹y97sƒf`r’¿ÒËÏİÒ¬’ƒ•ÈÛÏÂ´¶ÇÒ×º{h€“¡°ÀÓé÷üìÇµ¶ÀÒÁ‹†²¾©šš‰]a”šu[LTu„ƒŠšµÛéŞÜáäåàÕÑÖº|m£­™i[pjH;Ab›¡s\ ¸çÜ•‹¼ÔÑ¿“}NT–kY`pŠyy~LN„“{u€ËçñóìÛÀ¦šÅĞº±´½ËÍÅ¦rc{‘¥´ÀĞåğğãÈ¾ÃËÔÌ²²ÌÔÊÄÂÃÉ¯ws£§~bS^„•‘’˜°ÛæÓÕìõñîíîñÕœ¯ÂÉ·‹}Œ\FA^¨}gˆ¦áŞœ‚‘˜—‡fk–‘^`–›n^ju}v^_xy`VYdx‰—´ßòêÜÇµ¥˜ÊÍ§Ÿ³½½§|ZC=I_}‰ƒ•¾ÒÑÊ¼»ÈĞÒÏÈËØâéåØÍÃ¤nX`YA;Ge”œ~qu’ÇÆ‘’ÌãØĞÊÔîİ£¦µÀ¶š…ziR=)L¤¼”€ªãØ‰fospcJW‹ŠTP~…f_nx~sWZ|~cOCPv‘¢½àëİÌ¸§š‘ŠœÄË°¬¾À³“aC;9>Omr`nœ´µ¬™™«´µ³¯·ÊÚææÚÒÌ«nLD<43:T‚…[JPl™^a£À¸±©¸İ×¤”¥¶ÈÂ¥kL0;˜´‘±ÅìÉ\6Xe\SHSth/$EUU]l{‹„fl—S9AUt¢¸ÍÒÈÁ¾²Ÿ‘ˆ”´ÉÕÙÕÆ¬saZXYbtoTZ‚—š‡_Vly|vgu¢¼ÂÆÉÓäÆwPPRXK+-ON*(?`_:@r‘‰™¾Á š­ÅáÚ®œ£‡H+z‘rb£·İ¼Q/T[EBQ`p_-3FYfo‚¡¡†°¡X<L_s…•¨¼Â¸²²¦~s¡¹ÇÎÍÂ¬‘qa``bb_UEKhx|nNAHR`_Qa¬½¿²½àÉwOPXeX2%0++99*3Tfjow‡ ¢¢¾âŞ±§½§c4)gyaUd€¸±jObV,1d~oNAGWq|wÁÊ©¨ÇµqVcmty{¯¹­ •‚iVJ\Œ™†Š¦´´–[BKSZN/%2@OY\`eZ@B_noyŒ«ÖÏ”¿´nIFL[\O=%$+32)(/:HJBOr„‚{orƒ ÉÎ¯°ĞÊn:5`m^VSq®¯t\iX*3qŒ~eYZi„‘¥ÔáÌËŞÇ‡p€ƒypg}²À¦€kQDF]ˆ”~œ±À¦dGOXcV1+ETXVNXupJEaqv{ ØĞˆº¸yZY`nyqJ<FLNC-.FNGDDQj{„…}‚”«ÇÎÀÆßÛº’dWlqfan‰¿¶pVha?Gy”™rgm{’¥·ÉÛæéîôØšˆ¤¢‚jYxÇÕ£‚s`GIf€—§±³¯¸ĞÁ‹olq~zfg}†‚pQV~ƒe\fjfhnŒÂÂ’ÒÔš€ˆ’°ÇÂŸ‰}uo_EJnpQRrv]m§À¹¿ÔİÚÜãéíÜµ”Š„zv~–Ç»qYroOU‚–hh”¢¸ÔãåèëîñÙ¦™±­oUpÀÎ˜vhYJTvŠŸ¼Â°²Ç»smr‚‚qu”‡rUZ‡pirsljm‡¸¶ƒÔØ—ƒ›±Ã×íçÇ«”†ƒrTWy|`a€{Sc«È¹ºÌÓÑÔÜáãÓ¯œ–Š„‚™Ç¼xf†‚[^”rYI]•³·ÈæôòçÒÌÔÊ®£©¦˜~Zdª‡m]W[evyn|¡®¡¦”jTR[omTWw}i^[dy{jn„Œ…€’¸«jrÂÂqa“½ŞïñâÁ¤ŠŠ}ZSgrrqnbK[œ~s{­¶«¯ÃÀ¨’„¡§–{’¾µwbwoKW“•\=7T“¸ÃÕìîÚÅ®¨³¬”••wOV—uZFBO[ffZ_t€„‰xQBKUaY=CkqVMUaolX[t{qll}ŸMX±±XF{®ßóìÛÁ§‹~t\U]dif\N<GqvXJNaƒ~‚—˜‡yn€¯¹‘j€¬¦mME6>”šO-4Nz£ÈßæĞ‚ƒ€ZVt|qY5FŒ–d>"'6FOQH57Pcqe@<XaYG-8hoO@COc\90A@0+2Hkb*?¡¦N2R„ÆäŞÔÇ³˜}bVZ[[SDAJ@$(LVE?DKTXXZ_ZMSk’ÇÍ¤\q™‘W6-!4†‰=!4Pwœ¿ÍÈ§lOQ]si>:]dO:%8r~[<!(BS^J7P]R/1W^E2$0UZ@1.7NI*'#'E>){ƒ@+Fp¨ÆÉÄ·¡„kUTgiZE*'=7=F3.6967==5-%2T‡ÌÕ¤‹Qc†v4.1&8hb&6\‰¢§¡’sF+#6dhA9PK( ,>MYVE5&2Xrg"8KM> IK%"+22+!.4)%(#*%@H-2Ws†™­ªqOGYmƒ}[964CF!$*(*/)(`¿ÓœUdq2 8A:Gia.$Ch’£eB+ 4gmE<RP70;?<JijM:0=b|‰o-CVXJ+3agC5>B@BGA./DPTN=8=9,)/)5>7Ejztƒ¨­“vVY}—§Ÿ€`>;VN#+da 8E98B;$)16gÄÙ¥‹gs‹€Q@LPNa‰…TF[tŸ¡›{`NGV{xMEat}~wrlu‹x<'8Lbpuc84Wp}vZh ±Šxu€‹•zyª˜hb‡†`OQI7=[e[d„s…ºÎÁ°š ÂÒÒÏÊ¸™†HQ •2&s‰gaurXXt€Üæ½©XarkJBQTH[‹‰VBM\mx~|reSHCRtoB7Odw{pifkyc).ARXTF./I]lk\n¡¸³wn‚‘œ—‚ƒ›­»¥kbŠŠdOLC5:RZRVggVe“§¢š˜¸ÇÅÆÊ¿¥ªKS¥›4)zcXkjUXs{–ĞÙ°œ)-61%JJ(4oo2!*131)"*RP$!()%%)-1)24$$*0Df{„n;-ETZVFMl†sH9FF6)"""18641@av€ƒvbczg,0ur&MT-$#&*)Q¢±}cLNROEQttQX‰‰X@@BFIJHC@@@@PqqP@@@@@@CHKJIHEBHYYIA@@@@@GTcv…‘UI\hkh^e„h[[ZXQE@@@@@@@@@@@@@@=7A[qƒ‰…|pt‰UW……WMiiM@@@@@@=7Y¥±fÃÄÅÄÁÅÑÑÅÇØØÇ¿¿ÀÁÂÃÂÀ¿¿¿¿ÅĞĞÅ¿¿¿¿¿¿ÀÂÃÃÂÂÁÀÂÈÈÂÀ¿¿¿¿¿ÂÆËÑÖÚÕÆÂÉÍÎÍÉÌÔÙÚÖÍÈÈÈÇÅÁ¿¿¿¿¿¿¿¿¿¿¿¿¿¿´Ÿš¦·ÍØÖÓÏÑØÔÆÇÖÖÇÄÍÍÄ¿¿¿¿¿¿¶¤°ÙÛ·¥ÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿğÓÆËÚóÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿóÛÛóğÓÅ
 \ No newline at end of file
 diff --git a/libfprint/drivers/goodixtls/goodix.c b/libfprint/drivers/goodixtls/goodix.c
-index ca9d8ed..4f6a2a3 100644
+index ca9d8ed..ae4a065 100644
 --- a/libfprint/drivers/goodixtls/goodix.c
 +++ b/libfprint/drivers/goodixtls/goodix.c
 @@ -60,7 +60,40 @@ typedef struct
@@ -96,11 +97,10 @@ index ca9d8ed..4f6a2a3 100644
    GoodixNone payload = {};
    GoodixCallbackInfo *cb_info;
  
-@@ -1284,42 +1320,6 @@ goodix_send_preset_psk_read (FpDevice *dev, guint32 flags, guint16 length,
-                         NULL);
+@@ -1285,23 +1321,29 @@ goodix_send_preset_psk_read (FpDevice *dev, guint32 flags, guint16 length,
  }
  
--void
+ void
 -goodix_send_preset_psk_read_slice (FpDevice *dev, guint32 flags, guint32 length,
 -                                   guint32 offset,
 -                                   GoodixPresetPskReadCallback callback,
@@ -109,8 +109,29 @@ index ca9d8ed..4f6a2a3 100644
 -  /* 5e0a-only sliced form, byte-identical to vendor goodix.py:
 -   * 16-byte LE payload [length, offset, flags, 0]. */
 -  guint32 payload[4];
--  GoodixCallbackInfo *cb_info;
--
++goodix_send_preset_psk_read_5e0a (FpDevice                   *dev,
++                                  guint32                     flags,
++                                  guint32                     length,
++                                  guint32                     offset,
++                                  GoodixPresetPskReadCallback callback,
++                                  gpointer                    user_data)
++{
++  /* Ticket 48: 5e0a / Geneva CMD 0xe4 wire framing reversed from wbdi.dll
++   * PresetPskReadG (0x1800978c8): 16 bytes consisting of
++   * length (4B LE) + offset (4B LE) + flags (4B LE) + reserved (4B LE). */
++  struct __attribute__((__packed__)) {
++    guint32 length;
++    guint32 offset;
++    guint32 flags;
++    guint32 reserved;
++  } payload = {
++    .length = GUINT32_TO_LE (length),
++    .offset = GUINT32_TO_LE (offset),
++    .flags = GUINT32_TO_LE (flags),
++    .reserved = 0,
++  };
+   GoodixCallbackInfo *cb_info;
+ 
 -  _Static_assert (sizeof (payload) == 16, "sliced PSK read payload must be 16 bytes");
 -
 -  payload[0] = GUINT32_TO_LE (length);
@@ -118,28 +139,26 @@ index ca9d8ed..4f6a2a3 100644
 -  payload[2] = GUINT32_TO_LE (flags);
 -  payload[3] = GUINT32_TO_LE (0);
 -
--  if (callback)
--    {
--      cb_info = malloc (sizeof (GoodixCallbackInfo));
--
--      cb_info->callback = G_CALLBACK (callback);
--      cb_info->user_data = user_data;
--
--      goodix_send_protocol (dev, GOODIX_CMD_PRESET_PSK_READ, (guint8 *) payload,
--                            sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
--                            goodix_receive_preset_psk_read, cb_info);
--      return;
--    }
--
--  goodix_send_protocol (dev, GOODIX_CMD_PRESET_PSK_READ, (guint8 *) payload,
--                        sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE, NULL,
--                        NULL);
--}
--
- // ---- GOODIX SEND SECTION END ----
+   if (callback)
+     {
+       cb_info = malloc (sizeof (GoodixCallbackInfo));
+@@ -1309,13 +1351,13 @@ goodix_send_preset_psk_read_slice (FpDevice *dev, guint32 flags, guint32 length,
+       cb_info->callback = G_CALLBACK (callback);
+       cb_info->user_data = user_data;
  
- // -----------------------------------------------------------------------------
-@@ -1343,10 +1343,73 @@ goodix_dev_init (FpDevice *dev, GError **error)
+-      goodix_send_protocol (dev, GOODIX_CMD_PRESET_PSK_READ, (guint8 *) payload,
++      goodix_send_protocol (dev, GOODIX_CMD_PRESET_PSK_READ, (guint8 *) &payload,
+                             sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
+                             goodix_receive_preset_psk_read, cb_info);
+       return;
+     }
+ 
+-  goodix_send_protocol (dev, GOODIX_CMD_PRESET_PSK_READ, (guint8 *) payload,
++  goodix_send_protocol (dev, GOODIX_CMD_PRESET_PSK_READ, (guint8 *) &payload,
+                         sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE, NULL,
+                         NULL);
+ }
+@@ -1343,10 +1385,73 @@ goodix_dev_init (FpDevice *dev, GError **error)
    priv->length = 0;
    priv->transfer_cancel_tkn = g_cancellable_new ();
  
@@ -217,7 +236,7 @@ index ca9d8ed..4f6a2a3 100644
  }
  void
  goodix_reset_state (FpDevice *dev)
-@@ -1387,6 +1450,53 @@ goodix_activation_gen_bump (FpDevice *dev)
+@@ -1387,6 +1492,53 @@ goodix_activation_gen_bump (FpDevice *dev)
    return ++priv->activation_gen;
  }
  
@@ -271,7 +290,7 @@ index ca9d8ed..4f6a2a3 100644
  gboolean
  goodix_dev_deinit (FpDevice *dev, GError **error)
  {
-@@ -1394,21 +1504,37 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
+@@ -1394,21 +1546,37 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
    FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS (self);
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
@@ -314,7 +333,7 @@ index ca9d8ed..4f6a2a3 100644
  }
  
  // ---- DEV SECTION END ----
-@@ -1586,7 +1712,21 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
+@@ -1586,7 +1754,21 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
    if (error)
      {
        fp_err ("failed to get tls handshake: %s", error->message);
@@ -337,7 +356,7 @@ index ca9d8ed..4f6a2a3 100644
        return;
      }
    FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (user_data);
-@@ -1654,6 +1794,16 @@ goodix_shutdown_tls (FpDevice *dev, GError **error)
+@@ -1654,6 +1836,16 @@ goodix_shutdown_tls (FpDevice *dev, GError **error)
      }
    return TRUE;
  }
@@ -354,8 +373,101 @@ index ca9d8ed..4f6a2a3 100644
  static void
  goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
                                  guint16 length, gpointer user_data,
+diff --git a/libfprint/drivers/goodixtls/goodix.h b/libfprint/drivers/goodixtls/goodix.h
+index fae9223..4b8999a 100644
+--- a/libfprint/drivers/goodixtls/goodix.h
++++ b/libfprint/drivers/goodixtls/goodix.h
+@@ -499,12 +499,12 @@ void goodix_send_preset_psk_read (FpDevice                   *dev,
+                                   guint16                     length,
+                                   GoodixPresetPskReadCallback callback,
+                                   gpointer                    user_data);
+-void goodix_send_preset_psk_read_slice (FpDevice                   *dev,
+-                                        guint32                     flags,
+-                                        guint32                     length,
+-                                        guint32                     offset,
+-                                        GoodixPresetPskReadCallback callback,
+-                                        gpointer                    user_data);
++void goodix_send_preset_psk_read_5e0a (FpDevice                   *dev,
++                                       guint32                     flags,
++                                       guint32                     length,
++                                       guint32                     offset,
++                                       GoodixPresetPskReadCallback callback,
++                                       gpointer                    user_data);
+ /**
+  * @brief Request the OTP (One Time Password) from the device
+  *
+@@ -565,6 +565,46 @@ void goodix_reset_state (FpDevice *dev);
+ guint goodix_activation_gen_get (FpDevice *dev);
+ guint goodix_activation_gen_bump (FpDevice *dev);
+ 
++/**
++ * @brief Device-boot sequence number (ticket 40 warm-activation key).
++ *
++ * Bumped in goodix_dev_init, i.e. once per device open â€” img_open brackets
++ * the whole open session, NOT each verify (activate/deactivate cycle per
++ * claim while the device stays open), so this survives back-to-back claims
++ * and only turns on reopen/re-enumeration. The 5e0a warm predicate pairs it
++ * with a monotonic timestamp: warmth is host-observed recency, never a
++ * device-key claim.
++ *
++ * @param dev
++ * @return current boot sequence number
++ */
++guint goodix_boot_seq_get (FpDevice *dev);
++
++/**
++ * @brief Clean-vs-dirty session lifetime for the ticket-42 conditional
++ * USB reset (shared priv flag `clean_close`).
++ *
++ * Mark clean ONLY at the single point a session proves clean (the
++ * goodix5e0a_deactivate park branch); mark dirty on every failure funnel
++ * (activate/TLS/chip/scan errors), on suspend entry, on destroy-path
++ * deactivate, and on re-enumeration. The flag is zero-initialized
++ * (FALSE = reset, safe direction) so daemon restarts always reset.
++ */
++void goodix_session_mark_clean (FpDevice *dev);
++
++/**
++ * @brief Mark the current session dirty so the next open resets USB state.
++ * @param dev
++ */
++void goodix_session_mark_dirty (FpDevice *dev);
++
++/**
++ * @brief Return whether the current session completed a clean close.
++ * @param dev
++ * @return TRUE when the next open may consider skipping reset
++ */
++gboolean goodix_session_is_clean (FpDevice *dev);
++
+ // ---- DEV SECTION END ----
+ 
+ // -----------------------------------------------------------------------------
+@@ -602,7 +642,21 @@ void goodix_tls_init (FpDevice          *dev,
+  * @return gboolean TRUE if ok, FALSE otherwise
+  */
+ gboolean goodix_shutdown_tls (FpDevice *dev,
+-                              GError  **error);
++                               GError  **error);
++
++/**
++ * @brief Check whether a negotiated TLS session context is currently alive.
++ *
++ * Ticket 38 park gate: deactivate parks the session only when the context
++ * exists, and activate attempts reuse only when it still exists. This is a
++ * pointer test only â€” liveness of the reply path is proven by the
++ * QUERY_MCU_STATE health check, not here (the device-side key can die
++ * while the host context looks alive).
++ *
++ * @param dev
++ * @return gboolean TRUE when priv->tls_hop != NULL, FALSE otherwise
++ */
++gboolean goodix_tls_is_alive (FpDevice *dev);
+ 
+ /**
+  * @brief Read a TLS encrypted image from the device and decrypt it
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
-index 4522173..ec98b0c 100644
+index 4522173..ad0845a 100644
 --- a/libfprint/drivers/goodixtls/goodix5e0a.c
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
 @@ -46,10 +46,6 @@
@@ -417,7 +529,7 @@ index 4522173..ec98b0c 100644
  };
  
  G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a, FPI,
-@@ -67,99 +103,65 @@ G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a, FPI,
+@@ -67,99 +103,86 @@ G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a, FPI,
  G_DEFINE_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a,
                 FPI_TYPE_DEVICE_GOODIXTLS5XX);
  
@@ -448,6 +560,7 @@ index 4522173..ec98b0c 100644
 -  ACTIVATE_READ_PSK,
 -  ACTIVATE_PROVISION_PSK,
    ACTIVATE_UPLOAD_CONFIG,
++  ACTIVATE_CHECK_PSK,
    ACTIVATE_NUM_STATES,
  };
  
@@ -456,7 +569,13 @@ index 4522173..ec98b0c 100644
 -             guint16 length, gpointer user_data, GError *error)
 -{
 -  FpiSsm *ssm = user_data;
--
++/* Ticket 48: Windows PresetPskIsVaildG (pskunify.c, 0x180038888) reads
++ * the MCU PSK hash slot (0xbb020001) before every TLS handshake. This
++ * read appears to initialize the MCU's TLS crypto subsystem â€” without
++ * it, cold-boot TLS fails with bad record mac (cipher operation failed).
++ * Activation: CHECK_FW_VER â†’ CHECK_PSK (0xe4 read 0xbb020001) â†’ TLS â†’
++ * UPLOAD_CONFIG (post-TLS) â†’ enable chip. */
+ 
 -  if (error)
 -    {
 -      g_warning ("5e0a PSK read failed (%s), attempting provision", error->message);
@@ -496,50 +615,50 @@ index 4522173..ec98b0c 100644
 -  }
 -  fpi_ssm_next_state (ssm);
 -}
--
++static void activate_complete (FpiSsm *ssm, FpDevice *dev, GError *error);
+ 
 -/* PSK-reconciliation robustness (ticket 26.3): never brick warm to chase
 - * cold. Provision-reject / transport-error are soft-fail (warn + advance to
 - * UPLOAD_CONFIG/TLS with the host key) so a rejected 0xe0 cannot wedge
 - * warm logins; cold-boot TLS may still MAC-fail and that is diagnosed
 - * downstream, not here. */
--static void
++/* Ticket 48: PSK hash read callback â€” we don't validate the result.
++ * The read's sole purpose is to poke the MCU's TLS crypto subsystem
++ * into an initialized state before we attempt SSL_accept. */
+ static void
 -on_psk_write (FpDevice *dev, gboolean success, gpointer user_data, GError *error)
--{
--  FpiSsm *ssm = user_data;
--
--  if (error)
--    {
++on_psk_hash_read (FpDevice *dev, gboolean success, guint32 flags,
++                  guint8 *psk, guint16 length, gpointer user_data,
++                  GError *error)
+ {
+   FpiSsm *ssm = user_data;
+ 
+   if (error)
+     {
 -      g_warning ("5e0a PSK provision failed (%s), continuing with host key", error->message);
--      g_error_free (error);
++      /* Non-fatal: log and continue â€” the worst that happens is TLS
++       * fails later, which the warm-fallback retry will catch. */
++      fp_warn ("PSK hash read (0x%x) failed: %s â€” continuing to TLS",
++               flags, error->message);
+       g_error_free (error);
 -      fpi_ssm_next_state (ssm);
 -      return;
--    }
+     }
 -
 -  if (!success)
--    {
++  else
+     {
 -      g_warning ("5e0a PSK provision rejected by MCU, continuing with host key (cold boot may fail TLS)");
 -      fpi_ssm_next_state (ssm);
 -      return;
--    }
++      fp_dbg ("PSK hash read (0x%x): success=%d, len=%d",
++              flags, success, length);
+     }
 -
 -  g_message ("5e0a PSK provisioned: host key written (flags=0x%08x)",
 -             GOODIX_5E0A_PSK_FLAGS);
--  fpi_ssm_next_state (ssm);
--}
-+/* Ticket 26 upstream-clean strip: activation-time PSK reconciliation
-+ * (READ_PSK / PROVISION_PSK via 0xe4 / 0xe0) removed. Hardware record: the
-+ * single cold-boot bad-record-MAC event never reproduced across later
-+ * reboots and a true poweroff boot; the 0xe4-visible bb020001 slot always
-+ * reports factory bytes even while TLS with the host key succeeds (not the
-+ * TLS slot); 0xe0 writes are rejected in both encodings. The extra
-+ * round-trips cost two per-activation USB transactions plus journal noise
-+ * for zero benefit, and the factory-key table plus hardcoded provisioning
-+ * have no accepted upstream pattern (docs/UPSTREAM.md section 6).
-+ * Activation therefore goes CHECK_FW_VER -> TLS -> UPLOAD_CONFIG (post-TLS,
-+ * in on_tls_activation_complete) -> enable chip; any future bad-record-MAC
-+ * recurrence reopens ticket 26 with a pasted journal line. */
-+
-+static void activate_complete (FpiSsm *ssm, FpDevice *dev, GError *error);
+   fpi_ssm_next_state (ssm);
+ }
  
  static void
  activate_run_state (FpiSsm *ssm, FpDevice *dev)
@@ -560,7 +679,7 @@ index 4522173..ec98b0c 100644
    switch (fpi_ssm_get_cur_state (ssm))
      {
      case ACTIVATE_READ_AND_NOP:
-@@ -168,14 +170,28 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
+@@ -168,14 +191,28 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
        break;
  
      case ACTIVATE_RESET:
@@ -590,7 +709,7 @@ index 4522173..ec98b0c 100644
        goodix_send_read_otp (dev, goodixtls5xx_check_none_cmd, ssm);
        break;
  
-@@ -183,21 +199,14 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
+@@ -183,21 +220,30 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
        goodix_send_query_firmware_version (dev, goodixtls5xx_check_firmware_version, ssm);
        break;
  
@@ -603,23 +722,38 @@ index 4522173..ec98b0c 100644
 -                                    (guint8 *) goodix_5e0a_psk,
 -                                    sizeof (goodix_5e0a_psk), NULL,
 -                                    on_psk_write, ssm);
--      break;
--
-     case ACTIVATE_UPLOAD_CONFIG:
--      goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config,
--                                     sizeof (goodix_5e0a_config), NULL,
--                                     goodixtls5xx_check_config_upload, ssm);
++    case ACTIVATE_UPLOAD_CONFIG:
 +      /* Ticket 48: Windows uploads config AFTER TLS completes (wbdi.dll
 +       * Start sequence at 0x180083900: check PSK â†’ start TLS â†’ download
 +       * chip config).  Uploading config before TLS on cold boot
 +       * desynchronizes the MCU crypto engine, causing bad record mac.
 +       * Config upload now happens in on_tls_activation_complete (or is
 +       * skipped entirely on warm reuse). */
-+      fpi_ssm_jump_to_state (ssm, ACTIVATE_NUM_STATES);
++      if (self->warm_attempted)
++        {
++          fpi_ssm_jump_to_state (ssm, ACTIVATE_NUM_STATES);
++          return;
++        }
++      fpi_ssm_next_state (ssm);
+       break;
+ 
+-    case ACTIVATE_UPLOAD_CONFIG:
+-      goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config,
+-                                     sizeof (goodix_5e0a_config), NULL,
+-                                     goodixtls5xx_check_config_upload, ssm);
++    case ACTIVATE_CHECK_PSK:
++      if (self->warm_attempted)
++        {
++          fpi_ssm_jump_to_state (ssm, ACTIVATE_NUM_STATES);
++          return;
++        }
++      fp_dbg ("Cold path â€” reading PSK slot 0x%08x to latch MCU crypto state...", GOODIX_5E0A_PSK_FLAGS);
++      goodix_send_preset_psk_read_5e0a (dev, GOODIX_5E0A_PSK_FLAGS, 32, 0,
++                                        on_psk_hash_read, ssm);
        break;
      }
  }
-@@ -205,19 +214,192 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
+@@ -205,19 +251,192 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
  static void
  on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
  {
@@ -812,7 +946,7 @@ index 4522173..ec98b0c 100644
    /* Ticket 34 stale-activation guard: a deactivate/teardown that landed
     * while the TLS handshake was in flight bumped the generation, so a
     * mismatch means this completion is orphaned â€” drop it without touching
-@@ -232,18 +414,56 @@ on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
+@@ -232,18 +451,56 @@ on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
  
    if (error)
      {
@@ -871,7 +1005,7 @@ index 4522173..ec98b0c 100644
    G_DEBUG_HERE ();
    if (!error)
      {
-@@ -253,6 +473,25 @@ activate_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
+@@ -253,6 +510,25 @@ activate_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
      }
    else
      {
@@ -897,7 +1031,7 @@ index 4522173..ec98b0c 100644
        fp_err ("failed during activation: %s (code: %d)", error->message, error->code);
        fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), error);
      }
-@@ -264,21 +503,103 @@ dev_activate (FpImageDevice *img_dev)
+@@ -264,21 +540,103 @@ dev_activate (FpImageDevice *img_dev)
    FpDevice *dev = FP_DEVICE (img_dev);
    FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
  
@@ -1010,7 +1144,7 @@ index 4522173..ec98b0c 100644
  }
  
  // ---- ACTIVATE SECTION END ----
-@@ -364,7 +685,10 @@ goodix5e0a_on_d6_reply (FpDevice *dev, guint8 *data, guint16 len,
+@@ -364,7 +722,10 @@ goodix5e0a_on_d6_reply (FpDevice *dev, guint8 *data, guint16 len,
      }
    FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
    self->session_started = TRUE;
@@ -1022,7 +1156,7 @@ index 4522173..ec98b0c 100644
  }
  
  static void goodix5e0a_on_fdt_down_reply (FpDevice *dev,
-@@ -383,10 +707,12 @@ goodix5e0a_on_down_poll_timeout (FpDevice *dev, gpointer user_data)
+@@ -383,10 +744,12 @@ goodix5e0a_on_down_poll_timeout (FpDevice *dev, gpointer user_data)
    FpiSsm *ssm = user_data;
    if (self->scan_ssm != ssm)
      return;
@@ -1036,7 +1170,7 @@ index 4522173..ec98b0c 100644
  }
  
  static void
-@@ -422,7 +748,7 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
+@@ -422,7 +785,7 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
    /* Gating rule: touch = channel-byte energy (data[2] != 0xff and channel_energy > 0), never byte0 */
    gboolean touch = (len >= 4 && data[2] != 0xff && channel_energy > 0);
  
@@ -1045,7 +1179,7 @@ index 4522173..ec98b0c 100644
      {
        if (self->down_timeout)
          {
-@@ -442,7 +768,9 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
+@@ -442,7 +805,9 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
        g_source_destroy (self->down_timeout);
        self->down_timeout = NULL;
      }
@@ -1056,7 +1190,7 @@ index 4522173..ec98b0c 100644
  }
  
  static FpImage * process_raw_frame (GoodixTls5xxPix * pix);
-@@ -451,10 +779,10 @@ static guint goodix5e0a_count_minutiae (FpImage *img);
+@@ -451,10 +816,10 @@ static guint goodix5e0a_count_minutiae (FpImage *img);
  static guint32
  goodix5e0a_decode_frame (GoodixTls5xxPix *out_row_major, const guint8 *data, guint16 len)
  {
@@ -1069,7 +1203,7 @@ index 4522173..ec98b0c 100644
      return 0;
  
    /* A canonical ChicagoH frame is 80 blocks of 132 bytes followed by a
-@@ -485,53 +813,99 @@ goodix5e0a_decode_frame (GoodixTls5xxPix *out_row_major, const guint8 *data, gui
+@@ -485,53 +850,99 @@ goodix5e0a_decode_frame (GoodixTls5xxPix *out_row_major, const guint8 *data, gui
    return pixel_idx;
  }
  
@@ -1193,7 +1327,7 @@ index 4522173..ec98b0c 100644
      }
  
    guint32 padding_nonzero = 0;
-@@ -548,16 +922,19 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
+@@ -548,16 +959,19 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
      }
  
    GoodixTls5xxPix *raw_frame = calloc (GOODIX_5E0A_FRAME_SIZE, sizeof (GoodixTls5xxPix));
@@ -1218,7 +1352,7 @@ index 4522173..ec98b0c 100644
    for (guint32 i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
      {
        if (raw_frame[i] > 0)
-@@ -568,35 +945,44 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
+@@ -568,35 +982,44 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
            if (raw_frame[i] > raw_max)
              raw_max = raw_frame[i];
          }
@@ -1279,7 +1413,7 @@ index 4522173..ec98b0c 100644
                       minutiae_count, GOODIX_5E0A_ENROLL_MIN_MINUTIAE);
            g_object_unref (img);
            fpi_image_device_retry_scan (FP_IMAGE_DEVICE (dev), FP_DEVICE_RETRY_TOO_SHORT);
-@@ -605,17 +991,37 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
+@@ -605,17 +1028,37 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
          }
      }
  
@@ -1318,7 +1452,7 @@ index 4522173..ec98b0c 100644
      }
    else
      {
-@@ -623,6 +1029,51 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
+@@ -623,6 +1066,51 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
      }
  }
  
@@ -1370,7 +1504,7 @@ index 4522173..ec98b0c 100644
  static void
  goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
                              gpointer ssm, GError *err)
-@@ -639,9 +1090,15 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
+@@ -639,9 +1127,15 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
        g_message ("5e0a D34 finger release reply: len=%u", len);
      }
  
@@ -1389,7 +1523,7 @@ index 4522173..ec98b0c 100644
    self->scan_ssm = NULL;
    fpi_ssm_next_state (ssm);
    fpi_image_device_report_finger_status (FP_IMAGE_DEVICE (dev), FALSE);
-@@ -652,13 +1109,6 @@ goodix5e0a_scan_run_state (FpiSsm *ssm, FpDevice *dev)
+@@ -652,13 +1146,6 @@ goodix5e0a_scan_run_state (FpiSsm *ssm, FpDevice *dev)
  {
    FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
  
@@ -1403,7 +1537,7 @@ index 4522173..ec98b0c 100644
    switch (fpi_ssm_get_cur_state (ssm))
      {
      case SCAN_5E0A_SESSION_AE:
-@@ -670,7 +1120,10 @@ goodix5e0a_scan_run_state (FpiSsm *ssm, FpDevice *dev)
+@@ -670,7 +1157,10 @@ goodix5e0a_scan_run_state (FpiSsm *ssm, FpDevice *dev)
      case SCAN_5E0A_SESSION_D6:
        if (self->session_started)
          {
@@ -1415,7 +1549,7 @@ index 4522173..ec98b0c 100644
            return;
          }
        send_cmd_reply (dev, GOODIX_CMD_SESSION_D6,
-@@ -703,7 +1156,7 @@ goodix5e0a_scan_run_state (FpiSsm *ssm, FpDevice *dev)
+@@ -703,7 +1193,7 @@ goodix5e0a_scan_run_state (FpiSsm *ssm, FpDevice *dev)
      case SCAN_5E0A_FDT_UP_2:
        send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP,
                        goodix_5e0a_up_u01, sizeof (goodix_5e0a_up_u01),
@@ -1424,7 +1558,7 @@ index 4522173..ec98b0c 100644
        break;
      }
  }
-@@ -713,7 +1166,10 @@ goodix5e0a_scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
+@@ -713,7 +1203,10 @@ goodix5e0a_scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
  {
    FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
  
@@ -1435,7 +1569,7 @@ index 4522173..ec98b0c 100644
    if (self->down_timeout)
      {
        g_source_destroy (self->down_timeout);
-@@ -722,6 +1178,10 @@ goodix5e0a_scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
+@@ -722,6 +1215,10 @@ goodix5e0a_scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
  
    if (error)
      {
@@ -1446,7 +1580,7 @@ index 4522173..ec98b0c 100644
        fp_err ("5e0a failed to scan: %s (code: %d)", error->message, error->code);
        fpi_image_device_session_error (FP_IMAGE_DEVICE (dev), error);
        return;
-@@ -740,6 +1200,25 @@ goodix5e0a_scan_start (FpDevice *dev)
+@@ -740,6 +1237,25 @@ goodix5e0a_scan_start (FpDevice *dev)
        return;
      }
  
@@ -1472,7 +1606,7 @@ index 4522173..ec98b0c 100644
    self->scan_ssm = fpi_ssm_new (dev, goodix5e0a_scan_run_state, SCAN_5E0A_NUM_STATES);
    fpi_ssm_start (self->scan_ssm, goodix5e0a_scan_complete);
  }
-@@ -757,10 +1236,14 @@ goodix5e0a_deactivate (FpImageDevice *img_dev)
+@@ -757,10 +1273,14 @@ goodix5e0a_deactivate (FpImageDevice *img_dev)
    FpDevice *dev = FP_DEVICE (img_dev);
    FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
  
@@ -1487,7 +1621,7 @@ index 4522173..ec98b0c 100644
    if (self->down_timeout)
      {
        g_source_destroy (self->down_timeout);
-@@ -774,12 +1257,27 @@ goodix5e0a_deactivate (FpImageDevice *img_dev)
+@@ -774,12 +1294,27 @@ goodix5e0a_deactivate (FpImageDevice *img_dev)
        self->scan_ssm = NULL;
      }
  
@@ -1516,7 +1650,7 @@ index 4522173..ec98b0c 100644
    GError *tls_err = NULL;
    goodix_shutdown_tls (dev, &tls_err);
    goodix_stop_read_loop (dev);
-@@ -793,7 +1291,23 @@ fpi_device_goodixtls5e0a_init (FpiDeviceGoodixTls5e0a *self)
+@@ -793,7 +1328,23 @@ fpi_device_goodixtls5e0a_init (FpiDeviceGoodixTls5e0a *self)
  {
    self->session_started = FALSE;
    self->scan_ssm = NULL;
@@ -1540,7 +1674,7 @@ index 4522173..ec98b0c 100644
  }
  
  static double
-@@ -896,7 +1410,7 @@ process_raw_frame (GoodixTls5xxPix * pix)
+@@ -896,7 +1447,7 @@ process_raw_frame (GoodixTls5xxPix * pix)
    /* Remove the slowly varying pressure/offset field before global scaling.
     * A 3x3 local mean is the smallest window that removes this field without
     * averaging across a full ridge period. */
@@ -1549,7 +1683,7 @@ index 4522173..ec98b0c 100644
    float residual_min = G_MAXFLOAT;
    float residual_max = -G_MAXFLOAT;
    for (int y = 0; y < H; y++)
-@@ -925,7 +1439,7 @@ process_raw_frame (GoodixTls5xxPix * pix)
+@@ -925,7 +1476,7 @@ process_raw_frame (GoodixTls5xxPix * pix)
    if (residual_range < 1.0f)
      return NULL;
  
@@ -1558,7 +1692,7 @@ index 4522173..ec98b0c 100644
    for (guint i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
      {
        int value = (int) roundf (128.0f + residual[i] * GOODIX_5E0A_CONTRAST_GAIN);
-@@ -935,9 +1449,9 @@ process_raw_frame (GoodixTls5xxPix * pix)
+@@ -935,9 +1486,9 @@ process_raw_frame (GoodixTls5xxPix * pix)
    /* Create the scaled 128x160 image directly via bilinear upscaling.
     * Use FPI_IMAGE_COLORS_INVERTED for capacitive ridges (high ADC = black).
     * Omit FPI_IMAGE_PARTIAL so remove_perimeter_pts=0 retains edge minutiae. */
@@ -1571,7 +1705,7 @@ index 4522173..ec98b0c 100644
  
    for (int y = 0; y < dst_h; y++)
      {
-@@ -961,13 +1475,13 @@ process_raw_frame (GoodixTls5xxPix * pix)
+@@ -961,13 +1512,13 @@ process_raw_frame (GoodixTls5xxPix * pix)
            float bot = (float) normalized[y1 * W + x0] * (1.0f - x_frac) + (float) normalized[y1 * W + x1] * x_frac;
            float val = top * (1.0f - y_frac) + bot * y_frac;
            int norm = (int) roundf (val);
@@ -1588,7 +1722,7 @@ index 4522173..ec98b0c 100644
  }
  
  static guint
-@@ -1028,7 +1542,21 @@ goodix5e0a_suspend (FpDevice *dev)
+@@ -1028,7 +1579,21 @@ goodix5e0a_suspend (FpDevice *dev)
    /* Ticket 34 staleness guard: orphan any in-flight TLS handshake/activation */
    goodix_activation_gen_bump (dev);
  
@@ -1610,7 +1744,7 @@ index 4522173..ec98b0c 100644
    if (self->down_timeout)
      {
        g_source_destroy (self->down_timeout);
-@@ -1092,7 +1620,7 @@ fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
+@@ -1092,7 +1657,7 @@ fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
    dev_class->full_name = "Goodix TLS Fingerprint Sensor 5e0a";
    dev_class->type = FP_DEVICE_TYPE_USB;
    dev_class->id_table = goodix_5e0a_id_table;
@@ -1619,7 +1753,7 @@ index 4522173..ec98b0c 100644
    dev_class->scan_type = FP_SCAN_TYPE_PRESS;
    dev_class->temp_hot_seconds = -1; // Disable thermal watchdog
    dev_class->suspend = goodix5e0a_suspend;
-@@ -1101,7 +1629,7 @@ fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
+@@ -1101,7 +1666,7 @@ fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
    img_dev_class->activate = dev_activate;
    img_dev_class->change_state = goodix5e0a_change_state;
    img_dev_class->deactivate = goodix5e0a_deactivate;
