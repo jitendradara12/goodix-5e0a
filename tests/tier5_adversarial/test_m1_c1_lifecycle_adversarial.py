@@ -184,7 +184,7 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
         with open(self.repo_patch, "rb") as f:
             repo_hash = hashlib.sha256(f.read()).hexdigest()
 
-        expected_hash = "15e9bfdb9ff26ed3e446bf19c84f1f75e0314b1de2cb0749df6f4eaaafa92d90"
+        expected_hash = "054aa1cf817d499f99b5b76aee05a0324bc84e9361d21bc23d4068678d13b2c1"
         self.assertEqual(repo_hash, expected_hash, "Patch checksum must match known hardened hash")
 
         if not os.path.exists(self.nixos_patch):

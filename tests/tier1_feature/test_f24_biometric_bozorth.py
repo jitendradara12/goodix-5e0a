@@ -162,7 +162,7 @@ class TestF24BiometricBozorth(unittest.TestCase):
         self.assertGreaterEqual(enroll_min, 12, "Enrollment minutiae floor must be >= 12")
 
         c_text = C_PATH.read_text(encoding="utf-8")
-        self.assertIn("img_dev_class->bz3_threshold = 12;", c_text)
+        self.assertIn("img_dev_class->bz3_threshold = 14;", c_text)
         self.assertIn("minutiae_count < GOODIX_5E0A_ENROLL_MIN_MINUTIAE", c_text)
 
     def test_bozorth_floor_guarantee(self):

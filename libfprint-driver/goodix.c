@@ -1107,7 +1107,11 @@ goodix_send_request_tls_connection (FpDevice             *dev,
                                     GoodixDefaultCallback callback,
                                     gpointer              user_data)
 {
-  GoodixNone payload = {};
+  /* Ticket 48: Windows wbdi.dll sends CMD 0xd0 with a 2-byte payload
+   * {0x00, 0x00} (disasm at 0x1800a6ec7: r9d = 2, lea r8, [rsp+0x40]
+   * where 0x40 is zero-filled).  Linux was sending 0 bytes, which can
+   * cause the MCU to reject the TLS request on cold boot. */
+  guint8 payload[2] = {0x00, 0x00};
   GoodixCallbackInfo *cb_info;
 
   if (callback)
@@ -1118,13 +1122,13 @@ goodix_send_request_tls_connection (FpDevice             *dev,
       cb_info->user_data = user_data;
 
       goodix_send_protocol (dev, GOODIX_CMD_REQUEST_TLS_CONNECTION,
-                            (guint8 *) &payload, sizeof (payload), NULL, TRUE, 0,
+                            payload, sizeof (payload), NULL, TRUE, 0,
                             TRUE, goodix_receive_default, cb_info);
       return;
     }
 
   goodix_send_protocol (dev, GOODIX_CMD_REQUEST_TLS_CONNECTION,
-                        (guint8 *) &payload, sizeof (payload), NULL, TRUE,
+                        payload, sizeof (payload), NULL, TRUE,
                         GOODIX_TIMEOUT, TRUE, NULL, NULL);
 }
 
@@ -1709,7 +1713,21 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
   if (error)
     {
       fp_err ("failed to get tls handshake: %s", error->message);
-      goodix_send_tls_successfully_established (FP_DEVICE (dev), NULL, NULL);
+      /* Ticket 48: propagate the error to tls_ready_callback so the
+       * activation path (on_tls_activation_complete) receives it and can
+       * report activation failure or trigger the warm-fallback retry.
+       * The old code called goodix_send_tls_successfully_established
+       * which swallowed the error and fired the callback as if TLS had
+       * succeeded — causing scan commands on a dead channel. */
+      FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
+      FpiDeviceGoodixTlsPrivate *priv =
+        fpi_device_goodixtls_get_instance_private (self);
+      if (priv->tls_ready_callback)
+        {
+          ((GoodixNoneCallback) priv->tls_ready_callback->callback)(
+            dev, priv->tls_ready_callback->user_data, error);
+          g_clear_pointer (&priv->tls_ready_callback, g_free);
+        }
       return;
     }
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (user_data);

@@ -221,12 +221,12 @@ class TestF42ConditionalReset(unittest.TestCase):
         self.assertLess(park, warm)
         self.assertLess(warm, full)
         self.assertIn("self->warm_boot_seq = goodix_boot_seq_get (dev);", src)
-        # biometric operating point untouched
-        self.assertIn("img_dev_class->bz3_threshold = 12;", src)
+        # biometric operating point (Ticket 43)
+        self.assertIn("img_dev_class->bz3_threshold = 14;", src)
         # handshake never skipped: exactly one tls_init site
         self.assertEqual(src.count("goodix_tls_init ("), 1)
-        # journal budget: 25 pre-existing 5e0a lines, zero new there
-        self.assertEqual(src.count("g_message ("), 25)
+        # journal budget: 24 g_message sites (demoted raw byte dump to fp_dbg)
+        self.assertEqual(src.count("g_message ("), 24)
 
 
 if __name__ == "__main__":

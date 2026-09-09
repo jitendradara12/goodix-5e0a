@@ -170,9 +170,9 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
                 self.assertIn("goodix5e0a_reset_touch_frames (self);", body)
 
     def test_h_no_scope_creep(self):
-        """Threshold and ticket-38 park symbols are untouched."""
+        """Ticket-38 park symbols are untouched and bz3_threshold is 14 (Ticket 43)."""
         src = _read(GOODIX5E0A_C)
-        self.assertIn("img_dev_class->bz3_threshold = 12;", src)
+        self.assertIn("img_dev_class->bz3_threshold = 14;", src)
         for sym in ("tls_parked", "on_parked_health_reply", "goodix_tls_is_alive"):
             self.assertIn(sym, src)
         for state in ("SCAN_5E0A_SESSION_AE", "SCAN_5E0A_SESSION_D6",

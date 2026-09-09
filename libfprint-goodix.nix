@@ -1,8 +1,8 @@
 { lib, stdenv, fetchFromGitHub, meson, ninja, pkg-config, glib, libusb1, gusb, pixman, openssl, nss, nspr, gobject-introspection }:
 
-stdenv.mkDerivation rec {
+stdenv.mkDerivation {
   pname = "libfprint-goodix";
-  version = "1.94.5-goodixtls";
+  version = "1.94.5-goodixtls-5e0a";
 
   src = fetchFromGitHub {
     owner = "goodix-fp-linux-dev";
@@ -16,8 +16,12 @@ stdenv.mkDerivation rec {
   ];
 
   postPatch = ''
-    sed -i "s/1.94.5/1.94.9/" meson.build
-    sed -i "s/FP_DEVICE_RETRY_REMOVE_FINGER,/FP_DEVICE_RETRY_REMOVE_FINGER,\n  FP_DEVICE_RETRY_TOO_FAST,/" libfprint/fp-device.h
+    if ! grep -q "1.94.9" meson.build; then
+      sed -i "s/1.94.5/1.94.9/" meson.build
+    fi
+    if ! grep -q "FP_DEVICE_RETRY_TOO_FAST" libfprint/fp-device.h; then
+      sed -i "s/FP_DEVICE_RETRY_REMOVE_FINGER,/FP_DEVICE_RETRY_REMOVE_FINGER,\n  FP_DEVICE_RETRY_TOO_FAST,/" libfprint/fp-device.h
+    fi
   '';
 
   nativeBuildInputs = [
@@ -43,6 +47,8 @@ stdenv.mkDerivation rec {
     "-Ddoc=false"
     "-Dudev_rules=enabled"
     "-Dudev_rules_dir=${placeholder "out"}/lib/udev/rules.d"
+    # udev_hwdb is disabled because 27c6:5e0a is managed dynamically by our custom udev rules
+    # and requires exclusive TLS driver ownership without upstream hwdb whitelisting conflicts.
     "-Dudev_hwdb=disabled"
   ];
 

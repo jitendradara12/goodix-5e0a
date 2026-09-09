@@ -214,6 +214,7 @@ void goodixtls5xx_scan_start (FpiDeviceGoodixTls5xx * dev);
  * @param raw_frame
  */
 void goodixtls5xx_decode_frame (GoodixTls5xxPix * frame,
+                                guint32           max_pixels,
                                 guint32           frame_size,
                                 const guint8     *raw_frame);
 

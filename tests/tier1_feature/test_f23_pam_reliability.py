@@ -16,11 +16,11 @@ class TestF23PAMReliability(unittest.TestCase):
     def setUp(self):
         self.mcu = MockGoodixMCU()
 
-    def test_enroll_stage_count_is_12(self):
-        """Verify device driver specifies exactly 12 enrollment stages."""
+    def test_enroll_stage_count_is_5(self):
+        """Verify device driver specifies exactly 5 enrollment stages (Ticket 43)."""
         with open(repo("libfprint-driver", "goodix5e0a.c"), "r") as f:
             content = f.read()
-        self.assertIn("nr_enroll_stages = 12", content)
+        self.assertIn("nr_enroll_stages = 5", content)
 
     def test_scan_type_is_press(self):
         """Verify driver scan type is FP_SCAN_TYPE_PRESS."""
@@ -29,10 +29,10 @@ class TestF23PAMReliability(unittest.TestCase):
         self.assertIn("scan_type = FP_SCAN_TYPE_PRESS", content)
 
     def test_bz3_threshold_value(self):
-        """Verify minutiae matching bz3_threshold is calibrated to 12."""
+        """Verify minutiae matching bz3_threshold is calibrated to 14 (Ticket 43)."""
         with open(repo("libfprint-driver", "goodix5e0a.c"), "r") as f:
             content = f.read()
-        self.assertIn("bz3_threshold = 12", content)
+        self.assertIn("bz3_threshold = 14", content)
 
     def test_multi_stage_enroll_state_progression(self):
         """Simulate complete 8-stage enrollment workflow with touch and release cycle per stage."""

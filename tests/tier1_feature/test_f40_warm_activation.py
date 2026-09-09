@@ -270,16 +270,15 @@ class TestF40WarmActivation(unittest.TestCase):
         self.assertEqual(src.count("fpi_image_device_image_captured ("), 1)
         self.assertIn("score-proxy", src)
         self.assertNotIn("score", src.replace("score-proxy", ""))
-        # biometric operating point untouched
-        self.assertIn("img_dev_class->bz3_threshold = 12;", src)
+        # biometric operating point (Ticket 43)
+        self.assertIn("img_dev_class->bz3_threshold = 14;", src)
         # handshake never skipped: exactly one tls_init site (the shared
         # activate_complete handoff used by both ladders)
         self.assertEqual(src.count("goodix_tls_init ("), 1)
-        # journal budget: the four specified warm lines across five new sites
-        # (the fallback line serves both funnels) — 20 pre-existing + 5.
+        # journal budget: 24 g_message sites (demoted raw byte dump to fp_dbg)
         for line in (WARM_TAKEN, WARM_ENTRY, WARM_EXPIRED, WARM_FALLBACK):
             self.assertIn(line, src)
-        self.assertEqual(src.count("g_message ("), 25)
+        self.assertEqual(src.count("g_message ("), 24)
 
 
 if __name__ == "__main__":
