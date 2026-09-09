@@ -18,6 +18,9 @@ in
 
   # 2. Install udev rules for the scanner
   services.udev.packages = [ libfprint-goodix ];
+  services.udev.extraRules = ''
+    SUBSYSTEM=="usb", ATTRS{idVendor}=="27c6", ATTRS{idProduct}=="5e0a", MODE="0666", TAG+="uaccess"
+  '';
 
   # 3. Enable PAM fingerprint authentication across system auth services
   security.pam.services = {

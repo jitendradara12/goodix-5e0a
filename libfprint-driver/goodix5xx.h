@@ -34,7 +34,10 @@ G_DECLARE_DERIVABLE_TYPE (FpiDeviceGoodixTls5xx, fpi_device_goodixtls5xx, FPI, D
  *
  * @par The bare minimum needed is to provide get_mcu_cfg and process_frame to
  * FpiDeviceGoodixTls5xxClass and activate to FpImageDeviceClass (activate
- * varies from device to device)
+ * varies from device to device). A subclass may instead provide
+ * process_raw_frame (preferred: takes ownership of the raw raster, as
+ * goodix5e0a does) and override change_state/deactivate for its own scan
+ * lifecycle, in which case the base scan stages never run.
  *
  * @par There are also quite a few helper functions in the goodixtls5xx_*
  * namespace, the check functions expect a state machine as the user data and

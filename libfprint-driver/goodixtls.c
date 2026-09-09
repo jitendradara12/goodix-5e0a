@@ -293,7 +293,20 @@ goodix_tls_server_init (GoodixTlsServer *self, GError **error)
   tls_config_ssl (self->ssl_layer);
   SSL_set_fd (self->ssl_layer, self->sock_fd);
 
-  pthread_create (&self->serve_thread, 0, goodix_tls_init_serve, self);
+  if (pthread_create (&self->serve_thread, 0, goodix_tls_init_serve, self) != 0)
+    {
+      *error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                         "failed to start TLS serve thread");
+      SSL_free (self->ssl_layer);
+      self->ssl_layer = NULL;
+      close (self->sock_fd);
+      close (self->client_fd);
+      self->sock_fd = -1;
+      self->client_fd = -1;
+      SSL_CTX_free (self->ssl_ctx);
+      self->ssl_ctx = NULL;
+      return FALSE;
+    }
 
   return TRUE;
 }

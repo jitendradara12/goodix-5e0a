@@ -317,10 +317,11 @@ goodix5e0a_start_warm_activation (FpDevice *dev)
                  activate_complete);
 }
 
-/* Ticket 38: today's full bring-up ladder, unchanged (reset -> config
- * upload -> handshake -> enable). Both cold activate and parked-session
- * fallback funnel through here; there is never a third half-bring-up path
- * (warm reset/config skipping is ticket 40's lane, not this one). */
+/* Ticket 38: the bring-up ladder (cold: CHECK_FW_VER → PSK latch → TLS →
+ * post-TLS config → enable; warm: FW check → TLS → enable). Both cold
+ * activate and parked-session fallback funnel through here; there is never
+ * a third half-bring-up path (warm skipping is ticket 40's lane, and RESET
+ * jumps straight through per ticket 45). */
 static void
 goodix5e0a_start_full_activation (FpDevice *dev)
 {
@@ -572,7 +573,7 @@ dev_activate (FpImageDevice *img_dev)
        * hardcoded to GOODIX_TIMEOUT (1000ms); a dead parked session must
        * fail fast into the full-ladder fallback. Payload matches
        * goodix_send_query_mcu_state byte-for-byte. */
-      cb_info = malloc (sizeof (GoodixCallbackInfo));
+      cb_info = g_new0 (GoodixCallbackInfo, 1);
       cb_info->callback = G_CALLBACK (on_parked_health_reply);
       cb_info->user_data = GUINT_TO_POINTER (new_gen);
       payload.unused_flags = 0x55;
@@ -665,7 +666,7 @@ send_cmd_noreply (FpDevice *dev, guint8 cmd, const guint8 *payload, guint16 len,
 
   if (cb)
     {
-      cb_info = malloc (sizeof (GoodixCallbackInfo));
+      cb_info = g_new0 (GoodixCallbackInfo, 1);
       cb_info->callback = G_CALLBACK (cb);
       cb_info->user_data = user_data;
       callback = goodix_receive_none;
@@ -684,7 +685,7 @@ send_cmd_reply (FpDevice *dev, guint8 cmd, const guint8 *payload, guint16 len,
 
   if (cb)
     {
-      cb_info = malloc (sizeof (GoodixCallbackInfo));
+      cb_info = g_new0 (GoodixCallbackInfo, 1);
       cb_info->callback = G_CALLBACK (cb);
       cb_info->user_data = user_data;
       callback = goodix_receive_default;
@@ -1047,7 +1048,9 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
   /* In verify mode (and all non-enroll actions), unconditionally pass the captured image
    * to fpi_image_device_image_captured without calling retry_scan. Complete the scan SSM
    * and report finger release immediately so that libfprint can finish authentication and
-   * deactivate without waiting 2-5 seconds for finger lift polls (Ticket 20 latency fix). */
+   * deactivate without waiting 2-5 seconds for finger lift polls (Ticket 20 latency fix
+   * for the first claim; a retry claim within the guard window instead parks in
+   * FDT_UP until genuine release, ticket 47). */
 deliver:
   fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);
 
@@ -1133,6 +1136,17 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
            * Treating it as release re-armed FDT_DOWN onto the held finger
            * and burned the retry. Keep the guard and re-issue FDT_UP; the
            * retry claim parks here until a genuine release reply arrives. */
+          if (g_get_monotonic_time () - self->retry_guard_mono > 30 * G_USEC_PER_SEC)
+            {
+              /* Stop-loss: every live client (PAM ~20s, D-Bus ~25s) times
+               * out first, so reaching here means the client is gone but
+               * never cancelled. Fail loudly instead of re-issuing forever;
+               * err passes to mark_failed (no free). */
+              self->retry_guard = FALSE;
+              fp_dbg ("5e0a retry guard: orphaned hold past 30s, failing claim");
+              fpi_ssm_mark_failed (ssm, err);
+              return;
+            }
           g_error_free (err);
           fp_dbg ("5e0a retry guard: finger still present, re-issuing FDT UP");
           send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP,

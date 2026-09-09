@@ -150,8 +150,9 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
   switch (fpi_ssm_get_cur_state (ssm))
     {
     case ACTIVATE_READ_AND_NOP:
-      // Nop seems to clear the previous command buffer. But we are
-      // unable to do so.
+      /* NOP flushes the previous command buffer; the flush-tolerant
+       * receiver treats silence as success (a real ACK is still validated
+       * when one arrives). */
       goodix_start_read_loop (dev);
       goodix_send_nop (dev, goodixtls5xx_check_none, ssm);
       break;

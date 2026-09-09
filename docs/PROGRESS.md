@@ -185,7 +185,7 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 - **Active State:** Tickets 01–49 closed (43 pins threshold 14 / 5 stages, 46–49 harden session reuse and cold boot, all hardware-confirmed 2026-09-09). 448-test automated suite passes (100% via `bash tests/run_all_tests.sh`). Ticket 41 frozen, not just blocked: no matching-pipeline tuning per operator constraint.
 - **Upstream Repository:** `/home/sastauser/code/temp/libfprint-upstream` (`test-5e0a` branch; symlink at `/tmp/libfprint-upstream`).
 - **Power Management:** Genuine `FpDeviceClass` `.suspend` and `.resume` vfunctions handle S3 sleep cleanly.
-- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `7e87da42317713be9928f070b1d0ef0922ae121b0635874c33c20968ae5be106`; single base `goodix-fp-linux-dev@c343b69` shared with the repo derivation — one patch cannot serve two bases).
+- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `b7b12f7c0724fdb127845a581402afd77c9f68ed03cc2b2ca95bba2d46be4083`; single base `goodix-fp-linux-dev@c343b69` shared with the repo derivation — one patch cannot serve two bases).
 - **Activation Sequence:** 7-state SSM: NOP -> (reset skipped) -> Read Chip ID (cold only) -> Read OTP (cold only) -> Query FW Version -> PSK-latch read (cold only) -> TLS PSK Handshake -> Upload Config (cold, post-TLS) -> Enable Chip.
 - **Verify Latency:** Sub-300ms instant unlock via immediate scan SSM completion and finger status reporting.
 - **Frame Decoder:** Strip each 132-byte block's first 96 bytes, discard 36-byte zero pad; unpack sequentially into 5,120 pixels.
