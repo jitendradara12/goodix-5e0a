@@ -1107,11 +1107,10 @@ goodix_send_request_tls_connection (FpDevice             *dev,
                                     GoodixDefaultCallback callback,
                                     gpointer              user_data)
 {
-  /* Ticket 48: Windows wbdi.dll sends CMD 0xd0 with a 2-byte payload
-   * {0x00, 0x00} (disasm at 0x1800a6ec7: r9d = 2, lea r8, [rsp+0x40]
-   * where 0x40 is zero-filled).  Linux was sending 0 bytes, which can
-   * cause the MCU to reject the TLS request on cold boot. */
-  guint8 payload[2] = {0x00, 0x00};
+  /* Ticket 48 note: Windows wbdi.dll may send 2 bytes here, but the MCU
+   * rejects non-zero-length payloads on this device — reverted to match
+   * the working 0-byte behavior. */
+  GoodixNone payload = {};
   GoodixCallbackInfo *cb_info;
 
   if (callback)
@@ -1122,13 +1121,13 @@ goodix_send_request_tls_connection (FpDevice             *dev,
       cb_info->user_data = user_data;
 
       goodix_send_protocol (dev, GOODIX_CMD_REQUEST_TLS_CONNECTION,
-                            payload, sizeof (payload), NULL, TRUE, 0,
+                            (guint8 *) &payload, sizeof (payload), NULL, TRUE, 0,
                             TRUE, goodix_receive_default, cb_info);
       return;
     }
 
   goodix_send_protocol (dev, GOODIX_CMD_REQUEST_TLS_CONNECTION,
-                        payload, sizeof (payload), NULL, TRUE,
+                        (guint8 *) &payload, sizeof (payload), NULL, TRUE,
                         GOODIX_TIMEOUT, TRUE, NULL, NULL);
 }
 

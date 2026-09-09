@@ -1,4 +1,4 @@
-From f4a3e52c05a84a13e1070abac68a9f46676b39c2 Mon Sep 17 00:00:00 2001
+From 3f76a8ced3d3893238354b01ad71f51a9516ec3f Mon Sep 17 00:00:00 2001
 From: Nix User <jitendradara4464@gmail.com>
 Date: Sun, 6 Sep 2026 13:07:23 +0530
 Subject: [PATCH] drivers/goodixtls: upstream integration, power management,
@@ -9,7 +9,7 @@ Subject: [PATCH] drivers/goodixtls: upstream integration, power management,
 - Add authentic umockdev capture replay fixtures (capture.pcapng, device, capture.png).
 ---
  enrolled.pgm                             |   3 +
- libfprint/drivers/goodixtls/goodix.c     | 251 +++++--
+ libfprint/drivers/goodixtls/goodix.c     | 244 +++++--
  libfprint/drivers/goodixtls/goodix5e0a.c | 892 ++++++++++++++++++-----
  libfprint/drivers/goodixtls/goodix5xx.c  |  42 +-
  libfprint/drivers/goodixtls/goodix5xx.h  |   1 +
@@ -23,7 +23,7 @@ Subject: [PATCH] drivers/goodixtls: upstream integration, power management,
  tests/goodixtls5e0a/capture.png          | Bin 14919 -> 27610 bytes
  tests/goodixtls5e0a/device               |  36 +-
  verify.pgm                               |   8 +
- 15 files changed, 1085 insertions(+), 430 deletions(-)
+ 15 files changed, 1081 insertions(+), 427 deletions(-)
  create mode 100644 enrolled.pgm
  create mode 100644 test-storage.variant
  delete mode 100644 tests/goodixtls5e0a/capture.ioctl
@@ -41,7 +41,7 @@ index 0000000..5464f00
 +=?445XY72IL9+$?|’‚vn^D3,&#YÈæ³šav •U@XYEF\\E?JRWP=Jv{YC;51<VS58^_<Eys12t~lWWk}Œ‹{}ššœŸ¡¢š‰~xvw ¯°¥©¾ªmVgpr`84R\QUfbG3&2WX4)74"=ic-#GO9.-Dr~g\^S:/1-$WÇã«n‚«WB]aMPjrh`\XRE2BveSIVx‚tcNf¬¬fd¦¡WFn{miq˜©²©Œ–ÅÕÆÆ×ŞÚÔÊÅÂ¹¨¤®ÀÚåáâéİ½µÆ¼—t|—«¸ÂËÂ¨ŒnsŸxoƒxNGe|~MFirad{ ”kk—Ÿ…zxf…Öæ´šl«W@X_TXktsjXT^S3>u‚eWVj’‹wa{ÄÁqn¸ºrXknabr†Ÿ±½®„ĞâÆÇåíàÙÙÓÆº®­µÉéùùôëİÊÇÖË§“ÃŞğúûìÌ¬Œ“ÃÄ˜¢šsgx†“„XOirhoˆ–™‡^g¢²™Šˆ|g…Öæ³™]sŸ•U<IT[_`ch[>HzxA@t|YO`q™pw¥œ\c²¼ƒgjfZVXe–¬›dk°ÀšÈĞ³ªµ¨…z‰˜¦½İííßÃª“Œ•£›†™Ôôúû÷ß³”€’ÈÈ’”˜y[[zvM>IOOQUY]UAOvaK8'WÇâ©Œ`u “M/9I]e__f`MW}zNKnqSQlz|Š¡Ÿ„†§œgq¼Ç’xzpYOPZmƒ›ŒTZœ¦wuŸ¦Š‚„aYm~‹œ²ÄÓÈ¥‡ok{ŒŸš}“ÛûôîêÏ…‰ ÉÆ—‹£¦“vQLheC:KOF@==A>5@afP?3$F¾Úœ|tˆ¯—>(=[ihjoy†eX[_d`T\x…„¤©©ÉÂ‘˜ÖØŸ‹œ^M[ejwŒU[“”]Oipc`hf[WZ_ehi«°s\b†™s‹ØôİÒÓºˆ¦¾ÇÀ§­ÒÄƒ`YW[Q7AnrM<?BEC:;G?%%=?)S»ÎŒks†«“=5DL`‚…’´¨p_vuZORaz‡‡–´ÃÀÈÛÎ¡¨âç¶¡§‘^N_geiqgKNpmG;IMFEJOUQB>DFCTzdUQ]zˆ‰~e~ÇàÈ¸±–gm§ÅÈ¿­ºèÕ`smM>BRoucRC@IH<9?28?)Mª¹z[^o’†J>b]1K«Ê§¬ÖÒ¡S>N_r… ÒëêåÛÁ– ßò×º›{[Q]b`XI=621248?=304>OF$)5>B?5%-N\VYdbRi§Àµ¡†d;H‹¶ÊÆ¨³æØ‹x Œ<.bmNWˆƒG5MO=;J>"$6ŒgL]m‡XWƒx7PÅêÁÁêê¿°¿¥bJ^nz‡–´ßõöîßÃ›¥áøêÎ¥ˆujgipgPCB>7:GMLH@>AL^U1"):UV=.+=cjRQfgTd—©›ˆpX>N‡´ÓÖ¼Ãëİš‘Ã¯VKŒ–hq³¬\Efd@<XU3)611|ŒaKp•hi™•^qĞğÒÒğğÑÇÑ¼‡t„‘¡¼ĞÜâäååÓ°¶çúğßÆ¶­š~|“—†yps‚†€yrnmnpw„hTDU‡‘sjvƒˆnpŒjm—›{mqrp~¾ãñéëøä­ªÛÖ›”¿Í½ÄâÌ‚o”†G=hxmktd9@{ˆgV‰˜µ®‚~¢›jvÀßÕÚğïÖÈÆ²Œ~‡Š†–»ÍÌÊÆÇÍÀŸ¨Ûë×Å³®µ¤{w™ Œ€|‚‘”Œ†€~†”xaKY‹“qhy‚…~ntˆ]]‡‰cWcoz†‘­Øéàãòà®¨ĞÒ®®Óäáè÷á¥”¯–KB{€~‰~\]€…l`¨¸ÖĞ¦•Š\_•¸ÉÚìçÌ´‡rhjdXg’«±¬œ•˜Šk|¾Ê lq‰][‚…aXhmeemtxyurox†bJ?Gb\5'2<EMT^k[.2grSDFN]de²¾¢«×Òœ£¤šÇÚÓÛóìÅ´·”ML‘oau€ƒ‡†qg¹ÉèæÂ¦”yTZ‰¥¯¾ÓÎ°”{gYRQJ=LyŒ…{hFWš¦zYDIijLMoj?6Q]Zcw……}v‚ šoUIHQH-!#)1?R\^L%/luK;DLTTNc’—r~º¹zpš ƒ¾ÑÅÏïîË¹¶—]a¦ªl]{Œ”˜’ƒ{ºËìïÔ±†gTf›¦……¦¤€i_RC<><6GooGIv„tX18n}cM:7CHFN_Q$6Rq¨»ÆÁ­Ÿ–¤ËÊ¡k]ZXXUNJJTgok[@T•“N<^i_VMXxtO\œ•HR³ÆŒˆºÊ¹Äëç¶£­ zƒ¹¶ypœ£†…¡ª¡œ§¹İß¼•iSTi“’d`††bJA:7418ITZI%\mW<#Q^L>53:@FNXO3',Ft’ ·ØàĞº §ÍÏ¬ynns}€{p^[ij_VN]…z>0P\TI<BZY>J{p(3“¦mp­¹“™ËÍŸœ›‹•»¹ˆ¡ †„›£œ˜~“¼´{S<<RdqiLOrtT8 69*>ut;49$	AK4,3?OSLOZdk[47es_{ÅëìĞ—‰¦©‘€uzšœ¢¬šmVVN=<LL;+&1-;FAHYJ9?'E™TO †|ƒ‰˜ª²±£Š„‘…|tpn„±¡T*%3ThmaCHotY?&+OQ0EE#)1<7"+WX. /Hmxjejw}DBvzPe»èíÑ“…¦®›Œ±Á¼ÁÑÀuvo``n^.!518?*,DSWYYK/'3/<“F=xƒˆ’¨°½ÎÁ”«¯›Œ„€uŒ»¤H#8Zt†xJL|ˆq_R^„{DL”¢xhtwreQFB\’‡:'O”®Ÿ’‡Š]e¥©rw¹ØÔ¾•šÍİÉ³¨ÕæÛİêà¾¶ÈÏÊÁ³’^\Œ5.i}jhwzqdiuLV“™hb‰›—œ«¶¼ÃËØéá¿¼ÖàÜÕÌÇr‰·¡F#7L_uŒ~LItƒvoo€¡–`fª½ ’”—š“€mZm§Q2Am·ÖÊ»©§µ¢mm¢¦xx¦¹°ÂÕÇ³˜¢ĞäÜâôôáßîôğæÖ¹‹­•D;z~w|}zy|ztzƒ\^ˆom…’“›©²µ¹¾ÊŞÚ¿¼ÓãíêÜÕdz§˜N;anchtI?Wdfo’¨¤…”ĞŞ¾¢‰µ¿®\_–œrh|¡ØñìáĞÍ×ºsZmobg€‰pV\ƒ—–Šrz¤»ÀÑïûõîèŞÒÏÕÑÁ®—rA>ivdXRKBI_f][^ZMTnq][luw{†ŠŠ‡“®­“¢·ÌË´¨_tŸI>mx\^{vNF^nw¯©‹™ÔçÒ»¡¨ÏÜÏªkd•Ÿ„•±ÕìõòãâìÇrO_bZ\inj\DE_llfYc„š£´ÎãòîÙÌÅÈÔÕË¯ƒ`ED^idYH>;?IKFB@?=G]]GCR^ef`bjkdk€‚ojtŒ³¶–†dw‰8)^iMU‚„\^Š£¨¦œ¡¶¥ou·ÚİŞÜßèéäÃ‡|£¦†}‹œ®ÇäîäæôÊjNx~_UaimcKFTUJGN[p~…‹‘«×ßÃ¼ËÒÓÆ¬r]PNXg|x\Ud[9*-032+7UQ-$8K\[FEW\TRWWSMGc¡¬„oh{ŸŠ9'TcUa‡Šhk’¬¸¸ª«¼§liŸÃÕâêæÖÕáÒ©¢¾¶‹— œ°İëÚÒÔ­]Js}eVPUddRLQM@>FLQX_gn†°¼©«ÃĞÑÇ²•p]ZZ]infj^E647@@8<NF&&6LM83>CB?8=MH,Hœ­|dm~¢‘N8Odvƒ‹†tov‰§¶¶ºÁ®€uŒ£¸ÆÌ¾›ÇØÓ×åÏ•º¿¨ŞèÅ§pMBP^l^62Q^YWXUPJA6'&3Gdv~…‹™¯ÁÏÙßÀ}_dimomr~qLJkpZWgjcXH<3( 5=6- !.0%4_Y%=¢¸€dƒ”µ¨nVby¦“‡„z‡¦·»¾Á°Šy|Œª¶®˜uz¦ÂÌÓÙ¿‡ˆÃË £ÕÛ´“vbYPHW}q2(QkwwmhhcYI0,;Qoxnqƒ—®¿ÌÖİ¾zg„’“Š¤JK¥ˆ„˜Ÿ˜YGK@&'BNKD86<<5Huk,C¯Ê•z«ºÙÎšƒŠ£ÍÌ —§·½¹¹»¬Œwn«°udh€“–˜†aq´Æ¥£ÀÂ©–‹„t[g™D6cŠ«®’…†‰…njy…€‘¦ÀËÈ¾¬gu¸ÖÎÎÔÚá¹dbµÔ½½Ôİ×¸€gmaCIs‚vw‡‚kbix~D[Ââº¦«»ÛÖ­˜–©ÒÌ—…–  ¤ª§œœ¨~miyš€hUSbjjoxkHZŸ°Œ­°“{|ƒ{cl–YLh¾Å¤”–œ§¢ƒƒ‹›–~™«µ´ªŸ“e}ÈéàâïøıÔ}{ÎìÕÖñøëÌš‚yfl‹‘~Šlco{‰vBXº×¯›„–º¿§”„­¦xkˆ€}€wbg†…bZnxy|oF:LTQ^zo<C„‹X]œ£rTGJ^e_dswri_v°¾¡”—œ¥ vYb“knœ¦‹zrz’r~´ÌÈÍÛêøÜ––ÚîĞĞïñÖ½¦•ŒŠ‹}fYUL?=EQaS%<–©tZxŒ²²Šrlw”Œ^Skob]bW<CklEAak^^l]1(BJ?Lpf..ei9<ryR;48GS[\X`ss^e†–“Œ”ƒlLT†…RQ‚ŠjUM[}em—°·»¾ÎìÙ–•ØëÌÍîëÄ¯¯¢ˆ~…„|reVC7007>F70cF‡œÄ¬T4Lh†|J<SWGERJ+/WT'"ERHCA2CK5:YPCJ0'0427BE@EUVFI^hgZBM{ˆunttme[c|m5*KXPF;@TS=Hs”¬­˜¦ØÊ{{ÉãÊÍîæ´¤µ¦vWHJ_p|u\I=<DB6$5Ÿ·}`—Ã§C4One4,MR:6D=")RU/#0:?<1%,dj>9[T%9A3,+2CUgeMMfcF>M]p\"#^nSQjlULQZgY--<KF-0OQ65Mjmv©W_¸ÙÁÇéÚ™‰¬\ALYi€Ÿz`NHPK:%4´{_f~®¡Y/#-LG$X`<.72!/^n^E#"BK>63W¤¥YIusB4GLCJat…•¤˜plŒ…W@@Tzk(=B%7wx;"-9HH<0'5\V$,myP4%1X]??]V(C¦Ì³¹ŞÆq`“‡:>‘¯˜£ÎÍŸ{aVZYR;-†–_Cj€­¢`:/7SL"-mvH9LI2=j~x['"Nefb[~ÍÌ~n¡|hfa\j‹¦¸ÇÒº|¬¦jOUh†w<-LO6H†„B*=INONE4Dtm05|iO>Ec^62QR5P¤Á§­Ó¼g\š’FR·Ú»Àêé¼›‡ypidI.†—bHÁªY>Xn‚sAJ“\WƒƒUQv…~e::dˆ§ª¢İá¬§ÑàÓ»•|Š«ÆŞëğÌ€ÇÇk‹™”€_bŠ–…†—jeˆznd\Ug”ŒQKzŒ…™¦­‘SO…”~ˆ²¹¢È»|~¿¿~¾ÙĞØòïĞÁÂ²’|nO9·†m{‰¥“TFh|ƒuQ^š¥„´µ‡z‘™’_Zp‹¬´¥µæïÎÎïûóÛ´œ“›³Íç÷üÛ”ÍÈr™§œz„¬¿¾»¸¦„~”—Š|naVjšbUt€yŠ²À´’[V„•Š‘«ª‘´«u~ÅÆ|¸ÒÉÓğñÕÍÚÍ¥‹~\$>©Ç˜4@Y^PQ_aWRSi–­¯ÀßáÅ¹»ºµ¨”‚rmt‚—¹èöååöóÚÉÀ²Ÿš¦¹Õêøé½®½©qc“ ‹‘²ÌßèçÊ’uux}yiT9M—bShhS^Š’xbNHPUYl’xz˜‹R]¬¦LM§Å¦°åíÊÁĞÈ¨—•p)<ªÉš‚6@SYRUa\FDUn¦³ÊéïİÖØÑÁ°†gZ^pµßğèçîâÂ¶¿±ƒ•¬ÊÜâÕ¶ª²m^n•—…­ÅÕæ÷Ş›yxy|zr\:J“ZLhdBEnsRDIKKE:M}‚\Xuk9I›“12•³˜ÔãÅ¿ĞÌ±¥¨0?¯Ñ¢‹‚‡’‚YRnnQJXk…Š¡ÒáÏÑçŞ¶–~fPQk§ÌÛÖÕÖÈª¢°™]U€¦ÆÌº €ƒ«¦vagp{yiu­¡µæà¢‹œš†€‡{[d•JArsE>`aB;K_ud-4xy9)KK*B”/+~‰¾ÒÅÈÚ×Àµ¹8F»ß²›˜›¡“srqj}šœ”¥ĞÙÁÇêàªˆxdJLkŠš®²¦¤¬¢…‘|B?s•¥ª£Š]a—šlVY\_[Nc›«“ ÓÓ ¢¦š›vzRHqn=3PUD=@Uzj%*y{08<';yr& a~u‚¥³­±¾À¶·ÄŸIUÃä· x{€ ´ÉÄ¥¥ÆÔÍÌĞ×â×´·à×„~UJ^r†‡tVTpoRNb\;AlyhtŸ’NEvzO=CEC=4V£¿©©¾¸—ˆ‰œÂÈ®š‹¥›r`eS+$=NVI'-ZW"1‚ˆC*<>/3KB5Vs„‰‡~z~‡•«É²dkÈß²›{}•¸ÔèÜ±±ÚâÈÀÉĞÕÄŸ¥ÖË…q‡]O_luxu]1/X^A@ZY>Dmv`k—ŠD;mwZMQQKE>c´ÖÇÁÆº‰¡ÖáÂ±®±»®ŠsiX?:IYi^85RQ2F‹O;QXNJK?%"6T|‘Š|phs‘°Ï»u{Îâ¹¥ ¡¢«»ÑíÙ—Œ¸¸‹x~§£Í¾cLy€a[omUYxm75fpRUxtIIt‹Œr@Bz“Œ‡„xqlŠÎîëêìÚ´¡¡´ÙåØÖßâßÇš‚|xusu{{tlbZUi•UMw‰…€yjSPcx¦¼¼¨’|„¬ÆÔ¼}†ÕìÌ¼ÁÂÅÈÍÜóÙ­®‚h_h…‡p…Å·ZCsg`jeQ\†|>;sebxsSW}”œ–ƒiGQ†Ÿœ–•zÑíãàãÕ¶¢š«ÕãÖÚğôæÍ¨—›œ›š››œ ‘rhs…‘_Y‘Šƒwgi~‰‹ÁÅª‘zƒ«ÁÄ¬zˆ×ğÑÂÜàèíîóûÜ—‹¸Ä®j^mrm‡À¶jV{ƒo^QTh€ŠGC~xfYV]oŠ“‰|oZf’ˆzq¤jt½Ñ¯¢«¬¥“vˆÈÚ¾ÀáçĞ¿´³¾º§©ÁÌÊÄº¤yŠ™¥–l^jnjhifamˆˆnv¡¥‚lcoŸŸkƒÖíÉ·ÂÊÙÚËÆÍ³yr«˜{TDMRRfˆUH`eWF39Vnm8<y‡iN76J\mn`YZUKTryk_Tb‰KOŒœqruykL]Ÿ®‰†¤¨”’ ·´—›ÁÕÖÈ­qjz‹Ÿ“iRNNPNIGGSjhOTxxUCAKalmbLf±Âš†q~™bUi^44_cA)$&"/-#%%*$'af6$% &3EF76C;=OVN901*+Y^:-7815C^‡‹kq›µ¾©wUB;B\ŠˆV7+.@<$#).7E?% '.+1hnE0eu•ˆL6FA'(FJ3#&(  #%*3763.Bqo>(-0/+# #(//'!+JQ@3)&).7>D@31:7)1PM) !&/Ky„ku¡¼Å®vVLMXs ŸqWPNOF3#%6;5/(#!+11+.\_8%œ­ĞÄ‰hb[ROR]piIBTZTK==HI@G\io~™¥£š‰§£€wˆ€iahwvdYa|nW<Bj}|kIF`z“‘to„|WLYab_Wg—¨Òéì×©’‘Ÿ»Ğß×¹°½¬}kxjA7K[g`FF_fYc‚‰vbN\Œ”ue“¥ÉÀ‹mhfhbR\€~UMg{Š‚d]prdlŠ§·ÎÛİ×ÈÆÒÉ«Ÿ¡¤š…}‚—º»š‡…•”„mQSuˆ{PQ}µµ™¨~qyƒ~ƒš¥¢¸åüıïĞ½¶ÆìÿÿñÖÔëØš…™Œ^Uo}}nPV€Œ²¹ ‡pxŸ¥Š}J\}QEWdk`DFea;:`Á¿‡w’‚Š«ÁÍÓÔÙäéêìğáÀœtfsxwuq†±¶•Š•˜”ŒuhZHOmpYaˆŸ¢¦¯¼¶Š|†¨²¥˜¤ÙõúöêÖ»ÂëÿÿíÈÂÛÑ¦’•ˆlk†ŠxfT`‹››»Â¯š„‚”‘ym4Fic5+DV`W<@cb=Bp¥áà¡‹Ÿ¡’˜±ÇÙàİâíóöøùíÔ©lS`mz|·¾¤œ§¡Œzvub@>]h_h„Šœ¨±­›ƒej‘¢—„wˆ¹ÔÙàéØ««Øòûä¯¡»º‘”~€•s^R^„–”£ÀÊ¿ªŒ†—”}rSb‚s7!0<FF:Kz\d•Âëå²›¢Ÿ”“¯ÉİëôùöìéììèÆ‡imyŒš¢²ÊÑÇ¾¶ |lnrun[V_ccgqvvz€…ˆƒw]5/J^hnpi[e†˜š¬ÎÂ‡‚´ÙòØŠq“‚–œ””œmWKRj~Œ£ÂÑĞ¸Š…©¯˜Œp}˜‡K4BO[\SbŠt~®ÕñíÉµ²ªš¡°Ç×âéîçÓĞİåèÎ—ys{‘£±ÁÓİàØÅ®”‚yz…‹‹Š‡{d\ahosrtxulU2%/@Xdc^V^v~‹ª oo¡ÅİÄxb„’—¯µª§¬—gNKNWbq¶ÈÃ­†‹¼Ç­Ÿ‹–¬Ÿoc|›ˆ…”“ƒ¼İô÷çÚĞÁ­¬¼ÉÑÎÁÁÍÆ«­ÌÙÔÀ„rs‡™©½ÓäïêÔÌÓÂ˜¥ºÎØ×°cEVfvzru‚ƒxk]N>Hlwidiuˆ…|sdr·¼§wt·ÃĞßÙ¿¸Å§aDQSHCCa¯˜ˆ™ÑÜ¼¬…–uw›°¶¯œ’’‹™¸ÏßæåÛÈ³œ­³¯¦˜—¤Ÿ‡³¼©•m`cu†–©¿ÑàßÏÏßÒ§²ÄÒ×Ò¯nMKP\^V\qwogaR:=Z`QNXdrxukYNIZ‡uZ`ˆ¦¼Óìå¿¶Ë«W5EF80-Cs}cY_€¼É¥“^com^n¯£™‰ƒ…–¡ª²ºÂ·šnirpc`flrqiu”gK:5=J[jxˆ˜¦±···¶±¦¥®©—†wv„rA&#*FSQJ=0"! #+3?NN@0 &CK>0!(D`z¢×Ú¨Ÿ¾¡J"')')0583&  @€iVcgqtq†´Ã²¤™‚€ˆŠˆ‰²«ŠyxtnaMHPVY[\i‚|Y=(&6ER`m|•—¡´¶¨¡¢ªºµ›†w€¡‘Q-%'2D]heZH><5(#(*))(2HND6"!59.#$AXgÒÚ©¢Å²iB;746=<3+"8w†cQ”™¤«¯ÀŞêâÒ¹¢‚|ummv´·˜™º¼ †n^VTX\`k}ƒ~kJ?JT[fu‡œŸÆÍ³£œ­ÖæŞ×ÒËÄ©{ddu•«µ´ª™{ˆƒnjyyj]QSdjg^NKSWVQFUƒœÛçÀ½àİ³•‚p`WVZedWNJf£²”„¢ª¹¾¹Â×ßÚÍ¸njcZZb}©¯•ÀÃ‚n]MIS[bjrwylQJW^_er„›–w‚·Æ®™…™ÓîêëóëÒ²‹wvˆ¬ÉÜáØ¾’‰¤£†~Œ‹yi[^s~vc]ehfddu˜„–ÔåÉÌîîÍ´¢Šm_apn__w¥°—Š˜°­‘ŒŸ£™•–€SDRUONSj’“ol‹‰gSMC46HWcfaXJA<E\d^^etŠ|JN‡ ™„_o²Í¿ÄÜŞË«€eY_wÓïğÉ{h‘“p_a^VNFTw‰Œ~_Yjk\_t„„k}½ÔÄÌîç¸Ÿœ…[N^~®§iOYi}~kb‹›»®vdw}wy‚n<-CLJFBSx{[P[]XK8,)0AO[]TG5/4BZc^ZW^ob8<p‹‹{[g °˜š¶Á¼£w[PUk–ÕøüÕhŠŒm^``_WISv„}q`_omZ_|…yiUi¥»«·Ş×¡‹”ˆe^t–Å½_]ajh[Tœ±ÙÁhG^muz|f9+=HJB/8]gTB1Aqk.-8<CKNKD:6:CR\_XGBJI?Mt†ƒ~wšvo‚”¥™p[Xh‰²ãüıß£ˆŒ}|‰‘”…d]qnTQeqsmaezx^LCYŒ™€Œ¾¼‡w‹’Š£ºÓÑ³‘k^kmeaš±ßÂZ.>N\b`P4*29>9+3QWG3.km5!1;?ABHUUGACGLWhdL;304B\gaadn}w[R[hzuZNRf‰¬ÍİÛË­œ™•“™¦«¦”tfkZ57an^VX]f\?26MvyV_•–b_’˜°ÅÕÏµ˜xnz}wt…Ì±L,2/--)! %-7DSM3"$CQLD68IK?Msx\NPNHVx~fJ*)-'$#+>GGE@<9635<Olƒ”›—™¡¥¤§®´¹¯•„{obH#RW0(>F@3-EbZ-1ee2Cš¬{u›·É¹‡v„––Œlƒ±I3:36CC88CP^gl_B2/6HWccX_wxcnš¡ƒttsq€ ¦‘rH.$#.1--242:JQQG5,/6CVo~†Š”¢®·¾ÁÆÎÄ©›š|`<Aoi0&MU=/)/AP\Q.-PL!A«¾|t¤ÃÒÀ~œ¦¦™OdˆR9<Oqzljtxv˜£Ÿ›td]dy€y€—°ÉÈ­­ÉÎ½²¯µÇÕßÜÌ±pZXjtt~’‡[Ocx‰lXLQdz’›•´º°¸ÒØËĞåëâÚÓÇ·£Œ’¶¤]R…‰^P`krpf^XUVJ1XÀÕ–“ËêïåÉ°˜•©­¡œRe‹„O>Piˆ•‘‹›¬ÄÌÃ¼·§{rw‹…•¾Üíì×ÕçæÑÆÅÓğşıòİÃ¤‰qm}ƒ‹§œk]r†˜’uc]bsƒ”—Œ—¸½¦®ÔİÈËæõùóå×Ê»ª±Î»xl˜šreryzticd^SH>f¾Î••Íêêä×Á¡ŸºÂ´®wˆ©‘A,SlxŠ¢¡†ˆ¦ºÆËÊÆ¿¬Œxnp}…ˆ ÍãäãàæóçÀ±¸ÌîıùæÄ§zhbf`PUoscdw{rcNM`knquqfr•›ƒ¿Ì·¸ÑâìæÑÁµ§˜·®‚t„†zm_XY]daRIEEJj¤©z{¬ÄÃ¿¸±ª¸Ûå×Ï€«9$Qlv¹»“²ÆÏÕØ×Ğ»˜€qnx„™¿Ößääêøã®´ÌåîåÑ±—„sc[ZP>=NUPXmlUD;@T^`ab_Xc„mt—¦ «ÇÖ×Ğ¿²ª›…¶µ‹~Œ‹zj]TQU`YA;GJDXˆŒef§±µµ°§µØàÍÃmy“|6%Jh€¥ÖÚ²¨¾ĞàêğğêÕ±“zr|~y€•µàïáãôÜš¹ÑÖĞÁ±¡’„tbXXRHCF@29UXA7;;7<HSZ_bk|ze\]j…¤ÊÑ»°¯¬©•qƒÊÏ“‰°¨q\jmd^\M04YV+2kwWVt“´ÇÍ½˜”±²—Šfq‡xF=\uŠ­ŞåÀ²»ÊßçàØÎ¾§wiffgp€ÈÏ´·ØÈ†z£° ™›•‰zhXIEMNIFE8%JVIGOG-);DEIRX\XK?4?`ƒ©ª‡’ ‹^qÆÕšÇ½z`mmb_cYABZO "VaC=Ng‰¥–op˜›{jlu‡ƒij‡”“§ÑÙÀ¯¨²ÍÊ©|uzugR87Pi–„]g£§sbsjEHs}gM0"9DCFL=Lgntwb5&65!(*#$2Hd`<?i„}KZªÅ«¯ÑÉ—udVLVt~sbK6#*KK+#19=9-HŒ›we‰™–‚†¤®¥¯ÌÓÆ¯«ª‹sbanpfR27_x‚‚xa=I…lXTC%2jzaL901A`oppoY.1c…™¢¡‹_O[S6,31'(56-,2AYS/1Z{”ˆVc­ÍÃÇ×Ï°’tedt—£˜}O60<XW9%$'('M›®‡s¦­»±‘‘²ÂÁÅÎÓÔ³n\{‰†ƒ€€ƒ€ugUd”‚rndU]|‚p\F=AX€‹yw…’£ÀÏÏÄ¬‹`a²ÈÑÍÁ­¤¨…vsngrŠeV^nˆƒaVd¬¬ŒÏíçàØĞÇ·Ÿš¨¸ÊÈ±‘gOHX~…mXFEU^bb]~ÅÓ¨“´ºÈÂ©£¯¸¿¿º¹¾¡aPnzrry~€}teRb•Ÿ~lg`Wd‡ŒrZC;AVz‰‹¨¹¾ÏíúøêĞ«|~³ÖçîêàÏÆÅÁ¹«™Š}‰­¦s_j|–‘m\^xª¯‡”Öïß×ÙÕÌÃº¿ÓßáÚË®„kcl…‰xjabntsoh†ÈÓ§‘©±ÀÉË»š‡„yfj„|P@MYehbN*1byundVE`¦­sRL<#,Xqy‰¢±µÇåğêâÙ¹‚ˆÌñ÷ùøçÆ´²¼ÒË¦…ilˆWFVk„|SBG`‘hyÂÓ¬®ØŞ¿¸ÇÖæèÛÚåÔ¥‰€wndYZiole[QGc¤¯ƒn¤¬¼ÈĞ»Šw‚€qcVS\fpb;,7DU]^HF^dd`P5P¢®rQK=(4`x~¤µÀÑèîâÙÕº‰Š¼ßòüşìÆµ·ÆáØ¬‚YVxtI;H]yn=,<W~~Xe¥³–Ì×¶²ÍàëëßßëØ§‰}o^URV`_SIA90N’t_¤¬¼À¸¢noj_M41EE1+476>Q^fU*$BNJNZM%5{qW@>Qm’’˜®Æßğ÷òàĞÄ¯“„ƒŸ×öüïĞÇÕßåÔ¬€OGhiJ<@Rtf*<[ywWZ„´¾¯´ÍÜâèïëÛ»Šj[TW\d]F2"&("E‘¢zfŒ”¤©¢nYPOWH!@B# 9B::DLTM74CKN[rmKR„”ƒlNFTkŠ‘€… ¹ÑâêæÖÀ¦—”‚bt¸ÔÇÀ¾ÃÏÕÔÂ¡xI;PSD<<Jg[%0HabLHV_coƒ•¨³¿ËÖÒ¾ z]JFPaypG/)"6|iW\ew„V7#/ZUO]FALLB8.)(1DLIUpŒ§°¤¨¼¼¨sT3.HPGTx–§ÁÊÄª{q…X^––`^¨¥§®¥‹lG3/19<<CRK. 7?8/$#,4;Mjo^e„”••“‰vbLDJd‘‘bUhW" R]?0PYlz…tH)-gh/-avjhpogU:.1Cen\d†©ËÛÙÛáÔ³“vF6EIBQv…­¸­‘cfš–[W‹„AE‘®œ•›š’eRJLXbimmgZD%$CQO<(3F_eW^z‹‘‰…ƒxc`nŠµ¸”Œ¢‹H''7VZC8ir„Š…mD00KQNw—¦«§‘h\mƒš{w²ŞğèéòÛ¤”­«‚ƒ}r{˜”±°‘u]tº·ka™œjvÁÖ³Ÿš¡µ¶¢› £¤¯ÄÆ¶­ªYV„˜p6"2Kl{v}‘œ ®ÉÄŸ”¡ ™»ÕåçÛÖ×¿uu{†„unpz’†mG44Oƒuv”§¯¼ÎÕÒº£À¿ ™«ÄãìßâõÛ’ƒ­¹¦˜…z€˜œ‹’®¦y`\zº´g]•Ÿ|…¼Å¡ˆ˜º¼š²¼¸Èíõá×Ö½‹ƒ¤¯¤@);Tv€t{—œÆÆ›Œ˜œ«Ìàêñ÷öï×¯™•”˜•Œ‡gs‰ˆrQ7$9u–›¦·ÃÊÖéîæÑ°›”¥ÏÜËÉ×İÜÑ¾ÇìÔj“ˆwk`X_v~y†¦›eQ_w™ŒQL}‹vs€{d]f}¡•WP€–”®äùîåßÑ»«£˜‹k8&7EPWY_h`GU‰–}mfo‡—Ÿ®ÃÖçíèÓ¯•…‚Š‹‡„v˜›ˆnL3%>}¥¶ÁÇÎØáìñğÜ¶›˜½ÏÏÕàŞÑ¼Ÿ£È³ePt|h\YUOQ]_Ye†RCQ`pgEEfpbZWOCCOfˆy77w“Š ÕñóîãÙÏÁ®‘rC1>B?CMOI=)5aslaSVk{‡–¨¿ÜéæÓ°•~ŒŒ‰œ¦»±ˆ_7*8]š½ÆÈÃÉÙŞØŞğÜ €{~‰˜­¼ÆÉÄ¬u‡wC6OTDFZb^VL>+0MR@626?DEIPM?;BC=>DTpi>N˜²™ÀÛñóäÕÈÄÈÃµ”aJOMBBNK:35>M\ij]RHXƒ˜™­ÕéèÖ²™‰Š£›–„¢–lH*%;e£ÇÏÊ¹¾ÛÚº»İÑ—vpljv›˜šŸdSZN.+EL@BS\_U=(<D3++,-4BE<2')9>86:Jf`9Eƒ—€š·ÖÛÅ»¿ÇÑÍ¹x]L>5;QP82>B=BQY[L.>z{„ªÇÚ×¿¤‡‡¦¯¢›-7KJ4'#%.U™ÃÒÉ¨¯àÖ’ˆ¸½˜~ndagvpWRb^H>A9'0VdZOBCSL0&SU+#<C97>:)$>B2-4Hh^)8D>Ieƒ¤¥†‹´ÉË¼Œ‰l3-W^B:D@/%#0LF+kwNE[‚»×Ö¸|v¦´ –"-A@)&7=8VšÆÚÒ¬³æÒwg¡´ ˆlagloeMIYWD=@@<Hesq`>?ceD44Itq>5U`TMJE><@FOL=8?Pla--:AN_up}´ÑÓÂ–¨M-0DkqVNXQ8'.XX.6nwOAKl¢ÆØ¾yt°À¦˜cn„xIDhoVh¥ĞéæÆÈíÍjX™¶®•kc~†{x|€„wZPYcmrpw…uHP|nt… ˜mbx}tghyŠ™n\YXZcsiECbyŠˆ‹™–ƒ‘ÀŞëà¾ºÖËš|€Što|sVFCU~^_ƒy|„¤Å¸~‚ÄÔ²¡ƒª™]XŠglœ¾ĞÌ³¹ßÂdT”±«__š€v|€…|f^bjvwmpuL[¡³‘„‹œ·³€…‹‘Šwt“©ŸvaacgtŠZSl‚“”ƒ‚‚µÓèß¸´ÔÖ¸¨¥¤¥‡Šf[]k…`a†’‡ƒ‡‡’º´€ŠÑâ¾¬„“²£fcœka€„s…¼±f[¤˜yIT›©~_LK\fjg]WUVZ_f_K^š§†vxºÁ¤}}{hVXote\VZfƒ°¨mNMS_^RXpwkt’¯ÌÁ„¥±©§¬¯±¬£•‚sfdmpmY4>uƒg_luy·²ŒÖêÈ·•¥Å¶wt¬ªo_{q`Pe¢Ÿ]Py…v[5Jšª|\KDFO]`VOIKVXQKEZ‰˜†}–ÃÍµ›{Š‡v][p}ƒy_SUo¢ iH?=CC>EZefq†œ³§ys–§§¬·ÀÆÁ±£–†qghihP &akF@Xir•lƒÑå¿¬·ÅâÑ‘Šº³rfŒ“y`IY‹H4OUF6&BŠœznykD6@HPSQVb[C8;Mo†‘™±ÑÖÁª‘…„‹›Ÿ˜œª»Í¸{O39`gNA@??AFJKXq„˜›‘{ƒ¨¸²·ÇÖåÛ¸±Æ¸†cOUve$GK$$KbkfTIGoÂÓ¢‰¬¼İÌ‹ƒ´¯teƒˆs\AJuq@/>@5*:zˆbYlb;/@RhhTUle@3>X€œ­³¯·ÌÎ½¦‡vr|“Ÿ¢®ÃÚóÛ”`?@aa>8NTJC?:4>Yjpqkgfx¨™¶Ïèßµ®ËÂ”kGM~q&39!!9GMB& /`³ÂruŠ³§e`™Ÿs^_`aS87NSE@EFC7!2kl6$(+<]~QHuuH;Oy»ÛÚÌ±©³´ªcPU_nvy»Üóâ¨…y„¦9-j|eI'#%&$*9Rtw[_„¨ÍÌ¦˜£¤šRSs&%5=7!$U¥³en„²¦a_®‘zibfX85OXPLMR\T;Eqg(&39Ln“»³yq›™l[fÓğåÑ³¨²µ³–_KZgr|ƒÈæ÷è¹¢¡¯Ì­SG‹Ÿ…fB260  13'&1FgkTYz ÈÏ³§«¯µ¦Ÿ‹C+CYl_1%#*V¨w^—­×ÉÁÛÏ»ŸŒƒjBFvaSVe‚nq‹y97sƒf`r’¿ÒËÏİÒ¬’ƒ•ÈÛÏÂ´¶ÇÒ×º{h€“¡°ÀÓé÷üìÇµ¶ÀÒÁ‹†²¾©šš‰]a”šu[LTu„ƒŠšµÛéŞÜáäåàÕÑÖº|m£­™i[pjH;Ab›¡s\ ¸çÜ•‹¼ÔÑ¿“}NT–kY`pŠyy~LN„“{u€ËçñóìÛÀ¦šÅĞº±´½ËÍÅ¦rc{‘¥´ÀĞåğğãÈ¾ÃËÔÌ²²ÌÔÊÄÂÃÉ¯ws£§~bS^„•‘’˜°ÛæÓÕìõñîíîñÕœ¯ÂÉ·‹}Œ\FA^¨}gˆ¦áŞœ‚‘˜—‡fk–‘^`–›n^ju}v^_xy`VYdx‰—´ßòêÜÇµ¥˜ÊÍ§Ÿ³½½§|ZC=I_}‰ƒ•¾ÒÑÊ¼»ÈĞÒÏÈËØâéåØÍÃ¤nX`YA;Ge”œ~qu’ÇÆ‘’ÌãØĞÊÔîİ£¦µÀ¶š…ziR=)L¤¼”€ªãØ‰fospcJW‹ŠTP~…f_nx~sWZ|~cOCPv‘¢½àëİÌ¸§š‘ŠœÄË°¬¾À³“aC;9>Omr`nœ´µ¬™™«´µ³¯·ÊÚææÚÒÌ«nLD<43:T‚…[JPl™^a£À¸±©¸İ×¤”¥¶ÈÂ¥kL0;˜´‘±ÅìÉ\6Xe\SHSth/$EUU]l{‹„fl—S9AUt¢¸ÍÒÈÁ¾²Ÿ‘ˆ”´ÉÕÙÕÆ¬saZXYbtoTZ‚—š‡_Vly|vgu¢¼ÂÆÉÓäÆwPPRXK+-ON*(?`_:@r‘‰™¾Á š­ÅáÚ®œ£‡H+z‘rb£·İ¼Q/T[EBQ`p_-3FYfo‚¡¡†°¡X<L_s…•¨¼Â¸²²¦~s¡¹ÇÎÍÂ¬‘qa``bb_UEKhx|nNAHR`_Qa¬½¿²½àÉwOPXeX2%0++99*3Tfjow‡ ¢¢¾âŞ±§½§c4)gyaUd€¸±jObV,1d~oNAGWq|wÁÊ©¨ÇµqVcmty{¯¹­ •‚iVJ\Œ™†Š¦´´–[BKSZN/%2@OY\`eZ@B_noyŒ«ÖÏ”¿´nIFL[\O=%$+32)(/:HJBOr„‚{orƒ ÉÎ¯°ĞÊn:5`m^VSq®¯t\iX*3qŒ~eYZi„‘¥ÔáÌËŞÇ‡p€ƒypg}²À¦€kQDF]ˆ”~œ±À¦dGOXcV1+ETXVNXupJEaqv{ ØĞˆº¸yZY`nyqJ<FLNC-.FNGDDQj{„…}‚”«ÇÎÀÆßÛº’dWlqfan‰¿¶pVha?Gy”™rgm{’¥·ÉÛæéîôØšˆ¤¢‚jYxÇÕ£‚s`GIf€—§±³¯¸ĞÁ‹olq~zfg}†‚pQV~ƒe\fjfhnŒÂÂ’ÒÔš€ˆ’°ÇÂŸ‰}uo_EJnpQRrv]m§À¹¿ÔİÚÜãéíÜµ”Š„zv~–Ç»qYroOU‚–hh”¢¸ÔãåèëîñÙ¦™±­oUpÀÎ˜vhYJTvŠŸ¼Â°²Ç»smr‚‚qu”‡rUZ‡pirsljm‡¸¶ƒÔØ—ƒ›±Ã×íçÇ«”†ƒrTWy|`a€{Sc«È¹ºÌÓÑÔÜáãÓ¯œ–Š„‚™Ç¼xf†‚[^”rYI]•³·ÈæôòçÒÌÔÊ®£©¦˜~Zdª‡m]W[evyn|¡®¡¦”jTR[omTWw}i^[dy{jn„Œ…€’¸«jrÂÂqa“½ŞïñâÁ¤ŠŠ}ZSgrrqnbK[œ~s{­¶«¯ÃÀ¨’„¡§–{’¾µwbwoKW“•\=7T“¸ÃÕìîÚÅ®¨³¬”••wOV—uZFBO[ffZ_t€„‰xQBKUaY=CkqVMUaolX[t{qll}ŸMX±±XF{®ßóìÛÁ§‹~t\U]dif\N<GqvXJNaƒ~‚—˜‡yn€¯¹‘j€¬¦mME6>”šO-4Nz£ÈßæĞ‚ƒ€ZVt|qY5FŒ–d>"'6FOQH57Pcqe@<XaYG-8hoO@COc\90A@0+2Hkb*?¡¦N2R„ÆäŞÔÇ³˜}bVZ[[SDAJ@$(LVE?DKTXXZ_ZMSk’ÇÍ¤\q™‘W6-!4†‰=!4Pwœ¿ÍÈ§lOQ]si>:]dO:%8r~[<!(BS^J7P]R/1W^E2$0UZ@1.7NI*'#'E>){ƒ@+Fp¨ÆÉÄ·¡„kUTgiZE*'=7=F3.6967==5-%2T‡ÌÕ¤‹Qc†v4.1&8hb&6\‰¢§¡’sF+#6dhA9PK( ,>MYVE5&2Xrg"8KM> IK%"+22+!.4)%(#*%@H-2Ws†™­ªqOGYmƒ}[964CF!$*(*/)(`¿ÓœUdq2 8A:Gia.$Ch’£eB+ 4gmE<RP70;?<JijM:0=b|‰o-CVXJ+3agC5>B@BGA./DPTN=8=9,)/)5>7Ejztƒ¨­“vVY}—§Ÿ€`>;VN#+da 8E98B;$)16gÄÙ¥‹gs‹€Q@LPNa‰…TF[tŸ¡›{`NGV{xMEat}~wrlu‹x<'8Lbpuc84Wp}vZh ±Šxu€‹•zyª˜hb‡†`OQI7=[e[d„s…ºÎÁ°š ÂÒÒÏÊ¸™†HQ •2&s‰gaurXXt€Üæ½©XarkJBQTH[‹‰VBM\mx~|reSHCRtoB7Odw{pifkyc).ARXTF./I]lk\n¡¸³wn‚‘œ—‚ƒ›­»¥kbŠŠdOLC5:RZRVggVe“§¢š˜¸ÇÅÆÊ¿¥ªKS¥›4)zcXkjUXs{–ĞÙ°œ)-61%JJ(4oo2!*131)"*RP$!()%%)-1)24$$*0Df{„n;-ETZVFMl†sH9FF6)"""18641@av€ƒvbczg,0ur&MT-$#&*)Q¢±}cLNROEQttQX‰‰X@@BFIJHC@@@@PqqP@@@@@@CHKJIHEBHYYIA@@@@@GTcv…‘UI\hkh^e„h[[ZXQE@@@@@@@@@@@@@@=7A[qƒ‰…|pt‰UW……WMiiM@@@@@@=7Y¥±fÃÄÅÄÁÅÑÑÅÇØØÇ¿¿ÀÁÂÃÂÀ¿¿¿¿ÅĞĞÅ¿¿¿¿¿¿ÀÂÃÃÂÂÁÀÂÈÈÂÀ¿¿¿¿¿ÂÆËÑÖÚÕÆÂÉÍÎÍÉÌÔÙÚÖÍÈÈÈÇÅÁ¿¿¿¿¿¿¿¿¿¿¿¿¿¿´Ÿš¦·ÍØÖÓÏÑØÔÆÇÖÖÇÄÍÍÄ¿¿¿¿¿¿¶¤°ÙÛ·¥ÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿğÓÆËÚóÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿÿóÛÛóğÓÅ
 \ No newline at end of file
 diff --git a/libfprint/drivers/goodixtls/goodix.c b/libfprint/drivers/goodixtls/goodix.c
-index ca9d8ed..b3a53ae 100644
+index ca9d8ed..4f6a2a3 100644
 --- a/libfprint/drivers/goodixtls/goodix.c
 +++ b/libfprint/drivers/goodixtls/goodix.c
 @@ -60,7 +60,40 @@ typedef struct
@@ -86,36 +86,17 @@ index ca9d8ed..b3a53ae 100644
    gboolean      inited;
  } FpiDeviceGoodixTlsPrivate;
  
-@@ -1074,7 +1107,11 @@ goodix_send_request_tls_connection (FpDevice             *dev,
+@@ -1074,6 +1107,9 @@ goodix_send_request_tls_connection (FpDevice             *dev,
                                      GoodixDefaultCallback callback,
                                      gpointer              user_data)
  {
--  GoodixNone payload = {};
-+  /* Ticket 48: Windows wbdi.dll sends CMD 0xd0 with a 2-byte payload
-+   * {0x00, 0x00} (disasm at 0x1800a6ec7: r9d = 2, lea r8, [rsp+0x40]
-+   * where 0x40 is zero-filled).  Linux was sending 0 bytes, which can
-+   * cause the MCU to reject the TLS request on cold boot. */
-+  guint8 payload[2] = {0x00, 0x00};
++  /* Ticket 48 note: Windows wbdi.dll may send 2 bytes here, but the MCU
++   * rejects non-zero-length payloads on this device â€” reverted to match
++   * the working 0-byte behavior. */
+   GoodixNone payload = {};
    GoodixCallbackInfo *cb_info;
  
-   if (callback)
-@@ -1085,13 +1122,13 @@ goodix_send_request_tls_connection (FpDevice             *dev,
-       cb_info->user_data = user_data;
- 
-       goodix_send_protocol (dev, GOODIX_CMD_REQUEST_TLS_CONNECTION,
--                            (guint8 *) &payload, sizeof (payload), NULL, TRUE, 0,
-+                            payload, sizeof (payload), NULL, TRUE, 0,
-                             TRUE, goodix_receive_default, cb_info);
-       return;
-     }
- 
-   goodix_send_protocol (dev, GOODIX_CMD_REQUEST_TLS_CONNECTION,
--                        (guint8 *) &payload, sizeof (payload), NULL, TRUE,
-+                        payload, sizeof (payload), NULL, TRUE,
-                         GOODIX_TIMEOUT, TRUE, NULL, NULL);
- }
- 
-@@ -1284,42 +1321,6 @@ goodix_send_preset_psk_read (FpDevice *dev, guint32 flags, guint16 length,
+@@ -1284,42 +1320,6 @@ goodix_send_preset_psk_read (FpDevice *dev, guint32 flags, guint16 length,
                          NULL);
  }
  
@@ -158,7 +139,7 @@ index ca9d8ed..b3a53ae 100644
  // ---- GOODIX SEND SECTION END ----
  
  // -----------------------------------------------------------------------------
-@@ -1343,10 +1344,73 @@ goodix_dev_init (FpDevice *dev, GError **error)
+@@ -1343,10 +1343,73 @@ goodix_dev_init (FpDevice *dev, GError **error)
    priv->length = 0;
    priv->transfer_cancel_tkn = g_cancellable_new ();
  
@@ -236,7 +217,7 @@ index ca9d8ed..b3a53ae 100644
  }
  void
  goodix_reset_state (FpDevice *dev)
-@@ -1387,6 +1451,53 @@ goodix_activation_gen_bump (FpDevice *dev)
+@@ -1387,6 +1450,53 @@ goodix_activation_gen_bump (FpDevice *dev)
    return ++priv->activation_gen;
  }
  
@@ -290,7 +271,7 @@ index ca9d8ed..b3a53ae 100644
  gboolean
  goodix_dev_deinit (FpDevice *dev, GError **error)
  {
-@@ -1394,21 +1505,37 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
+@@ -1394,21 +1504,37 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
    FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS (self);
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
@@ -333,7 +314,7 @@ index ca9d8ed..b3a53ae 100644
  }
  
  // ---- DEV SECTION END ----
-@@ -1586,7 +1713,21 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
+@@ -1586,7 +1712,21 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
    if (error)
      {
        fp_err ("failed to get tls handshake: %s", error->message);
@@ -356,7 +337,7 @@ index ca9d8ed..b3a53ae 100644
        return;
      }
    FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (user_data);
-@@ -1654,6 +1795,16 @@ goodix_shutdown_tls (FpDevice *dev, GError **error)
+@@ -1654,6 +1794,16 @@ goodix_shutdown_tls (FpDevice *dev, GError **error)
      }
    return TRUE;
  }
