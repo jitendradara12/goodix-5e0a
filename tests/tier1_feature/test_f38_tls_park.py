@@ -76,14 +76,18 @@ class TestF38TlsPark(unittest.TestCase):
                        "// ---- SCAN SECTION END ----")
         # ticket-34 bump still first
         self.assertIn("goodix_activation_gen_bump (dev);", deact)
+        # ticket-46: park gated on idle deactivation (no in-flight scan SSM)
+        self.assertIn("scan_was_active", deact)
+        self.assertIn("self->scan_ssm != NULL", deact)
+        self.assertIn("park invalidated: scan SSM in-flight", deact)
         # park branch
-        self.assertIn("if (goodix_tls_is_alive (dev) && self->warm_ok)", deact)
+        self.assertIn("if (goodix_tls_is_alive (dev) && self->warm_ok && !scan_was_active)", deact)
         self.assertIn("self->tls_parked = TRUE;", deact)
         self.assertIn("self->tls_parked_at = g_get_monotonic_time ();", deact)
         self.assertIn("self->tls_parked_gen = goodix_activation_gen_get (dev);", deact)
         park_idx = deact.index("self->tls_parked = TRUE;")
         destroy_idx = deact.index("self->tls_parked = FALSE;")
-        park_branch = deact[deact.index("if (goodix_tls_is_alive (dev) && self->warm_ok)"):destroy_idx]
+        park_branch = deact[deact.index("if (goodix_tls_is_alive (dev) && self->warm_ok && !scan_was_active)"):destroy_idx]
         self.assertIn("goodix_stop_read_loop (dev);", park_branch)
         self.assertNotIn("goodix_shutdown_tls", park_branch)
         # destroy branch preserved: flag clear + shutdown + stop + complete

@@ -1,6 +1,8 @@
 # Ticket 48: Cold-Boot TLS Handshake Fix (Geneva CMD 0xe4 Slot Latch & Wire Parity)
 
-Status: ready-for-hardware-verify
+Status: closed
+
+Verdict: CONFIRMED on hardware 2026-09-09 (deployed driver).
 Opened: 2026-09-09
 Supersedes: 45 (insufficient — warm-sensor test, not true cold boot)
 
@@ -39,7 +41,31 @@ Disassembly of Windows `wbdi.dll` (`Start` at `0x180083900`, `PresetPskIsVaildG`
    - Warm path skips `CHECK_PSK` and `UPLOAD_CONFIG` directly to `ACTIVATE_NUM_STATES`.
    - Post-TLS: `on_tls_activation_complete` uploads config on cold path before enabling chip.
 
-## Verification
+## Hardware result 2026-09-09 (true cold boot) — handshake CONFIRMED,
+## mechanism line still open
+
+True cold boot (uptime 0:01 at 20:22). First post-power-on activation
+20:20:39: `5e0a warm expired: reason=cold-start` → `5e0a TLS connection
+ready (cipher: PSK-AES128-CBC-SHA256, proto: TLSv1.2)`, zero `bad record
+mac`, zero `failed during TLS`. Hands-off 60s silent (`0` frame-stats).
+Manual verifies after boot: no-match, no-match, then `verify-match`
+(right-ring-finger, enrolled) — first taps after boot, no journal errors;
+fresh fprintd (PID 3075) cold driver path also clean-TLS at 20:23:48/49.
+Caveat: `set-environment` does not survive reboot, so the `fp_dbg`
+mechanism lines (`reading PSK slot…`, `PSK hash read`, `Chip enabled!`)
+could not appear — handshake success on a true cold MCU is proven, latch-
+step execution needs one debug-env re-run (below).
+
+## Mechanism re-run 2026-09-09 — full chain CONFIRMED, ticket closed
+
+Debug-env re-run (PID 3506): `Cold path — reading PSK slot 0xbb020001`
+→ `PSK hash read (0xbb020001): success=1, len=32` → device-specific PSK
+→ `TLS connection ready` → `Cold path — uploading config after TLS...`
+→ `Chip enabled! Activation complete.` → `verify-match`. Zero `bad record
+mac`. Combined with the true-cold-boot TLS success above, both halves
+hold: cold MCU handshakes clean AND the latch step demonstrably executes.
+
+## Prior verification (builds/unit, pre-hardware)
 
 - Unit tests (`tests.tier1_feature.test_f40_warm_activation`, `test_f47_verify_retry_release_guard`, `test_f28_whitebox`): All PASS.
 - Ninja driver compilation: 0 warnings, 0 errors.

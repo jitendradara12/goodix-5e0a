@@ -173,14 +173,15 @@ class TestF42ConditionalReset(unittest.TestCase):
         self.assertEqual(src.count("goodix_session_mark_clean (dev);"), 1)
         deact = _slice(src, "goodix5e0a_deactivate (FpImageDevice *img_dev)",
                        "// ---- SCAN SECTION END ----")
-        park = deact.index("if (goodix_tls_is_alive (dev) && self->warm_ok)")
+        park = deact.index("if (goodix_tls_is_alive (dev) && self->warm_ok && !scan_was_active)")
         clean_at = deact.index("goodix_session_mark_clean (dev);")
         self.assertGreater(clean_at, park)
         self.assertLess(clean_at, deact.index("fpi_image_device_deactivate_complete (img_dev, NULL);"))
         # A live host TLS pointer after chip/scan failure is not proof of a
         # clean device session; the existing warm-success state must gate park.
+        # Ticket 46 narrows the gate further to idle deactivation.
         park_branch = deact[park:clean_at]
-        self.assertIn("goodix_tls_is_alive (dev) && self->warm_ok", park_branch)
+        self.assertIn("goodix_tls_is_alive (dev) && self->warm_ok && !scan_was_active", park_branch)
         # destroy branch (park dead) stays dirty — after-error AND after-success
         self.assertIn("goodix_session_mark_dirty (dev);", deact[deact.index("self->tls_parked = FALSE;"):])
         # failure funnels clear (retry-vs-final ordering: set at funnel entry

@@ -87,6 +87,22 @@ class TestF47VerifyRetryReleaseGuard(unittest.TestCase):
         self.assertIn("fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);", up_reply)
         self.assertIn("return;", up_reply)
 
+    def test_g2_fdt_up_timeout_reissues_while_held(self):
+        """0x34 timeout with guard set re-issues FDT_UP (held finger is not a release)."""
+        src = _read(GOODIX5E0A_C)
+        up_reply = _slice(src, "goodix5e0a_on_fdt_up_reply", "goodix5e0a_scan_run_state")
+        # cancelled teardown never re-issues on an orphaned SSM
+        self.assertIn("G_IO_ERROR_CANCELLED", up_reply)
+        self.assertIn("fpi_ssm_mark_failed (ssm, err);", up_reply)
+        # timeout + live guard re-arms the same FDT_UP probe, guard kept
+        self.assertIn("if (self->retry_guard && self->scan_ssm == ssm)", up_reply)
+        self.assertIn("finger still present, re-issuing FDT UP", up_reply)
+        self.assertIn("GOODIX_CMD_MCU_SWITCH_TO_FDT_UP", up_reply)
+        self.assertIn("2000, goodix5e0a_on_fdt_up_reply, ssm", up_reply)
+        # the re-issue precedes the release-ok clear, so a timeout can never clear
+        self.assertLess(up_reply.index("re-issuing FDT UP"),
+                        up_reply.index("release ok, arming FDT DOWN"))
+
     def test_h_teardown_and_suspend_safety(self):
         """Suspend, scan complete error, and destroy deactivate reset retry_guard."""
         src = _read(GOODIX5E0A_C)

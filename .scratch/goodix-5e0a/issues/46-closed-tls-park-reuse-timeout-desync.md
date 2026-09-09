@@ -24,12 +24,58 @@ consecutive verifications, PAM multi-factor checks).
 6. The failure marks the session dirty, triggers a USB reset, and forces a full cold
    activation on the next attempt.
 
-**Status:** ready-for-agent
+**Status:** closed
 
-**Verdict:** pending
+**Verdict:** confirmed on hardware 2026-09-09 (deployed driver)
 
 **Live-scope:** session reuse teardown/flush and in-flight cancellation only.
 No biometric changes, no threshold changes.
+
+## Implementation (2026-09-09)
+
+One variable: park eligibility pinned to idle deactivation in
+`goodix5e0a_deactivate` (`libfprint-driver/goodix5e0a.c`).
+`scan_was_active = (self->scan_ssm != NULL)` captured before the SSM free;
+park requires `goodix_tls_is_alive && warm_ok && !scan_was_active`.
+A non-idle teardown logs `5e0a park invalidated: scan SSM in-flight at
+deactivate, clean bring-up` (`fp_dbg`, needs debug env) and falls through
+to the destroy branch for a clean bring-up (fresh warm/full handshake, no
+parked reuse). `warm_ok` untouched — next claim does a fresh handshake,
+not a desynced reuse. `retry_guard` path unaffected: post-image deactivates
+have `scan_ssm == NULL`, so 47's guard still parks.
+
+## Hardware result 2026-09-09 — CONFIRMED, ticket closed
+
+5 rapid back-to-back `fprintd-verify` (incl. `verify-match` on right-ring-finger):
+`grep -E "timed out|Invalid ACK|verify-unknown-error" | wc -l` → `0`.
+Reuse line present: `5e0a TLS session reused (parked 0.0s, gen=11)` — the
+exact 0.0s-gap scenario from the root-cause analysis now reuses cleanly.
+
+## Predicted journal signatures (pre-run; confirm branch matched)
+
+- Confirm: 5x back-to-back `fprintd-verify` show zero `Command timed out:
+  0x96`, zero `Command timed out: 0x32`, zero `Invalid ACK command: 0xae`,
+  zero `verify-unknown-error`. Claim cancelled mid-FDT_DOWN logs the park-
+  invalidated line (debug env) then `5e0a warm path` or `5e0a warm expired`
+  + clean `Chip enabled!`.
+- Falsify: `Invalid ACK 0xae` + `0x96`/`0x32` timeouts persist on rapid
+  reuse despite idle-only parking → desync source is stale USB pipe bytes,
+  not park gating; next experiment is a pre-probe flush, not wider gating.
+
+## Build breakage 2026-09-09 (fixed same day)
+
+Regenerating the unified patch via `git -C /tmp/libfprint-goodix diff
+c343b69` broke `nixos-rebuild`: the NixOS module fetched
+`jitendradara12/libfprint@a5029fe`, a base that already carries
+`goodix5e0a.c`, so new-file sections failed (`5 out of 5 hunks FAILED` on
+`goodix5xx.h`, reversed `goodix_proto.h`/`goodixtls.c`, failed
+`meson.build`). One patch cannot serve two bases. Fix: module src pointed
+at `goodix-fp-linux-dev@c343b69` (same rev+hash as repo `libfprint-
+goodix.nix`; old fork rev recorded in the module nix comment). Verified:
+module derivation builds (`/nix/store/kcw7wcsfrj6spf8qd3yw6kgxvr6l2mih-
+libfprint-goodix-1.94.5-goodixtls`, `strings` shows `park invalidated`);
+repo `nix-build` builds; `test_f25`, `test_f21`, tier5 parity green
+(stale `054aa1cf` pin refreshed to `2da873c5` — was already red at HEAD).
 
 ## Settled facts (do not re-litigate)
 

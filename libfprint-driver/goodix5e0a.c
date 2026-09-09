@@ -1119,7 +1119,27 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
 
   if (err)
     {
+      if (g_error_matches (err, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        {
+          /* Deactivate tore the scan down; never re-issue on an orphaned SSM. */
+          fpi_ssm_mark_failed (ssm, err);
+          return;
+        }
       fp_dbg ("5e0a D34 reply (tolerant): %s", err->message);
+      if (self->retry_guard && self->scan_ssm == ssm)
+        {
+          /* Hardware-proven 2026-09-09: a 0x34 timeout means the finger is
+           * STILL down (no release event in 2000ms) — not a release.
+           * Treating it as release re-armed FDT_DOWN onto the held finger
+           * and burned the retry. Keep the guard and re-issue FDT_UP; the
+           * retry claim parks here until a genuine release reply arrives. */
+          g_error_free (err);
+          fp_dbg ("5e0a retry guard: finger still present, re-issuing FDT UP");
+          send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP,
+                          goodix_5e0a_up_u01, sizeof (goodix_5e0a_up_u01),
+                          2000, goodix5e0a_on_fdt_up_reply, ssm);
+          return;
+        }
       g_error_free (err);
     }
   else
@@ -1288,6 +1308,12 @@ goodix5e0a_deactivate (FpImageDevice *img_dev)
     }
 
   goodix_reset_state (dev);
+  /* Ticket 46: a deactivate arriving with a scan SSM in-flight (notably
+   * FDT_DOWN wait) leaves the MCU in FDT mode with dangling ACKs that
+   * poison the next parked reuse (Invalid ACK 0xae, timeout 0x96/0x32).
+   * Pin park eligibility to idle deactivation; a non-idle teardown falls
+   * through to the destroy branch for a clean bring-up. */
+  gboolean scan_was_active = (self->scan_ssm != NULL);
   if (self->scan_ssm != NULL)
     {
       fpi_ssm_free (self->scan_ssm);
@@ -1298,8 +1324,11 @@ goodix5e0a_deactivate (FpImageDevice *img_dev)
    * state) survives across claims while its context is alive — stop the
    * read loop only, stamp the park, and let the next activate health-check
    * it. Destroy branch is full shutdown; only a successful chip enable may
-   * park, because failure funnels can leave a host TLS context allocated. */
-  if (goodix_tls_is_alive (dev) && self->warm_ok)
+   * park, because failure funnels can leave a host TLS context allocated.
+   * Ticket 46 narrows the gate to idle deactivation (scan_ssm == NULL). */
+  if (scan_was_active && goodix_tls_is_alive (dev) && self->warm_ok)
+    fp_dbg ("5e0a park invalidated: scan SSM in-flight at deactivate, clean bring-up");
+  if (goodix_tls_is_alive (dev) && self->warm_ok && !scan_was_active)
     {
       goodix_stop_read_loop (dev);
       self->tls_parked = TRUE;
