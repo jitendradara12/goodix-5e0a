@@ -1,8 +1,21 @@
 diff --git a/libfprint/drivers/goodixtls/goodix.c b/libfprint/drivers/goodixtls/goodix.c
-index 236589f..88b92ac 100644
+index 236589f..1296d8e 100644
 --- a/libfprint/drivers/goodixtls/goodix.c
 +++ b/libfprint/drivers/goodixtls/goodix.c
-@@ -55,16 +55,51 @@ typedef struct
+@@ -27,9 +27,12 @@
+ #include <glib.h>
+ #include <gusb.h>
+ #include <openssl/ssl.h>
++#include <poll.h>
+ #include <pthread.h>
++#include <errno.h>
+ #include <stdio.h>
+ #include <string.h>
++#include <unistd.h>
+ 
+ #include "drivers_api.h"
+ #include "goodix.h"
+@@ -55,16 +58,51 @@ typedef struct
  
    GoodixCallbackInfo *tls_ready_callback;
  
@@ -59,7 +72,7 @@ index 236589f..88b92ac 100644
  gchar *
  data_to_str (guint8 *data, guint32 length)
  {
-@@ -89,7 +124,11 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
+@@ -89,7 +127,11 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
    gpointer user_data = priv->user_data;
  
    if (!(priv->ack || priv->reply))
@@ -72,7 +85,7 @@ index 236589f..88b92ac 100644
  
    goodix_reset_state (dev);
    if (!error)
-@@ -97,6 +136,8 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
+@@ -97,6 +139,8 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
  
    if (callback)
      callback (dev, data, length, user_data, error);
@@ -81,7 +94,7 @@ index 236589f..88b92ac 100644
  }
  
  void
-@@ -109,6 +150,19 @@ goodix_receive_none (FpDevice *dev, guint8 *data, guint16 length,
+@@ -109,6 +153,19 @@ goodix_receive_none (FpDevice *dev, guint8 *data, guint16 length,
    callback (dev, cb_info->user_data, error);
  }
  
@@ -101,7 +114,7 @@ index 236589f..88b92ac 100644
  void
  goodix_receive_default (FpDevice *dev, guint8 *data, guint16 length,
                          gpointer user_data, GError *error)
-@@ -398,11 +452,15 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
+@@ -398,11 +455,15 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
        break;
  
      case GOODIX_FLAGS_TLS:
@@ -122,7 +135,7 @@ index 236589f..88b92ac 100644
        break;
  
      default:
-@@ -422,9 +480,12 @@ goodix_receive_data_cb (FpiUsbTransfer *transfer, FpDevice *dev,
+@@ -422,9 +483,12 @@ goodix_receive_data_cb (FpiUsbTransfer *transfer, FpDevice *dev,
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
  
@@ -136,7 +149,7 @@ index 236589f..88b92ac 100644
        return;
      }
    if (error)
-@@ -464,16 +525,34 @@ goodix_start_read_loop (FpDevice *dev)
+@@ -464,16 +528,34 @@ goodix_start_read_loop (FpDevice *dev)
      fpi_device_goodixtls_get_instance_private (self);
  
    if (priv->inited)
@@ -174,7 +187,7 @@ index 236589f..88b92ac 100644
  void
  goodix_receive_data (FpDevice *dev)
  {
-@@ -563,6 +642,22 @@ goodix_send_protocol (
+@@ -563,6 +645,22 @@ goodix_send_protocol (
        fp_warn ("A command is already running: 0x%02x", priv->cmd);
        if (free_func)
          free_func ((void *) payload);
@@ -197,7 +210,7 @@ index 236589f..88b92ac 100644
        return;
      }
  
-@@ -588,7 +683,6 @@ goodix_send_protocol (
+@@ -588,7 +686,6 @@ goodix_send_protocol (
        goodix_receive_done (dev, NULL, 0, error);
        return;
      }
@@ -205,7 +218,7 @@ index 236589f..88b92ac 100644
  }
  void
  goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
-@@ -597,47 +691,57 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
+@@ -597,47 +694,57 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
    GoodixNop payload = {.unknown = 0x00000000};
    GoodixCallbackInfo *cb_info;
  
@@ -275,7 +288,7 @@ index 236589f..88b92ac 100644
                          NULL, NULL);
  }
  
-@@ -648,29 +752,31 @@ goodix_send_mcu_switch_to_fdt_down (FpDevice *dev, const guint8 *mode, guint16 l
+@@ -648,29 +755,31 @@ goodix_send_mcu_switch_to_fdt_down (FpDevice *dev, const guint8 *mode, guint16 l
                                      gpointer user_data)
  {
    GoodixCallbackInfo *cb_info = NULL;
@@ -321,7 +334,7 @@ index 236589f..88b92ac 100644
  }
  
  void
-@@ -680,53 +786,53 @@ goodix_send_mcu_switch_to_fdt_up (FpDevice *dev, const guint8 *mode, guint16 len
+@@ -680,53 +789,53 @@ goodix_send_mcu_switch_to_fdt_up (FpDevice *dev, const guint8 *mode, guint16 len
                                    gpointer user_data)
  {
    GoodixCallbackInfo *cb_info = NULL;
@@ -398,7 +411,7 @@ index 236589f..88b92ac 100644
                          cb_info);
  
  }
-@@ -740,7 +846,7 @@ goodix_send_nav_0 (FpDevice *dev, GoodixDefaultCallback callback,
+@@ -740,7 +849,7 @@ goodix_send_nav_0 (FpDevice *dev, GoodixDefaultCallback callback,
  
    if (callback)
      {
@@ -407,7 +420,7 @@ index 236589f..88b92ac 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -766,7 +872,7 @@ goodix_send_mcu_switch_to_idle_mode (FpDevice *dev, guint8 sleep_time,
+@@ -766,7 +875,7 @@ goodix_send_mcu_switch_to_idle_mode (FpDevice *dev, guint8 sleep_time,
  
    if (callback)
      {
@@ -416,7 +429,7 @@ index 236589f..88b92ac 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -797,7 +903,7 @@ goodix_send_write_sensor_register (FpDevice *dev, guint16 address,
+@@ -797,7 +906,7 @@ goodix_send_write_sensor_register (FpDevice *dev, guint16 address,
  
    if (callback)
      {
@@ -425,7 +438,7 @@ index 236589f..88b92ac 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -828,7 +934,7 @@ goodix_send_read_sensor_register (FpDevice *dev, guint16 address,
+@@ -828,7 +937,7 @@ goodix_send_read_sensor_register (FpDevice *dev, guint16 address,
  
    if (callback)
      {
@@ -434,7 +447,7 @@ index 236589f..88b92ac 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -854,7 +960,7 @@ goodix_send_upload_config_mcu (FpDevice *dev, guint8 *config,
+@@ -854,7 +963,7 @@ goodix_send_upload_config_mcu (FpDevice *dev, guint8 *config,
  
    if (callback)
      {
@@ -443,7 +456,7 @@ index 236589f..88b92ac 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -882,7 +988,7 @@ goodix_send_set_powerdown_scan_frequency (FpDevice             *dev,
+@@ -882,7 +991,7 @@ goodix_send_set_powerdown_scan_frequency (FpDevice             *dev,
  
    if (callback)
      {
@@ -452,7 +465,7 @@ index 236589f..88b92ac 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -907,7 +1013,7 @@ goodix_send_enable_chip (FpDevice *dev, gboolean enable,
+@@ -907,7 +1016,7 @@ goodix_send_enable_chip (FpDevice *dev, gboolean enable,
  
    if (callback)
      {
@@ -461,7 +474,7 @@ index 236589f..88b92ac 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -936,7 +1042,7 @@ goodix_send_reset (FpDevice *dev, gboolean reset_sensor, guint8 sleep_time,
+@@ -936,7 +1045,7 @@ goodix_send_reset (FpDevice *dev, gboolean reset_sensor, guint8 sleep_time,
  
    if (callback)
      {
@@ -470,7 +483,7 @@ index 236589f..88b92ac 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -962,7 +1068,7 @@ goodix_send_query_firmware_version (FpDevice                     *dev,
+@@ -962,7 +1071,7 @@ goodix_send_query_firmware_version (FpDevice                     *dev,
  
    if (callback)
      {
@@ -479,7 +492,7 @@ index 236589f..88b92ac 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -979,7 +1085,7 @@ goodix_send_query_firmware_version (FpDevice                     *dev,
+@@ -979,7 +1088,7 @@ goodix_send_query_firmware_version (FpDevice                     *dev,
  }
  
  void
@@ -488,7 +501,7 @@ index 236589f..88b92ac 100644
                               gpointer user_data)
  {
    GoodixQueryMcuState payload = {.unused_flags = 0x55};
-@@ -987,19 +1093,19 @@ goodix_send_query_mcu_state (FpDevice *dev, GoodixDefaultCallback callback,
+@@ -987,19 +1096,19 @@ goodix_send_query_mcu_state (FpDevice *dev, GoodixDefaultCallback callback,
  
    if (callback)
      {
@@ -512,7 +525,7 @@ index 236589f..88b92ac 100644
                          NULL);
  }
  
-@@ -1008,12 +1114,15 @@ goodix_send_request_tls_connection (FpDevice             *dev,
+@@ -1008,12 +1117,15 @@ goodix_send_request_tls_connection (FpDevice             *dev,
                                      GoodixDefaultCallback callback,
                                      gpointer              user_data)
  {
@@ -529,7 +542,7 @@ index 236589f..88b92ac 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -1039,22 +1148,96 @@ goodix_send_tls_successfully_established (FpDevice          *dev,
+@@ -1039,22 +1151,96 @@ goodix_send_tls_successfully_established (FpDevice          *dev,
  
    if (callback)
      {
@@ -631,7 +644,7 @@ index 236589f..88b92ac 100644
  }
  
  void
-@@ -1066,7 +1249,7 @@ goodix_send_read_otp (FpDevice *dev, GoodixDefaultCallback callback,
+@@ -1066,7 +1252,7 @@ goodix_send_read_otp (FpDevice *dev, GoodixDefaultCallback callback,
  
    if (callback)
      {
@@ -640,7 +653,7 @@ index 236589f..88b92ac 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -1102,19 +1285,19 @@ goodix_send_preset_psk_write (FpDevice *dev, guint32 flags, guint8 *psk,
+@@ -1102,19 +1288,19 @@ goodix_send_preset_psk_write (FpDevice *dev, guint32 flags, guint8 *psk,
  
    if (callback)
      {
@@ -663,7 +676,7 @@ index 236589f..88b92ac 100644
                          TRUE, NULL, NULL);
  }
  
-@@ -1129,7 +1312,49 @@ goodix_send_preset_psk_read (FpDevice *dev, guint32 flags, guint16 length,
+@@ -1129,7 +1315,49 @@ goodix_send_preset_psk_read (FpDevice *dev, guint32 flags, guint16 length,
  
    if (callback)
      {
@@ -714,7 +727,7 @@ index 236589f..88b92ac 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -1168,8 +1393,73 @@ goodix_dev_init (FpDevice *dev, GError **error)
+@@ -1168,8 +1396,73 @@ goodix_dev_init (FpDevice *dev, GError **error)
    priv->length = 0;
    priv->transfer_cancel_tkn = g_cancellable_new ();
  
@@ -790,7 +803,7 @@ index 236589f..88b92ac 100644
  }
  void
  goodix_reset_state (FpDevice *dev)
-@@ -1182,8 +1472,79 @@ goodix_reset_state (FpDevice *dev)
+@@ -1182,8 +1475,79 @@ goodix_reset_state (FpDevice *dev)
      g_clear_pointer (&priv->timeout, g_source_destroy);
    priv->ack = FALSE;
    priv->reply = FALSE;
@@ -870,7 +883,7 @@ index 236589f..88b92ac 100644
  }
  
  gboolean
-@@ -1193,18 +1554,43 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
+@@ -1193,18 +1557,43 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
    FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS (self);
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
@@ -919,7 +932,100 @@ index 236589f..88b92ac 100644
  }
  
  // ---- DEV SECTION END ----
-@@ -1240,8 +1626,6 @@ on_goodix_tls_read_handshake (FpDevice *dev, guint8 *data,
+@@ -1213,6 +1602,92 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
+ 
+ // ---- TLS SECTION START ----
+ 
++/* TLS relay debug + coalesced-read helpers (ported from /tmp/libfprint
++ * goodixtls@83e5522 read_all_tls_records + tls_hex_dump, adapted to the
++ * single parked-TLS model here).
++ *
++ * The OpenSSL server side coalesces its flight (ServerHello..HelloDone,
++ * CCS+Finished) into back-to-back TLS records on the socketpair. A single
++ * read() on client_fd returns a short count as "success" and truncates the
++ * flight, which desyncs the relay. Read whole records (5B header
++ * type+ver+len, then body) until poll() reports no more data pending.
++ * Bounded by buf_size; fp_dbg-gated and truncated so the hot path stays
++ * a single line per flight (ticket 24/56). */
++static void
++goodix_tls_hex_dump (const char *label, const guint8 *data, int len)
++{
++  GString *s = g_string_sized_new (len * 3 + 64);
++  g_string_append_printf (s, "5e0a TLS-RELAY %s (%d bytes):", label, len);
++  int show = len > 128 ? 128 : len;
++  for (int i = 0; i < show; i++)
++    {
++      if (i % 16 == 0)
++        g_string_append_printf (s, "\n  %04x: ", i);
++      g_string_append_printf (s, "%02x ", data[i]);
++    }
++  if (len > 128)
++    g_string_append_printf (s, "\n  ... (%d more bytes)", len - 128);
++  fp_dbg ("%s", s->str);
++  g_string_free (s, TRUE);
++}
++
++static int
++goodix_tls_read_all_records (int fd, guint8 *buf, int buf_size)
++{
++  int total = 0;
++  struct pollfd pfd = { .fd = fd, .events = POLLIN };
++
++  for (;;)
++    {
++      int hdr_got = 0;
++      while (hdr_got < 5)
++        {
++          if (total + 5 - hdr_got > buf_size)
++            {
++              fp_dbg ("5e0a TLS-RELAY: buffer full at %d bytes", total);
++              return total;
++            }
++          int n = read (fd, buf + total + hdr_got, 5 - hdr_got);
++          if (n <= 0)
++            {
++              fp_dbg ("5e0a TLS-RELAY: read header failed (got %d, errno %d)", n, errno);
++              return (n <= 0 && total == 0) ? n : total;
++            }
++          hdr_got += n;
++        }
++
++      int rec_len = (buf[total + 3] << 8) | buf[total + 4];
++      fp_dbg ("5e0a TLS-RELAY: record type=0x%02x ver=0x%02x%02x len=%d",
++              buf[total], buf[total + 1], buf[total + 2], rec_len);
++
++      total += 5;
++
++      int body_got = 0;
++      while (body_got < rec_len)
++        {
++          if (total + rec_len - body_got > buf_size)
++            {
++              fp_dbg ("5e0a TLS-RELAY: buffer full at %d bytes", total);
++              return total;
++            }
++          int n = read (fd, buf + total + body_got, rec_len - body_got);
++          if (n <= 0)
++            {
++              fp_dbg ("5e0a TLS-RELAY: read body failed (got %d, errno %d)", n, errno);
++              return total + body_got;
++            }
++          body_got += n;
++        }
++      total += rec_len;
++
++      int ready = poll (&pfd, 1, 50);
++      if (ready <= 0 || !(pfd.revents & POLLIN))
++        break;
++    }
++
++  return total;
++}
++
+ void
+ goodix_read_tls (FpDevice *dev, GoodixTlsCallback callback,
+                  gpointer user_data)
+@@ -1240,8 +1715,6 @@ on_goodix_tls_read_handshake (FpDevice *dev, guint8 *data,
                                guint16 length, gpointer user_data,
                                GError *error)
  {
@@ -928,7 +1034,7 @@ index 236589f..88b92ac 100644
    FpiSsm *ssm = user_data;
  
    if (error)
-@@ -1284,6 +1668,22 @@ on_tls_successfully_established (FpDevice *dev, gpointer user_data,
+@@ -1284,6 +1757,22 @@ on_tls_successfully_established (FpDevice *dev, gpointer user_data,
    FpiDeviceGoodixTls * self = FPI_DEVICE_GOODIXTLS (dev);
    FpiDeviceGoodixTlsPrivate * priv =
      fpi_device_goodixtls_get_instance_private (self);
@@ -951,7 +1057,7 @@ index 236589f..88b92ac 100644
    ((GoodixNoneCallback) priv->tls_ready_callback->callback)(
      dev, priv->tls_ready_callback->user_data, NULL);
    g_clear_pointer (&priv->tls_ready_callback, g_free);
-@@ -1292,8 +1692,20 @@ static void
+@@ -1292,8 +1781,20 @@ static void
  tls_handshake_done (FpiSsm *ssm, FpDevice *dev, GError *error)
  {
    if (error)
@@ -974,7 +1080,50 @@ index 236589f..88b92ac 100644
    goodix_send_tls_successfully_established (
      dev, on_tls_successfully_established, NULL);
  }
-@@ -1370,7 +1782,21 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
+@@ -1309,15 +1810,17 @@ tls_handshake_run (FpiSsm *ssm, FpDevice *dev)
+ 
+   if (stage == TLS_HANDSHAKE_STAGE_HELLO_S)
+     {
+-      guint8 buff[1024];
+-      int size = goodix_tls_client_read (priv->tls_hop, buff, sizeof (buff));
+-      if (size < 0)
++      guint8 buff[4096];
++      int size = goodix_tls_read_all_records (priv->tls_hop->client_fd,
++                                              buff, sizeof (buff));
++      if (size <= 0)
+         {
+           fpi_ssm_mark_failed (ssm, g_error_new (g_io_error_quark (), size,
+                                                  "failed to read tls server "
+                                                  "hello"));
+           return;
+         }
++      goodix_tls_hex_dump ("ServerHello flight (server->device)", buff, size);
+       GError *err = NULL;
+       if (!goodix_send_pack (dev, GOODIX_FLAGS_TLS, buff, size, NULL, &err))
+         {
+@@ -1335,9 +1838,10 @@ tls_handshake_run (FpiSsm *ssm, FpDevice *dev)
+   else if (stage == TLS_HANDSHAKE_STAGE_CHANGE_CIPHER_S)
+     {
+       fp_dbg ("Reading to proxy back");
+-      guint8 buff[1024];
+-      int size = goodix_tls_client_read (priv->tls_hop, buff, sizeof (buff));
+-      if (size < 0)
++      guint8 buff[4096];
++      int size = goodix_tls_read_all_records (priv->tls_hop->client_fd,
++                                              buff, sizeof (buff));
++      if (size <= 0)
+         {
+           fpi_ssm_mark_failed (ssm, g_error_new (g_io_error_quark (), size,
+                                                  "failed to read server "
+@@ -1345,6 +1849,7 @@ tls_handshake_run (FpiSsm *ssm, FpDevice *dev)
+ 
+           return;
+         }
++      goodix_tls_hex_dump ("ServerCCS+Finished (server->device)", buff, size);
+       GError *err = NULL;
+       if (!goodix_send_pack (dev, GOODIX_FLAGS_TLS, buff, size, NULL, &err))
+         {
+@@ -1370,7 +1875,21 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
    if (error)
      {
        fp_err ("failed to get tls handshake: %s", error->message);
@@ -997,7 +1146,7 @@ index 236589f..88b92ac 100644
        return;
      }
    FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (user_data);
-@@ -1382,19 +1808,6 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
+@@ -1382,19 +1901,6 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
    do_tls_handshake (dev);
  }
  
@@ -1017,7 +1166,7 @@ index 236589f..88b92ac 100644
  void
  goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
  {
-@@ -1403,10 +1816,10 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
+@@ -1403,10 +1909,10 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
    g_assert (priv->tls_hop == NULL);
@@ -1030,7 +1179,7 @@ index 236589f..88b92ac 100644
    priv->tls_ready_callback->callback = G_CALLBACK (callback);
    priv->tls_ready_callback->user_data = user_data;
    GoodixTlsServer *s = priv->tls_hop;
-@@ -1416,10 +1829,26 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
+@@ -1416,10 +1922,26 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
      {
        fp_err ("failed to init tls server, error: %s, code: %d", err->message,
                err->code);
@@ -1058,7 +1207,7 @@ index 236589f..88b92ac 100644
  }
  
  gboolean
-@@ -1434,16 +1863,32 @@ goodix_shutdown_tls (FpDevice *dev, GError **error)
+@@ -1434,16 +1956,32 @@ goodix_shutdown_tls (FpDevice *dev, GError **error)
        gboolean rs = goodix_tls_server_deinit (priv->tls_hop, error);
        g_free (priv->tls_hop);
        priv->tls_hop = NULL;
@@ -1092,7 +1241,7 @@ index 236589f..88b92ac 100644
    GoodixCallbackInfo *cb_info = user_data;
    GoodixImageCallback callback = (GoodixImageCallback) cb_info->callback;
  
-@@ -1457,9 +1902,30 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
+@@ -1457,9 +1995,30 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
  
@@ -1125,7 +1274,7 @@ index 236589f..88b92ac 100644
    guint8 *buff = malloc (size);
    GError *err = NULL;
    int read_size = goodix_tls_server_read (priv->tls_hop, buff, size, &err);
-@@ -1467,6 +1933,7 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
+@@ -1467,6 +2026,7 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
    if (read_size <= 0)
      {
        callback (dev, NULL, 0, cb_info->user_data, err);
@@ -1133,7 +1282,7 @@ index 236589f..88b92ac 100644
        g_free (cb_info);
        return;
      }
-@@ -1481,7 +1948,7 @@ goodix_tls_read_image (FpDevice *dev, GoodixImageCallback callback,
+@@ -1481,7 +2041,7 @@ goodix_tls_read_image (FpDevice *dev, GoodixImageCallback callback,
                         gpointer user_data)
  {
    g_assert (callback);
@@ -3105,10 +3254,10 @@ index 0000000..bfb3e51
 +}
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.h b/libfprint/drivers/goodixtls/goodix5e0a.h
 new file mode 100644
-index 0000000..9d287a1
+index 0000000..4811f90
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.h
-@@ -0,0 +1,139 @@
+@@ -0,0 +1,157 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS
 +
@@ -3214,6 +3363,24 @@ index 0000000..9d287a1
 +static const guint8 goodix_5e0a_img_payload[10] = {
 +  0x05, 0x00, 0xb0, 0x00, 0xb2, 0x00, 0xb0, 0x00, 0xb1, 0x00
 +};
++
++/* Dynamic-FDT reference (ported from /tmp/libfprint RE_FDT_PAYLOAD_DETAIL.md,
++ * SwitchToFdtMode@0x1800585c4 + CalcFdtDownBase@0x1800632a0). NOT wired into
++ * the scan path yet — static S12/retry/U01 below stay authoritative until a
++ * hardware run proves otherwise (see ticket 57). Kept here so the formula
++ * lives next to the tables it would replace:
++ *   DOWN threshold[i] = ((raw_base[i] >> 1) << 8) | 0x80   (no delta)
++ *   UP   threshold[i] = (((raw_base[i] >> 1) + fdt_delta) << 8) | 0x80
++ * raw_base = 6x u16LE from FDT_MANUAL (cmd 0x36) response bytes [4..15];
++ * payload = [prefix, 0x01, DACx8, thresholds 6xLE, pad x4, DAC-copy x8, 0x00]
++ * prefixes: DOWN 0x1c (HV) / UP 0x0e / MANUAL 0x0d; cmd = (mode<<1)|0x30.
++ * Windows reads the base 3x (gf_get_fdtbase 0/1/2) before FDT_DOWN. DAC bytes
++ * ([2..9]) are per-unit OTP[0x32..0x35]-derived — neither tree reads them
++ * live yet; this tree's b0/b2/b0/b1 matches APP_10036 capture, the other
++ * tree's a6/a7/a6/a7 matches its own unit. */
++#define GOODIX_5E0A_FDT_MANUAL_PREFIX (0x0d)
++#define GOODIX_5E0A_FDT_DOWN_PREFIX (0x1c)
++#define GOODIX_5E0A_FDT_UP_PREFIX (0x0e)
 +
 +/* Exact 35-byte steady-state DOWN table S12 (pkts 302/328/406/432/792):
 + * 1c 01 b0 00 b2 00 b0 00 b1 00 + slots [80 b7 80 ce 80 aa 80 be 80 b1 80 c2] + 00 00 00 00 + b0 00 b2 00 b0 00 b1 00 00 */
