@@ -15,7 +15,13 @@ exercises the PKCS7 edge (48B → extra padding block → 112B total).
 **Source:** /tmp/libfprint `whitebox_crack.py:178-186` (round-trip loop
 over `[16,32,48,64]`). Hermetic, no hardware/Windows needed.
 
-**Status:** ready-for-hardware-verify
+**Status:** ready-for-agent
+
+**Revert note (2026-09-11):** prior two-hash port attempt discarded as buggy —
+`experiments/goodix_whitebox.py` is still single-hash and fails the KAT
+(prefix matches, ct/HMAC don't). Retry from scratch from
+`/tmp/libfprint/RE_WHITEBOX_EXACT.md` + `whitebox_encrypt.py`; line refs below
+assume the corrected module.
 
 **Acceptance:**
 - Round-trips for 16/48/64B pass with expected total lengths

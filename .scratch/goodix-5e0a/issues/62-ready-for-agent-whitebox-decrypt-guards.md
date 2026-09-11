@@ -19,7 +19,13 @@ In `experiments/goodix_whitebox.py:115-141` `sec_white_decrypt`:
 guards), `whitebox_encrypt.py:128` (hex prefix error). Behavior on valid
 inputs identical; invalid inputs fail fast with actionable `ValueError`.
 
-**Status:** ready-for-hardware-verify
+**Status:** ready-for-agent
+
+**Revert note (2026-09-11):** prior two-hash port attempt discarded as buggy —
+`experiments/goodix_whitebox.py` is still single-hash and fails the KAT
+(prefix matches, ct/HMAC don't). Retry from scratch from
+`/tmp/libfprint/RE_WHITEBOX_EXACT.md` + `whitebox_encrypt.py`; line refs below
+assume the corrected module.
 
 **Acceptance:**
 - `python3 experiments/goodix_whitebox.py` KAT + 32B round-trip still pass.
