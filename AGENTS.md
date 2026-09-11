@@ -24,20 +24,12 @@ claims, or USB captures yourself — write the exact commands for the user.
 
 - Cite sources: journal lines, packet numbers, file bytes, command+output.
   "Verified on hardware" without pasted output doesn't count.
-- Score images by metrics (column energy, correlation, orientation), never
-  by looks. `README.md` is aspirational — several claims there (FDT working,
-  minutiae counts, match scores) are unproven; trust journal/pcap, not prose.
-- Any capture/analysis harness must pass its own control first (stale
-  `openssl s_server` processes squat on ports and poison later runs; pipe
-  buffering eats sub-8K output). Uncontrolled harness output is void.
 
 ## Verify protocol (every hardware run, no exceptions)
 
 1. Phase 1, hands off 60s ("hands off" + timestamp): silent vs cycles.
 2. Phase 2, press-hold steady 60s ("holding" + timestamp): latency, advances.
-3. Agents can `journalctl -u fprintd --since "N min ago"
---no-pager | grep -a -E "5e0a frame|timed out|error|failed|minutiae" |
-tail -n 20` themselves. Conclude only: confirmed / falsified /
+3. Conclude only: confirmed / falsified /
    inconclusive-because-[flaw] + the single next experiment.
 
 ## Commands that actually work here
@@ -60,6 +52,12 @@ tail -n 20` themselves. Conclude only: confirmed / falsified /
   found nothing. `fp_info`/`fp_dbg` need the debug env; `g_message` doesn't.
 - `Transfer was cancelled…` at teardown is known debt, not signal.
 
-## Live edge
+## Rules to not face what's already solved
 
-Upstream tree checkout lives at `/home/sastauser/code/temp/libfprint-upstream` (`test-5e0a` branch).
+1. 0x32 FDT_DOWN is always timeout 0. It's a blocking capacitive interrupt, not a timed command (goodix.c:635 — 0 installs no timer). Any finite value turns idle finger-wait into Command timed out: 0x32. Never "harden" it with a watchdog; ticket 50 explicitly declined this. Bound comes from client timeout/deactivate, not the driver.
+2. 0x34 FDT_UP is always finite (2000ms guard / 5000ms normal) with re-issue. Opposite semantics from 0x32: a 0x34 timeout means the finger is still down, never a release — re-issue, keep the guard. Success means genuine release — clear guard, arm FDT_DOWN. Mixing up the two commands' timeout meanings is the #1 source of burn bugs (ticket 47).
+3. In deactivate, nothing the next claim depends on clears before the park early-return. retry_guard/mono clear on the destroy branch only (goodix5e0a.c:1187), never at function top. Generalize: any state with cross-claim TTL (guard 2s, park 30s, warm 60s) must survive an idle park. If you add new cross-claim state, put its reset on the destroy branch and say so in a comment.
+4. Keep the rationale comment at every non-obvious site. The port stripped ticket comments ("blocking wait", "timeout means still down"), leaving bare code that looked like it needed hardening — which is exactly what broke it twice (203cfc8, 12e64db). One line naming the invariant beats a ticket number, but keep at least one.
+5. CANCELLED never re-issues, always marks failed. Applies to every re-issue loop (0x32 poll, 0x34 guard, warm retry). Re-issuing on cancel resurrects orphaned SSMs against freed state.
+6. Check .scratch/goodix-5e0a/issues/ for settled facts before changing driver behavior. Both regressions were re-litigations of closed tickets (13, 43, 47, 49, 50). If a ticket says "do not re-litigate without new hardware evidence," believe it.
+7. Smoke every driver change with two journal greps. After deploy: grep -E "timed out|Invalid ACK|verify-unknown-error|failed to" must be empty on an enrolled tap, and the held-wrong-finger test must show exactly one Failed to match with attempts withheld (~18s re-issuing FDT UP loop) until lift. If either fails, revert before stacking more fixes. (Reading notes from ticket 53: scope the first grep to the serving instance's match-claim window — `0x34 timed out` tolerant lines during a held-finger test are the designed ticket-47 path, not failures; and the literal string `Failed to match` exists nowhere in this stack, so its observable equivalent is exactly one `verify-no-match` result with a single completion.)

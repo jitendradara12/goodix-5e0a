@@ -81,6 +81,12 @@ following `tests/README.md`:
   has blessed. The MR must disclose the secret-provisioning story plainly:
   what is hardcoded, how it was derived, and why the driver cannot derive
   it at runtime. Expect this to be the longest review thread.
+- Ticket 59 adds a read-only, opt-in override that keeps the disclosure
+  accurate: the driver serves a PSK file (`/etc/libfprint/goodix-5e0a.psk`,
+  then `~/.config/libfprint/goodix-5e0a.psk`, 64 hex chars) only after its
+  SHA256 matches the live `0xbb020001` slot read; anything else falls back
+  to the hardcoded key with a warning, and the driver never erases or
+  provisions device keys.
 - Process: merge requests to the upstream tracker; end users file driver
   requests with protocol spec, `lsusb -v`, replay traces, and hardware
   enroll/verify evidence. Unsupported ids sync from the wiki list in CI.
