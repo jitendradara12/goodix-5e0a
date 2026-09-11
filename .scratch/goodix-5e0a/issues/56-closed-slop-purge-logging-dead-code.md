@@ -11,7 +11,7 @@
 **Settled (24/32/36/50):**
 - No per-frame disk dumps; LGPL headers stay; `--werror` + `uncrustify` clean; shared `goodix5xx.c` no subclass externs.
 
-**Status:** ready-for-hardware-verify
+**Status:** closed (verdict: confirmed on hardware, gen-158 deployed driver)
 
 **Rescoped Directives (2026-09-11 Audit):**
 1. **Telemetry Invariant (AGENTS.md):**
@@ -44,3 +44,10 @@
 1. `cd ~/NixOS-Hyprland && sudo nixos-rebuild switch --flake .# && sudo systemctl restart fprintd`
 2. Phase 1: `echo "hands off $(date -u +%H:%M:%S)"`, idle 60s, `journalctl -u fprintd --since "2 min ago" | grep -c "5e0a frame stats:"` (expect 0, silent).
 3. Phase 2: `echo "holding $(date -u +%H:%M:%S)"`, enrolled-tap + press-hold 60s, confirm `5e0a frame stats:` present, `wire layout:` absent, held-wrong-finger shows exactly one `verify-no-match` with ~18s FDT-UP re-issue loop until lift.
+
+**Hardware verdict (2026-09-11, confirmed):**
+- Deployed via refreshed unified patch SHA `9cf21a13`, NixOS gen-158 (system-158-link 13:16:28). Note: first test round ran on stale gen-157 (wire-layout x9, debug provably off at both manager and service level) — re-tapped on gen-158 to confirm.
+- `journalctl -u fprintd --since "2 min ago" | grep -c "5e0a wire layout:"` → `0` (demotion effective, debug env off).
+- `frame stats:` present, healthy: `active=5120, min_v=504-515, max_v=2691-2707, declen=10564` (full frames, real finger, not MCU blanks).
+- Smoke grep `timed out|Invalid ACK|verify-unknown-error|failed to` → empty on serving window.
+- `fprintd-verify` end-to-end OK (`verify-no-match` on non-matching finger — correct core verdict, frame delivered).
