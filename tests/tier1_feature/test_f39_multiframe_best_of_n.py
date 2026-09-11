@@ -108,28 +108,25 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
         scrubbed_h = _read(GOODIX5E0A_H).replace("score-proxy", "")
         self.assertNotIn("score", scrubbed_h)
 
-    def test_e_enroll_gate_intact_and_burst_gated(self):
-        """Floor gate byte-identical; burst entered only off the enroll path."""
+    def test_e_enroll_participates_in_burst_and_gate_evaluates_winner(self):
+        """Enrollment participates in Best-of-N burst; floor gate evaluates winner."""
         src = _read(GOODIX5E0A_C)
         cb = _slice(src, "goodix5e0a_on_read_img (FpDevice *dev",
                     "goodix5e0a_on_fdt_up_reply (FpDevice *dev")
-        # floor gate wording and retry behavior unchanged
+        # floor gate wording and retry behavior intact
         for line in ("5e0a enrollment quality check: minutiae_count=%u (floor=%d)",
                      "5e0a enrollment touch rejected: minutiae_count=%u < %d (press firmer)",
                      "GOODIX_5E0A_ENROLL_MIN_MINUTIAE",
                      "fpi_image_device_retry_scan (FP_IMAGE_DEVICE (dev), "
                      "FP_DEVICE_RETRY_TOO_SHORT);"):
             self.assertIn(line, cb)
-        # enroll branch never touches the burst helpers
+        # All actions (including enroll) bank frames via keep_best_frame
+        self.assertIn("goodix5e0a_keep_best_frame (dev, ssm, img, len, "
+                      "frame_active, frame_range)", cb)
+        # Enrollment gate evaluates the best banked frame
         enroll = cb[cb.index("if (action == FPI_DEVICE_ACTION_ENROLL)"):cb.index("deliver:")]
-        enroll_gate = enroll[:enroll.index("fpi_image_device_retry_scan")]
-        self.assertNotIn("goodix5e0a_keep_best_frame", enroll_gate)
-        self.assertNotIn("goodix5e0a_claim_best_frame", enroll_gate)
-        # burst + both fallbacks gated to non-enroll, before the shared tail
-        self.assertIn("if (action != FPI_DEVICE_ACTION_ENROLL)", cb)
-        burst = cb[cb.index("goodix5e0a_keep_best_frame (dev, ssm, img, len, "
-                            "frame_active, frame_range)"):cb.index("deliver:")]
-        self.assertIn("img = goodix5e0a_claim_best_frame (self);", burst)
+        self.assertIn("img = goodix5e0a_claim_best_frame (self);", enroll)
+        self.assertIn("minutiae_count < GOODIX_5E0A_ENROLL_MIN_MINUTIAE", enroll)
 
     def test_f_single_submit_and_error_fallback(self):
         """One image_captured site, one mark_completed; zero-frame errors fail as today."""
@@ -140,7 +137,7 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
         cb = _slice(src, "goodix5e0a_on_read_img (FpDevice *dev",
                     "goodix5e0a_on_fdt_up_reply (FpDevice *dev")
         # error with a banked winner submits best-so-far; without, marks failed
-        self.assertIn("if (action != FPI_DEVICE_ACTION_ENROLL && self->best_img != NULL)", cb)
+        self.assertIn("if (self->best_img != NULL)", cb)
         self.assertIn("g_error_free (err);", cb)
         self.assertIn("fpi_ssm_mark_failed (ssm, err);", cb)
         # claim helper logs the best line and releases ownership exactly once

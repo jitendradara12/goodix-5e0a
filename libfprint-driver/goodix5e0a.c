@@ -817,8 +817,7 @@ static guint goodix5e0a_count_minutiae (FpImage *img);
 static guint32
 goodix5e0a_decode_frame (GoodixTls5xxPix *out_row_major, const guint8 *data, guint16 len)
 {
-  g_autofree guint8 *packed = g_new0 (guint8, GOODIX_5E0A_ACT_BYTES);
-  guint32 packed_len = 0;
+  guint32 pixel_idx = 0;
 
   if (!out_row_major || !data)
     return 0;
@@ -826,26 +825,22 @@ goodix5e0a_decode_frame (GoodixTls5xxPix *out_row_major, const guint8 *data, gui
   /* A canonical ChicagoH frame is 80 blocks of 132 bytes followed by a
    * four-byte footer. Each block carries 96 packed pixel bytes and 36 zero
    * padding bytes. The 80 active blocks are the natural rows of a 64x80
-   * raster; keeping them in sequence avoids the destructive transpose used
-   * by the superseded decoder. */
+   * raster; decoding directly from wire blocks avoids an intermediate 7.6KB buffer. */
   for (guint32 block = 0; block < GOODIX_5E0A_FRAME_BLOCKS; block++)
     {
       guint32 src = block * GOODIX_5E0A_BLOCK_BYTES;
       if (src + GOODIX_5E0A_BLOCK_ACTIVE_BYTES > len)
         break;
 
-      memcpy (packed + packed_len, data + src, GOODIX_5E0A_BLOCK_ACTIVE_BYTES);
-      packed_len += GOODIX_5E0A_BLOCK_ACTIVE_BYTES;
-    }
-
-  guint32 pixel_idx = 0;
-  for (guint32 i = 0; i + 6 <= packed_len && pixel_idx + 4 <= GOODIX_5E0A_FRAME_SIZE; i += 6)
-    {
-      const guint8 *c = packed + i;
-      out_row_major[pixel_idx++] = ((c[0] & 0x0f) << 8) | c[1];
-      out_row_major[pixel_idx++] = (c[3] << 4) | (c[0] >> 4);
-      out_row_major[pixel_idx++] = ((c[5] & 0x0f) << 8) | c[2];
-      out_row_major[pixel_idx++] = (c[4] << 4) | (c[5] >> 4);
+      const guint8 *blk = data + src;
+      for (guint32 i = 0; i < GOODIX_5E0A_BLOCK_ACTIVE_BYTES && pixel_idx + 4 <= GOODIX_5E0A_FRAME_SIZE; i += 6)
+        {
+          const guint8 *c = blk + i;
+          out_row_major[pixel_idx++] = ((c[0] & 0x0f) << 8) | c[1];
+          out_row_major[pixel_idx++] = (c[3] << 4) | (c[0] >> 4);
+          out_row_major[pixel_idx++] = ((c[5] & 0x0f) << 8) | c[2];
+          out_row_major[pixel_idx++] = (c[4] << 4) | (c[5] >> 4);
+        }
     }
 
   return pixel_idx;
@@ -906,6 +901,7 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
   FpiDeviceAction action = fpi_device_get_current_action (dev);
+  g_autofree GoodixTls5xxPix *raw_frame = NULL;
   FpImage *img;
 
   /* Ticket 39: a mid-burst read error (finger lifted between frames) falls
@@ -913,11 +909,16 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
    * is reported exactly as today. */
   if (err)
     {
-      if (action != FPI_DEVICE_ACTION_ENROLL && self->best_img != NULL)
+      if (g_error_matches (err, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        {
+          /* CANCELLED must never fall back or re-issue; fail SSM immediately. */
+          fpi_ssm_mark_failed (ssm, err);
+          return;
+        }
+      if (self->best_img != NULL)
         {
           g_error_free (err);
-          img = goodix5e0a_claim_best_frame (self);
-          goto deliver;
+          goto choose_best;
         }
       fpi_ssm_mark_failed (ssm, err);
       return;
@@ -925,15 +926,14 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 
   /* Ticket 39: a short mid-burst read (lift between frames) submits the
    * best frame so far instead of decoding a runt. */
-  if (action != FPI_DEVICE_ACTION_ENROLL && self->best_img != NULL
+  if (self->best_img != NULL
       && (data == NULL || len < GOODIX_5E0A_FRAME_WIRE_BYTES))
     {
       g_message ("5e0a frame %u/%u: short declen=%u, submitting best-so-far %u/%u",
                  self->frame_count + 1, (guint) GOODIX_5E0A_FRAMES_PER_TOUCH,
                  len, self->best_frame_no,
                  (guint) GOODIX_5E0A_FRAMES_PER_TOUCH);
-      img = goodix5e0a_claim_best_frame (self);
-      goto deliver;
+      goto choose_best;
     }
 
   goodix5e0a_last_declen = len;
@@ -946,25 +946,7 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
               data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15]);
     }
 
-  guint32 padding_nonzero = 0;
-  if (data)
-    {
-      for (guint32 block = 0; block < GOODIX_5E0A_FRAME_BLOCKS; block++)
-        {
-          guint32 pad = block * GOODIX_5E0A_BLOCK_BYTES + GOODIX_5E0A_BLOCK_ACTIVE_BYTES;
-          guint32 pad_end = MIN (pad + GOODIX_5E0A_BLOCK_BYTES - GOODIX_5E0A_BLOCK_ACTIVE_BYTES,
-                                 (guint32) len);
-          for (guint32 i = pad; i < pad_end; i++)
-            padding_nonzero += data[i] != 0;
-        }
-    }
-
-  GoodixTls5xxPix *raw_frame = calloc (GOODIX_5E0A_FRAME_SIZE, sizeof (GoodixTls5xxPix));
-  if (!raw_frame)
-    {
-      fpi_ssm_mark_failed (ssm, fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
-      return;
-    }
+  raw_frame = g_new0 (GoodixTls5xxPix, GOODIX_5E0A_FRAME_SIZE);
   guint32 decoded_pixels = goodix5e0a_decode_frame (raw_frame, data, len);
 
   guint total_nonzero = 0;
@@ -994,49 +976,43 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
     }
   guint frame_range = (frame_min != 65535 && frame_max > frame_min)
                       ? (guint) (frame_max - frame_min) : 0;
-  fp_dbg ("5e0a wire layout: decoded_px=%u blocks=%u active_bytes=%u padding_nonzero=%u footer_bytes=%u",
+  fp_dbg ("5e0a wire layout: decoded_px=%u blocks=%u active_bytes=%u footer_bytes=%u",
               decoded_pixels, MIN ((guint32) len / GOODIX_5E0A_BLOCK_BYTES,
                                    (guint32) GOODIX_5E0A_FRAME_BLOCKS),
-              GOODIX_5E0A_BLOCK_ACTIVE_BYTES, padding_nonzero,
+              GOODIX_5E0A_BLOCK_ACTIVE_BYTES,
               len >= GOODIX_5E0A_FRAME_WIRE_BYTES ? 4 : 0);
   g_message ("5e0a row-major frame: active_px=%u nonzero=%u min=%u max=%u geometry=%dx%d (WxH)",
               decoded_pixels, total_nonzero, raw_min == 65535 ? 0 : raw_min, raw_max,
               GOODIX_5E0A_WIDTH, GOODIX_5E0A_HEIGHT);
 
   img = process_raw_frame (raw_frame);
-  free (raw_frame);
 
+  /* Best-of-N frame banking: all touches (including enrollment) bank
+   * GOODIX_5E0A_FRAMES_PER_TOUCH frames and select the winner; the
+   * SSM does not advance between frames and only the winner reaches the
+   * deliver tail below. */
+  if (goodix5e0a_keep_best_frame (dev, ssm, img, len, frame_active, frame_range))
+    return;
+
+choose_best:
   if (action == FPI_DEVICE_ACTION_ENROLL)
     {
-      if (img == NULL)
-        {
-          fp_dbg ("5e0a enrollment touch rejected: poor frame quality (press firmer)");
-          fpi_image_device_retry_scan (FP_IMAGE_DEVICE (dev), FP_DEVICE_RETRY_TOO_SHORT);
-          fpi_ssm_next_state (ssm);
-          return;
-        }
-      guint minutiae_count = goodix5e0a_count_minutiae (img);
-      g_message ("5e0a enrollment quality check: minutiae_count=%u (floor=%d)",
-                 minutiae_count, GOODIX_5E0A_ENROLL_MIN_MINUTIAE);
-      if (minutiae_count < GOODIX_5E0A_ENROLL_MIN_MINUTIAE)
+      guint minutiae_count = self->best_minutiae;
+      if (self->best_img == NULL || minutiae_count < GOODIX_5E0A_ENROLL_MIN_MINUTIAE)
         {
           g_message ("5e0a enrollment touch rejected: minutiae_count=%u < %d (press firmer)",
                      minutiae_count, GOODIX_5E0A_ENROLL_MIN_MINUTIAE);
-          g_object_unref (img);
+          goodix5e0a_reset_touch_frames (self);
           fpi_image_device_retry_scan (FP_IMAGE_DEVICE (dev), FP_DEVICE_RETRY_TOO_SHORT);
           fpi_ssm_next_state (ssm);
           return;
         }
+      g_message ("5e0a enrollment quality check: minutiae_count=%u (floor=%d)",
+                 minutiae_count, GOODIX_5E0A_ENROLL_MIN_MINUTIAE);
+      img = goodix5e0a_claim_best_frame (self);
     }
-
-  /* Ticket 39 best-of-N: non-enroll touches re-issue GET_IMAGE from the
-   * keep helper until GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked; the
-   * SSM does not advance between frames and only the winner reaches the
-   * deliver tail below. Enrollment never enters here. */
-  if (action != FPI_DEVICE_ACTION_ENROLL)
+  else
     {
-      if (goodix5e0a_keep_best_frame (dev, ssm, img, len, frame_active, frame_range))
-        return;
       if (self->best_img == NULL)
         {
           /* Ticket 53: all frames rejected. Never retry_scan (PAM deadlock,

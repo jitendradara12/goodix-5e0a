@@ -22,13 +22,11 @@
 #include "fp-device.h"
 #include "fp-image-device.h"
 #include "fp-image.h"
-#include "fpi-assembling.h"
 #include "fpi-context.h"
 #include "fpi-image-device.h"
 #include "fpi-image.h"
 #include "fpi-ssm.h"
 #include "glibconfig.h"
-#include "gusb/gusb-device.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -41,8 +39,6 @@
 #include "goodix.h"
 #include "goodix_proto.h"
 #include "goodix511.h"
-
-#include <math.h>
 
 #define GOODIX511_WIDTH 64
 #define GOODIX511_HEIGHT 80

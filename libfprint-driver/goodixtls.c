@@ -149,15 +149,6 @@ goodix_tls_server_read (GoodixTlsServer *self, guint8 *data,
   return retr;
 }
 
-static void
-tls_config_ssl (SSL *ssl)
-{
-  SSL_set_min_proto_version (ssl, TLS1_2_VERSION);
-  SSL_set_max_proto_version (ssl, TLS1_2_VERSION);
-  SSL_set_psk_server_callback (ssl, tls_server_psk_server_callback);
-  if (SSL_set_cipher_list (ssl, GOODIX_TLS_CIPHERS) != 1)
-    g_warning ("5e0a TLS: failed to set SSL cipher list '%s'", GOODIX_TLS_CIPHERS);
-}
 
 static void *
 goodix_tls_init_serve (void *me)
@@ -250,9 +241,6 @@ goodix_tls_server_init (GoodixTlsServer *self, GError **error)
       RAND_seed (fixed_seed, sizeof (fixed_seed));
     }
 
-  SSL_load_error_strings ();
-  OpenSSL_add_ssl_algorithms ();
-  SSL_library_init ();
   self->ssl_ctx = tls_server_create_ctx ();
   if (self->ssl_ctx == NULL)
     {
@@ -290,7 +278,6 @@ goodix_tls_server_init (GoodixTlsServer *self, GError **error)
       return FALSE;
     }
   SSL_set_app_data (self->ssl_layer, self);
-  tls_config_ssl (self->ssl_layer);
   SSL_set_fd (self->ssl_layer, self->sock_fd);
 
   if (pthread_create (&self->serve_thread, 0, goodix_tls_init_serve, self) != 0)

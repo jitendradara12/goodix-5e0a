@@ -178,4 +178,63 @@ Update the filenames and headers of the three tickets in `.scratch/goodix-5e0a/i
 ### Test Suites & Hermeticity
 - [x] `python3 -m unittest tests.tier1_feature.test_f28_whitebox` passes cleanly with all new test cases.
 - [x] `python3 experiments/goodix_whitebox.py` runs standalone validation and passes all assertions.
-- [x] No regressions introduced into existing unit tests in `tests.tier1_feature`.
+- [ ] No regressions introduced into existing unit tests in `tests.tier1_feature`.
+
+## Follow-up — 2026-09-11T11:16:09Z
+
+Comprehensive C driver audit and architectural review of the Goodix 5e0a fingerprint driver under ponytail principles, focusing on eliminating accidental complexity and solving the biometric enrollment coverage/verification retry gap compared to Windows without breaking existing hardware invariants.
+
+Working directory: /home/sastauser/code/temp/goodix
+Integrity mode: development
+
+## Background & Invariants
+
+- **Current Status**: The C driver (`libfprint-driver/`) is stable and functional on hardware, passing all 448 hermetic tests.
+- **Accuracy Gap**: Windows captures a large composite fingertip representation via proprietary spatial stitching (`MergeFeature` / `enrolAddImage`), whereas Linux/fprintd enrolls a smaller single-touch patch across 5 stages, leading to verification retries (1–2 extra taps needed when finger placement varies).
+- **Hard Invariants (DO NOT BREAK)**:
+  1. `0x32 FDT_DOWN` must maintain timeout 0 (blocking capacitive interrupt, never a timer).
+  2. `0x34 FDT_UP` must remain finite (2000ms guard / 5000ms normal) with re-issue on timeout.
+  3. Deactivation and TLS park lifecycle must preserve cross-claim TTL state (guard, park, warm) on idle return; reset only on destroy.
+  4. `CANCELLED` errors must never re-issue or resurrect SSMs.
+  5. Host matching relies on in-tree NBIS/Bozorth3; no speculative external matcher replacements.
+  6. All existing 448 unit tests must remain 100% passing.
+
+## Requirements
+
+### R1. C Driver Audit & Ponytail Simplification
+Audit all C source files in `libfprint-driver/` (`goodix5e0a.c`, `goodix5xx.c`, `goodix.c`, `goodix_proto.c`, `goodixtls.c`, `goodix511.c`):
+- Apply the Ponytail ladder: identify dead code, redundant allocations, speculative abstractions, and unused helpers.
+- Propose surgical simplifications and deletions over additions.
+- Ensure all critical rationale comments and hardware invariants are strictly preserved.
+
+### R2. Biometric Accuracy Architecture & Windows Gap Analysis
+Analyze and evaluate architectural solutions to resolve the enrollment coverage and verification retry problem:
+- **Best-of-N during Enrollment**: Investigate removing the enrollment exclusion (`goodix5e0a.c:1036`) so enrollment touches also bank 3 frames and pick the highest minutiae frame.
+- **Stage Count vs FAR Calibration**: Re-evaluate `nr_enroll_stages` (reduced from 12 to 5 in Ticket 43 when threshold was 11) now that Bozorth threshold is pinned to 14. Calculate cumulative FAR impact across typical galleries ($K = \text{fingers} \times \text{stages}$) to identify if stages can safely increase to improve finger coverage.
+- **Multi-Frame Canvas Stitching Feasibility**: Investigate whether successive enrollment touches can be registered/stitched into an expanded 2D canvas prior to NBIS feature extraction (emulating Windows `enrolAddImage`), or whether multi-stage gallery matching is the preferred libfprint paradigm.
+- **Image Preprocessing & Normalization**: Review `process_raw_frame` (3x3 local-mean residual, contrast gain, bilinear 2x upscale, ppmm calculation) for signal-to-noise ratio and minutiae extraction yield improvements on real raw captures.
+
+### R3. Offline Benchmark & Empirical Validation
+- Evaluate proposed accuracy changes against real frame captures in `experiments/` (e.g. `experiments/fingerprint.pgm`, `benchmark_minutiae_matrix.c`, etc.).
+- Measure genuine match scores, minutiae yield, and impostor rejection margins under the candidate configurations.
+- Verify that no proposed change induces PAM deadlocks or latency spikes.
+
+### R4. Actionable Audit Report & Minimal PoC Patches
+- Deliver a structured audit report detailing code simplification opportunities, biometric accuracy findings, and mathematical FAR/FRR tradeoffs.
+- Provide non-breaking, surgical proof-of-concept diffs ready for review, accompanied by corresponding unit tests.
+
+## Acceptance Criteria
+
+### Invariants & Safety
+- [ ] Zero regression on the test suite: `python3 -m unittest tests.tier1_feature.test_f47_verify_retry_release_guard` and related tests pass.
+- [ ] No changes to the `0x32` timeout 0, `0x34` guard loop, or TLS park/warm lifecycle.
+- [ ] Any simplified code retains clear explanatory comments documenting hardware-enforced behavior.
+
+### Accuracy Analysis & Feasibility
+- [ ] Concrete mathematical analysis of gallery size $K$ vs FAR at `bz3_threshold = 14`, detailing the optimal enrollment stage count.
+- [ ] Benchmarked minutiae count and Bozorth score comparison demonstrating the effect of Best-of-N enrollment and/or image preprocessing adjustments.
+- [ ] Clear technical assessment on the feasibility and complexity of driver-level frame stitching vs multi-template expansion within libfprint.
+
+### Ponytail Review Quality
+- [ ] Specific list of safe code deletions and simplifications across `libfprint-driver/`.
+- [ ] Shortest working diffs provided with zero unrequested abstractions or scaffolding.

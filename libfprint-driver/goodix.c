@@ -116,7 +116,20 @@ data_to_str (guint8 *data, guint32 length)
 
 // ---- GOODIX RECEIVE SECTION START ----
 
-void
+static void goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length, GError *error);
+static void goodix_receive_success (FpDevice *dev, guint8 *data, guint16 length, gpointer user_data, GError *error);
+static void goodix_receive_reset (FpDevice *dev, guint8 *data, guint16 length, gpointer user_data, GError *error);
+static void goodix_receive_none_tolerant (FpDevice *dev, guint8 *data, guint16 length, gpointer user_data, GError *error);
+static void goodix_receive_preset_psk_read (FpDevice *dev, guint8 *data, guint16 length, gpointer user_data, GError *error);
+static void goodix_receive_preset_psk_write (FpDevice *dev, guint8 *data, guint16 length, gpointer user_data, GError *error);
+static void goodix_receive_ack (FpDevice *dev, guint8 *data, guint16 length, gpointer user_data, GError *error);
+static void goodix_receive_firmware_version (FpDevice *dev, guint8 *data, guint16 length, gpointer user_data, GError *error);
+static void goodix_receive_protocol (FpDevice *dev, guint8 *data, guint32 length);
+static void goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length);
+static void goodix_receive_timeout_cb (FpDevice *dev, gpointer user_data);
+static void goodix_receive_data (FpDevice *dev);
+
+static void
 goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
                      GError *error)
 {
@@ -153,7 +166,7 @@ goodix_receive_none (FpDevice *dev, guint8 *data, guint16 length,
   callback (dev, cb_info->user_data, error);
 }
 
-void
+static void
 goodix_receive_none_tolerant (FpDevice *dev, guint8 *data, guint16 length,
                               gpointer user_data, GError *error)
 {
@@ -176,7 +189,7 @@ goodix_receive_default (FpDevice *dev, guint8 *data, guint16 length,
   callback (dev, data, length, cb_info->user_data, error);
 }
 
-void
+static void
 goodix_receive_success (FpDevice *dev, guint8 *data, guint16 length,
                         gpointer user_data, GError *error)
 {
@@ -200,7 +213,7 @@ goodix_receive_success (FpDevice *dev, guint8 *data, guint16 length,
   callback (dev, data[0] == 0x00 ? FALSE : TRUE, cb_info->user_data, NULL);
 }
 
-void
+static void
 goodix_receive_reset (FpDevice *dev, guint8 *data, guint16 length,
                       gpointer user_data, GError *error)
 {
@@ -226,7 +239,7 @@ goodix_receive_reset (FpDevice *dev, guint8 *data, guint16 length,
             cb_info->user_data, NULL);
 }
 
-void
+static void
 goodix_receive_preset_psk_read (FpDevice *dev, guint8 *data, guint16 length,
                                 gpointer user_data, GError *error)
 {
@@ -280,7 +293,7 @@ goodix_receive_preset_psk_read (FpDevice *dev, guint8 *data, guint16 length,
             cb_info->user_data, NULL);
 }
 
-void
+static void
 goodix_receive_preset_psk_write (FpDevice *dev, guint8 *data,
                                  guint16 length, gpointer user_data,
                                  GError *error)
@@ -305,7 +318,7 @@ goodix_receive_preset_psk_write (FpDevice *dev, guint8 *data,
   callback (dev, data[0] == 0x00 ? TRUE : FALSE, cb_info->user_data, NULL);
 }
 
-void
+static void
 goodix_receive_firmware_version (FpDevice *dev, guint8 *data,
                                  guint16 length, gpointer user_data,
                                  GError *error)
@@ -329,7 +342,7 @@ goodix_receive_firmware_version (FpDevice *dev, guint8 *data,
   callback (dev, payload, cb_info->user_data, NULL);
 }
 
-void
+static void
 goodix_receive_ack (FpDevice *dev, guint8 *data, guint16 length,
                     gpointer user_data, GError *error)
 {
@@ -379,7 +392,7 @@ goodix_receive_ack (FpDevice *dev, guint8 *data, guint16 length,
   priv->ack = FALSE;
 }
 
-void
+static void
 goodix_receive_protocol (FpDevice *dev, guint8 *data, guint32 length)
 {
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
@@ -424,7 +437,7 @@ goodix_receive_protocol (FpDevice *dev, guint8 *data, guint32 length)
   goodix_receive_done (dev, payload, payload_len, NULL);
 }
 
-void
+static void
 goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
 {
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
@@ -475,7 +488,7 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
   priv->length = 0;
 }
 
-void
+static void
 goodix_receive_data_cb (FpiUsbTransfer *transfer, FpDevice *dev,
                         gpointer user_data, GError *error)
 {
@@ -507,7 +520,7 @@ goodix_receive_data_cb (FpiUsbTransfer *transfer, FpDevice *dev,
   goodix_receive_data (dev);
 }
 
-void
+static void
 goodix_receive_timeout_cb (FpDevice *dev, gpointer user_data)
 {
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
@@ -556,7 +569,7 @@ goodix_stop_read_loop (FpDevice *dev)
   priv->length = 0;
 }
 
-void
+static void
 goodix_receive_data (FpDevice *dev)
 {
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
@@ -1168,79 +1181,6 @@ goodix_send_tls_successfully_established (FpDevice          *dev,
   goodix_send_protocol (dev, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED,
                         (guint8 *) &payload, sizeof (payload), NULL, TRUE,
                         2000, TRUE, NULL, NULL);
-}
-
-void
-goodix_send_set_drv_state (FpDevice *dev, GoodixNoneCallback cb,
-                           gpointer ud)
-{
-  // ponytail: reuse 2-byte helper for the 01 00 payload (goodix.py:611-622)
-  GoodixDefault payload = {.unused_flags = 0x01};
-  GoodixCallbackInfo *cb_info;
-
-  if (cb)
-    {
-      cb_info = g_new0 (GoodixCallbackInfo, 1);
-
-      cb_info->callback = G_CALLBACK (cb);
-      cb_info->user_data = ud;
-
-      goodix_send_protocol (dev, GOODIX_CMD_SET_DRV_STATE, (guint8 *) &payload,
-                            sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE,
-                            goodix_receive_none, cb_info);
-      return;
-    }
-
-  goodix_send_protocol (dev, GOODIX_CMD_SET_DRV_STATE, (guint8 *) &payload,
-                        sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, FALSE,
-                        NULL, NULL);
-}
-
-void
-goodix_send_mcu_get_pov_image (FpDevice *dev, GoodixDefaultCallback cb,
-                               gpointer ud)
-{
-  GoodixNone payload = {};
-  GoodixCallbackInfo *cb_info;
-
-  if (cb)
-    {
-      cb_info = g_new0 (GoodixCallbackInfo, 1);
-
-      cb_info->callback = G_CALLBACK (cb);
-      cb_info->user_data = ud;
-
-      goodix_send_protocol (dev, GOODIX_CMD_MCU_GET_POV_IMAGE,
-                            (guint8 *) &payload, sizeof (payload), NULL, TRUE,
-                            GOODIX_TIMEOUT, TRUE, goodix_receive_default,
-                            cb_info);
-      return;
-    }
-
-  goodix_send_protocol (dev, GOODIX_CMD_MCU_GET_POV_IMAGE, (guint8 *) &payload,
-                        sizeof (payload), NULL, TRUE, GOODIX_TIMEOUT, TRUE,
-                        NULL, NULL);
-}
-
-void
-goodix_send_set_pov_config (FpDevice *dev, const guint8 *cfg, guint16 len,
-                            GDestroyNotify ff, GoodixNoneCallback cb,
-                            gpointer ud)
-{
-  GoodixCallbackInfo *cb_info = NULL;
-  GoodixCmdCallback tramp = NULL;
-
-  if (cb)
-    {
-      cb_info = g_new0 (GoodixCallbackInfo, 1);
-
-      cb_info->callback = G_CALLBACK (cb);
-      cb_info->user_data = ud;
-      tramp = goodix_receive_none;
-    }
-
-  goodix_send_protocol (dev, GOODIX_CMD_SET_POV_CONFIG, cfg, len, ff, TRUE,
-                        GOODIX_TIMEOUT, FALSE, tramp, cb_info);
 }
 
 void
@@ -2019,20 +1959,18 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
   goodix_tls_client_write (priv->tls_hop, tls_data, tls_len);
 
   guint32 size = 65535;
-  guint8 *buff = malloc (size);
+  g_autofree guint8 *buff = g_malloc (size);
   GError *err = NULL;
   int read_size = goodix_tls_server_read (priv->tls_hop, buff, size, &err);
 
   if (read_size <= 0)
     {
       callback (dev, NULL, 0, cb_info->user_data, err);
-      free (buff);
       g_free (cb_info);
       return;
     }
 
   callback (dev, buff, read_size, cb_info->user_data, NULL);
-  free (buff);
   g_free (cb_info);
 }
 

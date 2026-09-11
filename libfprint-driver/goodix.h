@@ -108,82 +108,17 @@ gchar *data_to_str (guint8 *data,
  * @{
  *
  */
-void goodix_receive_done (FpDevice *dev,
-                          guint8   *data,
-                          guint16   length,
-                          GError   *error);
-
-void goodix_receive_success (FpDevice *dev,
-                             guint8   *data,
-                             guint16   length,
-                             gpointer  user_data,
-                             GError   *error);
-
-void goodix_receive_reset (FpDevice *dev,
-                           guint8   *data,
-                           guint16   length,
-                           gpointer  user_data,
-                           GError   *error);
-
 void goodix_receive_none (FpDevice *dev,
                           guint8   *data,
                           guint16   length,
                           gpointer  user_data,
                           GError   *error);
 
-void goodix_receive_none_tolerant (FpDevice *dev,
-                                   guint8   *data,
-                                   guint16   length,
-                                   gpointer  user_data,
-                                   GError   *error);
-
 void goodix_receive_default (FpDevice *dev,
                              guint8   *data,
                              guint16   length,
                              gpointer  user_data,
                              GError   *error);
-
-void goodix_receive_preset_psk_read (FpDevice *dev,
-                                     guint8   *data,
-                                     guint16   length,
-                                     gpointer  user_data,
-                                     GError   *error);
-
-void goodix_receive_preset_psk_write (FpDevice *dev,
-                                      guint8   *data,
-                                      guint16   length,
-                                      gpointer  user_data,
-                                      GError   *error);
-
-void goodix_receive_ack (FpDevice *dev,
-                         guint8   *data,
-                         guint16   length,
-                         gpointer  user_data,
-                         GError   *error);
-
-void goodix_receive_firmware_version (FpDevice *dev,
-                                      guint8   *data,
-                                      guint16   length,
-                                      gpointer  user_data,
-                                      GError   *error);
-
-void goodix_receive_protocol (FpDevice *dev,
-                              guint8   *data,
-                              guint32   length);
-
-void goodix_receive_pack (FpDevice *dev,
-                          guint8   *data,
-                          guint32   length);
-
-void goodix_receive_data_cb (FpiUsbTransfer *transfer,
-                             FpDevice       *dev,
-                             gpointer        user_data,
-                             GError         *error);
-
-void goodix_receive_timeout_cb (FpDevice *dev,
-                                gpointer  user_data);
-
-void goodix_receive_data (FpDevice *dev);
 
 /** @} */
 
@@ -451,20 +386,6 @@ void goodix_send_tls_successfully_established (FpDevice          *dev,
                                                GoodixNoneCallback callback,
                                                gpointer           user_data);
 
-void goodix_send_set_drv_state (FpDevice          *dev,
-                                GoodixNoneCallback cb,
-                                gpointer           ud);
-
-void goodix_send_mcu_get_pov_image (FpDevice             *dev,
-                                    GoodixDefaultCallback cb,
-                                    gpointer              ud);
-
-void goodix_send_set_pov_config (FpDevice          *dev,
-                                 const guint8      *cfg,
-                                 guint16            len,
-                                 GDestroyNotify     ff,
-                                 GoodixNoneCallback cb,
-                                 gpointer           ud);
 
 /**
  * @brief Set the device preset psk. May not work for all device firmware versions
