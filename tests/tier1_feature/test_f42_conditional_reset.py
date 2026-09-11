@@ -210,7 +210,7 @@ class TestF42ConditionalReset(unittest.TestCase):
                     "5e0a TLS session reused (parked %.1fs, gen=%u)"):
             self.assertIn(sym, src)
         # ticket-39 surface intact
-        self.assertIn("#define GOODIX_5E0A_FRAMES_PER_TOUCH 3", _read(GOODIX5E0A_H))
+        self.assertIn("#define GOODIX_5E0A_FRAMES_PER_TOUCH (4)", _read(GOODIX5E0A_H))
         self.assertEqual(src.count("fpi_image_device_image_captured ("), 1)
         # ticket-40 surface intact: predicate + 3-way branch order + warm lines
         self.assertIn("goodix5e0a_warm_fresh (dev)", src)

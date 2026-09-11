@@ -11,7 +11,7 @@ Hermetic static and structural validation:
 (f) SCAN_5E0A_FDT_UP_2 uses 2000ms timeout when retry_guard is TRUE;
 (g) goodix5e0a_on_fdt_up_reply clears retry_guard and jumps to SCAN_5E0A_FDT_DOWN;
 (h) goodix5e0a_suspend and goodix5e0a_scan_complete reset retry_guard;
-(i) bz3_threshold is 14 and nr_enroll_stages is 5 (Ticket 43 operating point).
+(i) bz3_threshold is 14 and nr_enroll_stages is 10 (Tickets 43 + 65 operating point).
 """
 
 import os
@@ -117,10 +117,10 @@ class TestF47VerifyRetryReleaseGuard(unittest.TestCase):
         self.assertIn("self->retry_guard = FALSE;", scan_complete)
 
     def test_i_threshold_and_enroll_stages_pinned(self):
-        """Ticket 43 operating point holds: threshold 14, 5 enroll stages."""
+        """Tickets 43+65 operating point holds: threshold 14, 10 enroll stages."""
         src = _read(GOODIX5E0A_C)
         class_init = _slice(src, "fpi_device_goodixtls5e0a_class_init", "fpi_device_class_auto_initialize_features")
-        self.assertIn("dev_class->nr_enroll_stages = 5;", class_init)
+        self.assertIn("dev_class->nr_enroll_stages = 10;", class_init)
         self.assertIn("img_dev_class->bz3_threshold = 14;", class_init)
 
 

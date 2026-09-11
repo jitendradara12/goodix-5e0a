@@ -54,8 +54,10 @@
 /* Ticket 39 best-of-N per-touch capture: non-enroll touches bank this many
  * back-to-back GET_IMAGE frames inside SCAN_5E0A_GET_IMAGE and submit only
  * the highest-minutiae one (minutiae-count proxy; the driver never sees the
- * core verdict). Enrollment stays single-frame-per-stage. */
-#define GOODIX_5E0A_FRAMES_PER_TOUCH 3
+ * core verdict). Enrollment stays single-frame-per-stage.
+ * Ticket 65 settling burst: 4 frames (~132ms) reach the settled capacitive
+ * contact; 3 frames truncated the touchdown ramp into runt probes. */
+#define GOODIX_5E0A_FRAMES_PER_TOUCH (4)
 
 
 /* Host TLS PSK for TLS_PSK_WITH_AES_128_CBC_SHA256 (flags 0xbb020001).

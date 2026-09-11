@@ -2,7 +2,7 @@
 Tier 1 - Feature 39: Multi-frame best-of-N capture per touch (Ticket 39).
 
 Verifies without hardware (hermetic static & structural validation):
-(a) GOODIX_5E0A_FRAMES_PER_TOUCH is 3 in goodix5e0a.h;
+(a) GOODIX_5E0A_FRAMES_PER_TOUCH is (4) in goodix5e0a.h;
 (b) _FpiDeviceGoodixTls5e0a gains frame_count / best_img / best_minutiae /
     best_frame_no beside the untouched ticket-38 park fields;
 (c) non-enroll touches re-issue goodix_tls_read_image from the keep helper
@@ -41,10 +41,10 @@ def _slice(src, start_marker, end_marker):
 
 class TestF39MultiframeBestOfN(unittest.TestCase):
 
-    def test_a_frames_per_touch_macro_is_3(self):
-        """Burst length N=3 lives in the header next to the enroll floor."""
+    def test_a_frames_per_touch_macro_is_4(self):
+        """Burst length N=4 lives in the header next to the enroll floor."""
         hdr = _read(GOODIX5E0A_H)
-        self.assertIn("#define GOODIX_5E0A_FRAMES_PER_TOUCH 3", hdr)
+        self.assertIn("#define GOODIX_5E0A_FRAMES_PER_TOUCH (4)", hdr)
         self.assertIn("#define GOODIX_5E0A_ENROLL_MIN_MINUTIAE (12)", hdr)
 
     def test_b_struct_counter_and_best_fields(self):
@@ -100,8 +100,8 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
                       "minutiae=%u score-proxy=%u", src)
         self.assertIn("5e0a best frame %u/%u: minutiae=%u score-proxy=%u (submitting)", src)
         self.assertIn("short declen=%u, submitting best-so-far %u/%u", src)
-        # rendered output matches the hardware-verify grep `frame [0-9]/3|score`
-        self.assertIn("GOODIX_5E0A_FRAMES_PER_TOUCH 3", _read(GOODIX5E0A_H))
+        # rendered output matches the hardware-verify grep `frame [0-9]/4|score`
+        self.assertIn("GOODIX_5E0A_FRAMES_PER_TOUCH (4)", _read(GOODIX5E0A_H))
         # driver cannot see the core verdict: `score` only inside `score-proxy`
         scrubbed = src.replace("score-proxy", "")
         self.assertNotIn("score", scrubbed)

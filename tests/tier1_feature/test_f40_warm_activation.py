@@ -266,7 +266,7 @@ class TestF40WarmActivation(unittest.TestCase):
                     "GOODIX_5E0A_TLS_PARK_HEALTH_TIMEOUT_MS"):
             self.assertIn(sym, src)
         # ticket-39 surface intact
-        self.assertIn("#define GOODIX_5E0A_FRAMES_PER_TOUCH 3", _read(GOODIX5E0A_H))
+        self.assertIn("#define GOODIX_5E0A_FRAMES_PER_TOUCH (4)", _read(GOODIX5E0A_H))
         self.assertEqual(src.count("fpi_image_device_image_captured ("), 1)
         self.assertIn("score-proxy", src)
         self.assertNotIn("score", src.replace("score-proxy", ""))

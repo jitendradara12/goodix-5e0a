@@ -1656,10 +1656,10 @@ index a19379c..9fee8a9 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..c6ea07a
+index 0000000..45ae1bb
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,1699 @@
+@@ -0,0 +1,1702 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -3344,7 +3344,10 @@ index 0000000..c6ea07a
 +  dev_class->full_name = "Goodix TLS Fingerprint Sensor 5e0a";
 +  dev_class->type = FP_DEVICE_TYPE_USB;
 +  dev_class->id_table = goodix_5e0a_id_table;
-+  dev_class->nr_enroll_stages = 5;
++  /* Ticket 65 pressure ladder: 10 stages give the central pad multi-sample
++   * gallery coverage (firm/medium/light/shift); 5 left a single pad template
++   * that rejected natural pressure/angle variation. */
++  dev_class->nr_enroll_stages = 10;
 +  dev_class->scan_type = FP_SCAN_TYPE_PRESS;
 +  dev_class->temp_hot_seconds = -1; // Disable thermal watchdog
 +  dev_class->suspend = goodix5e0a_suspend;
@@ -3361,10 +3364,10 @@ index 0000000..c6ea07a
 +}
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.h b/libfprint/drivers/goodixtls/goodix5e0a.h
 new file mode 100644
-index 0000000..92e233e
+index 0000000..bb4150d
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.h
-@@ -0,0 +1,158 @@
+@@ -0,0 +1,160 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS
 +
@@ -3421,8 +3424,10 @@ index 0000000..92e233e
 +/* Ticket 39 best-of-N per-touch capture: non-enroll touches bank this many
 + * back-to-back GET_IMAGE frames inside SCAN_5E0A_GET_IMAGE and submit only
 + * the highest-minutiae one (minutiae-count proxy; the driver never sees the
-+ * core verdict). Enrollment stays single-frame-per-stage. */
-+#define GOODIX_5E0A_FRAMES_PER_TOUCH 3
++ * core verdict). Enrollment stays single-frame-per-stage.
++ * Ticket 65 settling burst: 4 frames (~132ms) reach the settled capacitive
++ * contact; 3 frames truncated the touchdown ramp into runt probes. */
++#define GOODIX_5E0A_FRAMES_PER_TOUCH (4)
 +
 +
 +/* Host TLS PSK for TLS_PSK_WITH_AES_128_CBC_SHA256 (flags 0xbb020001).
