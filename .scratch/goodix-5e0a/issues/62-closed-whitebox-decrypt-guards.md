@@ -19,7 +19,7 @@ In `experiments/goodix_whitebox.py:115-141` `sec_white_decrypt`:
 guards), `whitebox_encrypt.py:128` (hex prefix error). Behavior on valid
 inputs identical; invalid inputs fail fast with actionable `ValueError`.
 
-**Status:** ready-for-agent
+**Status:** closed (ciphertext % 16 block guard, dead check removal, and actionable hex prefix error implemented and verified in experiments/goodix_whitebox.py and test_f28_whitebox.py)
 
 **Revert note (2026-09-11):** prior two-hash port attempt discarded as buggy —
 `experiments/goodix_whitebox.py` is still single-hash and fails the KAT

@@ -18,7 +18,7 @@ vectors from /tmp, not just the final 96B:
 byte-match the doc. This is the exact regression class PORT-NOTES cites
 (single-hash variant passes structure, fails values).
 
-**Status:** ready-for-agent
+**Status:** closed (two-hash key derivation implemented; intermediate vectors hash1/prefix/hash2/aes_key/iv pinned against RE_WHITEBOX_EXACT.md and verified in test_f28_whitebox.py and experiments/goodix_whitebox.py)
 
 **Revert note (2026-09-11):** prior two-hash port attempt discarded as buggy —
 `experiments/goodix_whitebox.py` is still single-hash and fails the KAT

@@ -127,3 +127,55 @@ Ensure all changes remain 100% backward-compatible with the downstream NixOS fla
 ### Regression Prevention
 - [ ] Downstream test suite runner (tests/run_all_tests.sh) passes 400/400 tests across Tiers 1–5 with zero errors.
 - [ ] nix-build -E 'with import <nixpkgs> {}; callPackage ./libfprint-goodix.nix {}' completes successfully.
+
+## Follow-up — 2026-09-11T08:20:27Z
+
+Resolve open tickets #62, #63, and #64 in the Goodix repository by implementing the exact two-hash Goodix WhiteBox algorithm, hardening decrypt error paths, and designing modular test hooks to make verification and regression testing hermetic and robust.
+
+Working directory: /home/sastauser/code/temp/goodix
+Integrity mode: development
+
+## Reference Material
+- Algorithm specification & known test vectors: /tmp/libfprint/RE_WHITEBOX_EXACT.md
+- Reference implementations: /tmp/libfprint/whitebox_encrypt.py and /tmp/libfprint/whitebox_crack.py
+- Open ticket specs:
+  - .scratch/goodix-5e0a/issues/62-ready-for-agent-whitebox-decrypt-guards.md
+  - .scratch/goodix-5e0a/issues/63-ready-for-agent-whitebox-intermediate-vectors.md
+  - .scratch/goodix-5e0a/issues/64-ready-for-agent-whitebox-multisize-roundtrip.md
+
+## Requirements
+
+### R1. WhiteBox Decrypt Hardening & Input Guards (Ticket 62)
+Harden `sec_white_decrypt` in `experiments/goodix_whitebox.py`:
+- Reject ciphertext whose length is not a multiple of 16 (`len(ct) % 16 != 0`) with a `ValueError` before decryption.
+- Remove redundant dead check that compares prefix to its own slice source.
+- Provide actionable hex-formatted mismatch messages on prefix verification failures (`expected {hex}, got {hex}`).
+
+### R2. Intermediate Vector Pinning & Exact Two-Hash Derivation (Ticket 63)
+Align `experiments/goodix_whitebox.py` with the authoritative two-hash key derivation specification in `RE_WHITEBOX_EXACT.md`. Pin intermediate vectors (`hash1`, `prefix`, `hash2`, `aes_key`, `iv`) in tests to ensure single-hash regressions cannot pass undetected.
+
+### R3. Multi-Size Round-Trip Test Coverage (Ticket 64)
+Expand round-trip encryption/decryption validation in `experiments/goodix_whitebox.py` and `tests/tier1_feature/test_f28_whitebox.py` to cover inputs of sizes 16, 48, and 64 bytes in addition to canonical 32-byte PSKs, explicitly verifying PKCS#7 padding boundaries and total wire lengths (80, 112, 128 bytes).
+
+### R4. Modular Crypto Test Hooks for Ease of Testing
+Structure the WhiteBox crypto derivation into inspectable, modular sub-steps (or dedicated helper functions) so that each stage—hash1 computation, byte-15 mutation, hash2 key derivation, CBC encryption, and HMAC authentication—can be individually unit-tested and verified in isolation.
+
+### R5. Ticket Status Tracking
+Update the filenames and headers of the three tickets in `.scratch/goodix-5e0a/issues/` following repo ticket rules (moving from `ready-for-agent` to the appropriate verified/closed status once verified).
+
+## Acceptance Criteria
+
+### Correctness & Vector Verification
+- [x] 32-byte all-zero KAT produces exact intermediate and final values specified in `RE_WHITEBOX_EXACT.md` (hash1 `ec35ae3a...`, prefix `...cc0`, hash2 `b7e7f234...`, ciphertext, HMAC, and 96-byte output).
+- [x] Canonical PSK round-trip succeeds across all tested sizes (16B, 32B, 48B, 64B) with correct wire lengths (80B, 96B, 112B, 128B).
+
+### Error Path Hardening
+- [x] Truncated payloads (<96B for 32B input) raise `ValueError`.
+- [x] Ciphertext with invalid block size (`len(ct) % 16 != 0`) raises `ValueError` before invoking cipher decryption.
+- [x] Bit-flipped ciphertext or tampered HMAC raises `ValueError` ("HMAC verification failed").
+- [x] Corrupted prefix raises `ValueError` with format containing expected and actual hex strings.
+
+### Test Suites & Hermeticity
+- [x] `python3 -m unittest tests.tier1_feature.test_f28_whitebox` passes cleanly with all new test cases.
+- [x] `python3 experiments/goodix_whitebox.py` runs standalone validation and passes all assertions.
+- [x] No regressions introduced into existing unit tests in `tests.tier1_feature`.

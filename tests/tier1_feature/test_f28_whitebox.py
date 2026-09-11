@@ -4,8 +4,10 @@ Tier 1 - Feature 28: Goodix 5e0a WhiteBox PSK Encryption & Wire Framing Verifica
 Hermetically tests the reverse-engineered Goodix WhiteBox encryption and wire-provisioning
 structures from wbdi.dll without hardware dependencies:
   (a) SHA256(CANONICAL_PSK) matches the observed 0xbb020001 MCU hash byte-for-byte;
-  (b) SecWhiteEncrypt produces a 96-byte payload (16B IV + 48B Ciphertext + 32B HMAC);
-  (c) SecWhiteDecrypt validates round-trip integrity and HMAC authenticity;
+  (b) SecWhiteEncrypt produces a 96-byte payload (16B IV + 48B Ciphertext + 32B HMAC)
+      and pins intermediate vectors (hash1, prefix, hash2, aes_key, iv);
+  (c) SecWhiteDecrypt validates round-trip integrity, multi-size inputs (16/32/48/64B),
+      and input guards (length % 16, short payload, bit-flip HMAC, tampered MAC, prefix mismatch);
   (d) build_psk_write_payload formats the 10B magic header, TLV1 (0xbb010002), and TLV2 (0xbb010003);
   (e) chunk_psk_write_payload structures 12B chunk headers (total_len, chunk_len, chunk_offset).
 """
@@ -20,6 +22,13 @@ from experiments.goodix_whitebox import (
     sec_white_decrypt,
     build_psk_write_payload,
     chunk_psk_write_payload,
+    derive_hash1,
+    mutate_byte15,
+    derive_hash2,
+    derive_keys,
+    compute_hmac,
+    KNOWN_PSK,
+    KNOWN_OUTPUT,
 )
 
 
@@ -38,7 +47,11 @@ class TestF28WhiteboxAndPskFraming(unittest.TestCase):
         )
 
     def test_b_sec_white_encrypt_structure(self):
-        """SecWhiteEncrypt output must be 96 bytes: 16B IV + 48B Ciphertext + 32B HMAC."""
+        """SecWhiteEncrypt output must be 96 bytes: 16B IV + 48B Ciphertext + 32B HMAC.
+
+        Pins intermediate vectors (hash1, prefix, hash2, aes_key, iv) for 32B zero KAT (Ticket 63),
+        verifies 96B KAT output, and ensures single-hash derivation does not match aes_key.
+        """
         enc = sec_white_encrypt(CANONICAL_PSK)
         self.assertEqual(len(enc), 96)
         iv = enc[:16]
@@ -48,17 +61,132 @@ class TestF28WhiteboxAndPskFraming(unittest.TestCase):
         self.assertEqual(len(ct), 48)
         self.assertEqual(len(mac), 32)
 
+        # Ticket 63: Pin intermediate vectors for 32B zero KAT
+        kat_len = 32
+        hash1 = derive_hash1(kat_len)
+        self.assertEqual(
+            hash1.hex(),
+            "ec35ae3abb45ed3f12c4751f1e5c2ccc412608157f318e4d4693589753d088f0",
+            "hash1 intermediate vector mismatch",
+        )
+
+        prefix = mutate_byte15(hash1, kat_len)
+        self.assertEqual(
+            prefix.hex(),
+            "ec35ae3abb45ed3f12c4751f1e5c2cc0",
+            "prefix intermediate vector mismatch",
+        )
+
+        hash2 = derive_hash2(prefix)
+        self.assertEqual(
+            hash2.hex(),
+            "b7e7f234c4e98b9eef95bfe665bacad2b80a0a33ed2dde8a98be21f02942ad7f",
+            "hash2 intermediate vector mismatch",
+        )
+
+        aes_key, hmac_key = derive_keys(prefix)
+        self.assertEqual(
+            aes_key.hex(),
+            "b7e7f234c4e98b9eef95bfe665bacad2",
+            "aes_key intermediate vector mismatch",
+        )
+        self.assertEqual(
+            hmac_key.hex(),
+            "b7e7f234c4e98b9eef95bfe665bacad2b80a0a33ed2dde8a98be21f02942ad7f",
+            "hmac_key intermediate vector mismatch",
+        )
+
+        derived_iv = prefix
+        self.assertEqual(
+            derived_iv.hex(),
+            "ec35ae3abb45ed3f12c4751f1e5c2cc0",
+            "IV intermediate vector mismatch",
+        )
+
+        # Anti-regression assert: single-hash derivation must not match aes_key
+        single_hash_key = hash1[:16]
+        self.assertNotEqual(
+            aes_key,
+            single_hash_key,
+            "Anti-regression check failed: aes_key must not equal single-hash hash1[:16]",
+        )
+
+        # Verify 96B KAT output
+        kat_enc = sec_white_encrypt(KNOWN_PSK)
+        self.assertEqual(len(kat_enc), 96)
+        self.assertEqual(kat_enc, KNOWN_OUTPUT, "96B KAT output mismatch")
+
     def test_c_roundtrip_decryption(self):
-        """SecWhiteDecrypt must invert SecWhiteEncrypt and authenticate HMAC."""
+        """SecWhiteDecrypt must invert SecWhiteEncrypt and authenticate HMAC.
+
+        Covers multi-size roundtrips (16B, 32B, 48B, 64B) with wire lengths (80B, 96B, 112B, 128B) (Ticket 64).
+        Tests decrypt input guards: non-multiple-of-16 ct, short payloads (<64B), bit-flipped ciphertext,
+        tampered HMAC, and corrupted prefix with expected/actual hex strings (Ticket 62).
+        """
+        # Canonical PSK roundtrip
         enc = sec_white_encrypt(CANONICAL_PSK)
         dec = sec_white_decrypt(enc)
         self.assertEqual(dec, CANONICAL_PSK)
 
-        # Verify tamper detection
-        tampered = bytearray(enc)
-        tampered[20] ^= 0x01
-        with self.assertRaises(ValueError):
-            sec_white_decrypt(bytes(tampered))
+        # Ticket 64: Multi-size round-trip coverage
+        sizes_and_wires = [(16, 80), (32, 96), (48, 112), (64, 128)]
+        for size, expected_wire_len in sizes_and_wires:
+            with self.subTest(size=size, expected_wire_len=expected_wire_len):
+                test_data = bytes([i % 256 for i in range(size)])
+                enc_data = sec_white_encrypt(test_data)
+                self.assertEqual(
+                    len(enc_data),
+                    expected_wire_len,
+                    f"Wire length mismatch for {size}B input: got {len(enc_data)}, expected {expected_wire_len}",
+                )
+                dec_data = sec_white_decrypt(enc_data)
+                self.assertEqual(dec_data, test_data, f"Round-trip decryption failed for {size}B input")
+
+                # Also verify explicit expected_len parameter
+                dec_explicit = sec_white_decrypt(enc_data, expected_len=size)
+                self.assertEqual(dec_explicit, test_data)
+
+        # Ticket 62: Decrypt input guards
+
+        # Guard 1: Truncated / non-multiple-of-16 ciphertext length -> ValueError
+        with self.assertRaises(ValueError) as cm:
+            sec_white_decrypt(KNOWN_OUTPUT[:-1])  # 95 bytes: 16B prefix + 47B ct + 32B mac
+        self.assertIn("multiple of 16", str(cm.exception))
+
+        # Guard 2: Short payload (<64B) -> ValueError
+        for short_len in [0, 16, 48, 63]:
+            with self.subTest(short_len=short_len):
+                with self.assertRaises(ValueError) as cm:
+                    sec_white_decrypt(bytes(short_len))
+                self.assertIn("too short", str(cm.exception))
+
+        # Guard 3: Bit-flipped ciphertext -> HMAC failure
+        tampered_ct = bytearray(KNOWN_OUTPUT)
+        tampered_ct[20] ^= 0x01  # Offset 20 is inside ciphertext (16..63)
+        with self.assertRaises(ValueError) as cm:
+            sec_white_decrypt(bytes(tampered_ct))
+        self.assertIn("HMAC verification failed", str(cm.exception))
+
+        # Guard 4: Tampered HMAC -> HMAC failure
+        tampered_mac = bytearray(KNOWN_OUTPUT)
+        tampered_mac[-1] ^= 0x01  # Offset 95 is inside HMAC tag (64..95)
+        with self.assertRaises(ValueError) as cm:
+            sec_white_decrypt(bytes(tampered_mac))
+        self.assertIn("HMAC verification failed", str(cm.exception))
+
+        # Guard 5: Corrupted prefix -> ValueError with expected and actual hex strings
+        corrupted_prefix = bytearray(KNOWN_OUTPUT)
+        corrupted_prefix[0] ^= 0x01  # Flip first byte of prefix
+        with self.assertRaises(ValueError) as cm:
+            sec_white_decrypt(bytes(corrupted_prefix))
+        err_msg = str(cm.exception)
+        self.assertIn("Prefix mismatch", err_msg)
+        self.assertIn("expected", err_msg)
+        self.assertIn("got", err_msg)
+        expected_hex = "ec35ae3abb45ed3f12c4751f1e5c2cc0"
+        actual_hex = bytes(corrupted_prefix[:16]).hex()
+        self.assertIn(expected_hex, err_msg)
+        self.assertIn(actual_hex, err_msg)
 
     def test_d_psk_write_payload_tlvs(self):
         """Payload must contain 10B magic header and TLV1 (0xbb010002) + TLV2 (0xbb010003)."""
