@@ -128,16 +128,11 @@ class TestM1BoundaryConditions(unittest.TestCase):
 
 
     def test_register_0x022c_boundary_values(self):
-        """Verify register 0x022c gain/exposure bounds and value mappings."""
-        reg_addr = parse_c_macro(self.header_content, "GOODIX_5E0A_REG_GAIN_EXPOSURE")
-        val_default = parse_c_macro(self.header_content, "GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL")
-        val_calib = parse_c_macro(self.header_content, "GOODIX_5E0A_REG_GAIN_EXPOSURE_CALIB_VAL")
-        val_reset = parse_c_macro(self.header_content, "GOODIX_5E0A_REG_GAIN_EXPOSURE_RESET_VAL")
-
-        self.assertEqual(reg_addr, 0x022c)
-        self.assertEqual(val_default, 0x0305)  # \x05\x03
-        self.assertEqual(val_calib, 0x030a)    # \x0a\x03
-        self.assertEqual(val_reset, 0x020a)    # \x0a\x02
+        """Ticket 56: header REG defines removed; canonical values pinned directly."""
+        reg_addr, val_default, val_calib, val_reset = 0x022c, 0x0305, 0x030a, 0x020a
+        for macro in ("GOODIX_5E0A_REG_GAIN_EXPOSURE",
+                      "GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL"):
+            self.assertNotIn(macro, self.header_content)
 
         # Verify packed struct representation on wire
         wire_default = struct.pack("<BH", 0, reg_addr) + struct.pack("<H", val_default)

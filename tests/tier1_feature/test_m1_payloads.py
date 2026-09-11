@@ -101,28 +101,23 @@ class TestMilestone1Payloads(unittest.TestCase):
         """Verify sensor pixel geometry and driver constants."""
         width = parse_c_macro(self.header_content, "GOODIX_5E0A_WIDTH")
         height = parse_c_macro(self.header_content, "GOODIX_5E0A_HEIGHT")
-        scan_w = parse_c_macro(self.header_content, "GOODIX_5E0A_SCAN_WIDTH")
-        scan_h = parse_c_macro(self.header_content, "GOODIX_5E0A_SCAN_HEIGHT")
         self.assertEqual(width, 64)
         self.assertEqual(height, 80)
-        self.assertEqual(scan_w, 64)
-        self.assertEqual(scan_h, 80)
+        # Ticket 56: SCAN_* duplicate of WIDTH/HEIGHT removed.
+        self.assertNotIn("GOODIX_5E0A_SCAN_WIDTH", self.header_content)
+        self.assertNotIn("GOODIX_5E0A_SCAN_HEIGHT", self.header_content)
 
     def test_gain_exposure_register_0x022c(self):
-        """Verify sensor register 0x022c gain/exposure parameters (0x0503)."""
-        reg_addr = parse_c_macro(self.header_content, "GOODIX_5E0A_REG_GAIN_EXPOSURE")
-        reg_val = parse_c_macro(self.header_content, "GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL")
-        self.assertEqual(reg_addr, 0x022c, "Sensor gain register must be 0x022c")
-        # In little-endian uint16, bytes [0x05, 0x03] are represented as 0x0305
-        self.assertEqual(reg_val, 0x0305, "Register 0x022c gain value must correspond to \x05\x03 (0x0305)")
+        """Ticket 56: dead REG_GAIN_EXPOSURE* defines removed (zero uses)."""
+        for macro in ("GOODIX_5E0A_REG_GAIN_EXPOSURE",
+                      "GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL",
+                      "GOODIX_5E0A_REG_GAIN_EXPOSURE_CALIB_VAL",
+                      "GOODIX_5E0A_REG_GAIN_EXPOSURE_RESET_VAL"):
+            self.assertNotIn(macro, self.header_content)
 
     def test_reg_022c_mock_matches_header(self):
-        """Verify mock CANONICAL_REG_022C_GAIN equals the header LE value.
-
-        The gain bytes are one of the two mock values shared with frozen
-        hardware (the other is the PSK); pin the agreement both ways."""
-        reg_val = parse_c_macro(self.header_content, "GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL")
-        self.assertEqual(CANONICAL_REG_022C_GAIN, struct.pack("<H", reg_val))
+        """Canonical gain bytes pinned via mock (header no longer defines them)."""
+        self.assertEqual(CANONICAL_REG_022C_GAIN, struct.pack("<H", 0x0305))
 
     def test_b4_get_image_payload_exactness(self):
         """Verify B4 10-byte finger-capture payload in goodix.c."""

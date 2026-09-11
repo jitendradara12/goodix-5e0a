@@ -994,7 +994,7 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
     }
   guint frame_range = (frame_min != 65535 && frame_max > frame_min)
                       ? (guint) (frame_max - frame_min) : 0;
-  g_message ("5e0a wire layout: decoded_px=%u blocks=%u active_bytes=%u padding_nonzero=%u footer_bytes=%u",
+  fp_dbg ("5e0a wire layout: decoded_px=%u blocks=%u active_bytes=%u padding_nonzero=%u footer_bytes=%u",
               decoded_pixels, MIN ((guint32) len / GOODIX_5E0A_BLOCK_BYTES,
                                    (guint32) GOODIX_5E0A_FRAME_BLOCKS),
               GOODIX_5E0A_BLOCK_ACTIVE_BYTES, padding_nonzero,
@@ -1046,7 +1046,7 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
           fp_dbg ("5e0a no usable frame, submitting blank");
           img = fp_image_new (GOODIX_5E0A_SCALED_WIDTH, GOODIX_5E0A_SCALED_HEIGHT);
           img->flags = FPI_IMAGE_COLORS_INVERTED;
-          img->ppmm = 500.0 / 25.4;
+          img->ppmm = GOODIX_5E0A_PPMM;
           goto deliver;
         }
       img = goodix5e0a_claim_best_frame (self);
@@ -1157,7 +1157,7 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
           fp_dbg ("5e0a retry guard: finger still present, re-issuing FDT UP");
           send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP,
                           goodix_5e0a_up_u01, sizeof (goodix_5e0a_up_u01),
-                          2000, goodix5e0a_on_fdt_up_reply, ssm);
+                          GOODIX_5E0A_FDT_UP_GUARD_TIMEOUT_MS, goodix5e0a_on_fdt_up_reply, ssm);
           return;
         }
       g_error_free (err);
@@ -1233,7 +1233,7 @@ goodix5e0a_scan_run_state (FpiSsm *ssm, FpDevice *dev)
     case SCAN_5E0A_FDT_UP_2:
       send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP,
                       goodix_5e0a_up_u01, sizeof (goodix_5e0a_up_u01),
-                      self->retry_guard ? 2000 : 5000, goodix5e0a_on_fdt_up_reply, ssm);
+                      self->retry_guard ? GOODIX_5E0A_FDT_UP_GUARD_TIMEOUT_MS : GOODIX_5E0A_FDT_UP_TIMEOUT_MS, goodix5e0a_on_fdt_up_reply, ssm);
       break;
     }
 }
@@ -1528,7 +1528,7 @@ process_raw_frame (GoodixTls5xxPix * pix)
   g_autofree guint8 *normalized = g_new (guint8, GOODIX_5E0A_FRAME_SIZE);
   for (guint i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
     {
-      int value = (int) roundf (128.0f + residual[i] * GOODIX_5E0A_CONTRAST_GAIN);
+      int value = (int) roundf (GOODIX_5E0A_NORMALIZE_MIDPOINT + residual[i] * GOODIX_5E0A_CONTRAST_GAIN);
       normalized[i] = (guint8) CLAMP (value, 0, 255);
     }
 
@@ -1537,7 +1537,7 @@ process_raw_frame (GoodixTls5xxPix * pix)
    * Omit FPI_IMAGE_PARTIAL so remove_perimeter_pts=0 retains edge minutiae. */
   FpImage *img = fp_image_new (dst_w, dst_h);
   img->flags = FPI_IMAGE_COLORS_INVERTED;
-  img->ppmm = 500.0 / 25.4;
+  img->ppmm = GOODIX_5E0A_PPMM;
 
   for (int y = 0; y < dst_h; y++)
     {
@@ -1586,7 +1586,7 @@ goodix5e0a_count_minutiae (FpImage *img)
 
   LFSPARMS parms = g_lfsparms_V2;
   parms.remove_perimeter_pts = 0;
-  double ppmm = img->ppmm > 0 ? img->ppmm : (500.0 / 25.4);
+  double ppmm = img->ppmm > 0 ? img->ppmm : GOODIX_5E0A_PPMM;
 
   MINUTIAE *minutiae = NULL;
   int *qmap = NULL, *dmap = NULL, *lcmap = NULL, *lfmap = NULL, *hcmap = NULL;

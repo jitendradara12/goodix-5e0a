@@ -31,8 +31,6 @@
 #define GOODIX_5E0A_HEIGHT (80)
 #define GOODIX_5E0A_SCALED_WIDTH (128)
 #define GOODIX_5E0A_SCALED_HEIGHT (160)
-#define GOODIX_5E0A_SCAN_WIDTH (64)
-#define GOODIX_5E0A_SCAN_HEIGHT (80)
 #define GOODIX_5E0A_FRAME_SIZE (GOODIX_5E0A_WIDTH * GOODIX_5E0A_HEIGHT)
 #define GOODIX_5E0A_FRAME_BLOCKS (80)
 #define GOODIX_5E0A_BLOCK_BYTES (132)
@@ -43,18 +41,21 @@
 #define GOODIX_5E0A_CONTRAST_GAIN (1.0f)
 #define GOODIX_5E0A_ENROLL_MIN_MINUTIAE (12)
 
+/* Ticket 56 slop purge: symbolic constants for former magic numbers.
+ * Values unchanged (hardware-verified): FDT_UP guard 2000ms / normal
+ * 5000ms (ticket 47: a 0x34 timeout means the finger is still down, so
+ * the guard path re-issues; success means genuine release); 500dpi ppmm;
+ * 128 mid-gray for residual re-centering. */
+#define GOODIX_5E0A_FDT_UP_GUARD_TIMEOUT_MS (2000)
+#define GOODIX_5E0A_FDT_UP_TIMEOUT_MS (5000)
+#define GOODIX_5E0A_PPMM (500.0 / 25.4)
+#define GOODIX_5E0A_NORMALIZE_MIDPOINT (128.0f)
+
 /* Ticket 39 best-of-N per-touch capture: non-enroll touches bank this many
  * back-to-back GET_IMAGE frames inside SCAN_5E0A_GET_IMAGE and submit only
  * the highest-minutiae one (minutiae-count proxy; the driver never sees the
  * core verdict). Enrollment stays single-frame-per-stage. */
 #define GOODIX_5E0A_FRAMES_PER_TOUCH 3
-
-
-// Sensor Analog Front-End (AFE) Gain/Exposure Register Configuration
-#define GOODIX_5E0A_REG_GAIN_EXPOSURE (0x022c)
-#define GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL (0x0305)         /* Little-endian 16-bit: \x05\x03 */
-#define GOODIX_5E0A_REG_GAIN_EXPOSURE_CALIB_VAL (0x030a)   /* Little-endian 16-bit: \x0a\x03 */
-#define GOODIX_5E0A_REG_GAIN_EXPOSURE_RESET_VAL (0x020a)   /* Little-endian 16-bit: \x0a\x02 */
 
 
 /* Host TLS PSK for TLS_PSK_WITH_AES_128_CBC_SHA256 (flags 0xbb020001).

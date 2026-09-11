@@ -275,10 +275,11 @@ class TestF40WarmActivation(unittest.TestCase):
         # handshake never skipped: exactly one tls_init site (the shared
         # activate_complete handoff used by both ladders)
         self.assertEqual(src.count("goodix_tls_init ("), 1)
-        # journal budget: 24 g_message sites (demoted raw byte dump to fp_dbg)
+        # journal budget: 23 g_message sites (raw dump + wire layout demoted
+        # to fp_dbg per 56; frame-stats g_message preserved always-on)
         for line in (WARM_TAKEN, WARM_ENTRY, WARM_EXPIRED, WARM_FALLBACK):
             self.assertIn(line, src)
-        self.assertEqual(src.count("g_message ("), 24)
+        self.assertEqual(src.count("g_message ("), 23)
 
 
 if __name__ == "__main__":

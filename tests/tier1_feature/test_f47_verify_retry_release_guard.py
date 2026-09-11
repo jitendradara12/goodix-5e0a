@@ -19,6 +19,7 @@ import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 GOODIX5E0A_C = os.path.join(REPO_ROOT, "libfprint-driver", "goodix5e0a.c")
+GOODIX5E0A_H = os.path.join(REPO_ROOT, "libfprint-driver", "goodix5e0a.h")
 
 
 def _read(path):
@@ -73,10 +74,13 @@ class TestF47VerifyRetryReleaseGuard(unittest.TestCase):
         self.assertIn("fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);", run_state)
 
     def test_f_fdt_up_2_timeout_bounded(self):
-        """SCAN_5E0A_FDT_UP_2 uses 2000ms timeout when retry_guard is active."""
+        """SCAN_5E0A_FDT_UP_2 uses guard timeout when retry_guard is active."""
         src = _read(GOODIX5E0A_C)
         run_state = _slice(src, "goodix5e0a_scan_run_state", "goodix5e0a_scan_complete")
-        self.assertIn("self->retry_guard ? 2000 : 5000", run_state)
+        self.assertIn("self->retry_guard ? GOODIX_5E0A_FDT_UP_GUARD_TIMEOUT_MS : GOODIX_5E0A_FDT_UP_TIMEOUT_MS", run_state)
+        hdr = _read(GOODIX5E0A_H)
+        self.assertIn("#define GOODIX_5E0A_FDT_UP_GUARD_TIMEOUT_MS (2000)", hdr)
+        self.assertIn("#define GOODIX_5E0A_FDT_UP_TIMEOUT_MS (5000)", hdr)
 
     def test_g_fdt_up_reply_clears_guard_and_arms_fdt_down(self):
         """goodix5e0a_on_fdt_up_reply clears retry_guard and transitions to FDT_DOWN."""
@@ -98,7 +102,7 @@ class TestF47VerifyRetryReleaseGuard(unittest.TestCase):
         self.assertIn("if (self->retry_guard && self->scan_ssm == ssm)", up_reply)
         self.assertIn("finger still present, re-issuing FDT UP", up_reply)
         self.assertIn("GOODIX_CMD_MCU_SWITCH_TO_FDT_UP", up_reply)
-        self.assertIn("2000, goodix5e0a_on_fdt_up_reply, ssm", up_reply)
+        self.assertIn("GOODIX_5E0A_FDT_UP_GUARD_TIMEOUT_MS, goodix5e0a_on_fdt_up_reply, ssm", up_reply)
         # the re-issue precedes the release-ok clear, so a timeout can never clear
         self.assertLess(up_reply.index("re-issuing FDT UP"),
                         up_reply.index("release ok, arming FDT DOWN"))

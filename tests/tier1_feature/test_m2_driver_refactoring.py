@@ -79,7 +79,8 @@ class TestM2DriverRefactoring(unittest.TestCase):
     def test_demosaicing_flags_and_dimensions(self):
         """Verify process_raw_frame generates scaled image with FPI_IMAGE_COLORS_INVERTED."""
         self.assertIn("img->flags = FPI_IMAGE_COLORS_INVERTED;", self.c_content)
-        self.assertIn("img->ppmm = 500.0 / 25.4;", self.c_content)
+        self.assertIn("img->ppmm = GOODIX_5E0A_PPMM;", self.c_content)
+        self.assertIn("#define GOODIX_5E0A_PPMM (500.0 / 25.4)", self.h_content)
 
     def test_production_driver_compactness(self):
         """Verify goodix5e0a.c stays compact for a production driver with clean base-class subclassing."""

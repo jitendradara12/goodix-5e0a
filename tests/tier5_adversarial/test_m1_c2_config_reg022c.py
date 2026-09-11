@@ -155,16 +155,11 @@ class TestAdversarialConfig52XDAndReg022C(unittest.TestCase):
     # =========================================================================
 
     def test_register_0x022c_values_and_macros(self):
-        """Verify Register 0x022c definitions across headers and python prototypes."""
-        reg_addr = parse_c_macro(self.tmp_header_str, "GOODIX_5E0A_REG_GAIN_EXPOSURE")
-        reg_val = parse_c_macro(self.tmp_header_str, "GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL")
-        reg_calib = parse_c_macro(self.tmp_header_str, "GOODIX_5E0A_REG_GAIN_EXPOSURE_CALIB_VAL")
-        reg_reset = parse_c_macro(self.tmp_header_str, "GOODIX_5E0A_REG_GAIN_EXPOSURE_RESET_VAL")
-
-        self.assertEqual(reg_addr, 0x022c)
-        self.assertEqual(reg_val, 0x0305, "0x0305 in LE corresponds to bytes [0x05, 0x03]")
-        self.assertEqual(reg_calib, 0x030a, "0x030a in LE corresponds to bytes [0x0a, 0x03]")
-        self.assertEqual(reg_reset, 0x020a, "0x020a in LE corresponds to bytes [0x0a, 0x02]")
+        """Ticket 56: header REG defines removed; wire endianness pinned directly."""
+        for macro in ("GOODIX_5E0A_REG_GAIN_EXPOSURE",
+                      "GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL"):
+            self.assertNotIn(macro, self.tmp_header_str)
+            self.assertNotIn(macro, self.repo_header_str)
 
     def test_register_0x022c_wire_packet_endianness_exactness(self):
         """Adversarially verify that C struct layout and Python wire serialization match byte-for-byte."""
@@ -187,11 +182,10 @@ class TestAdversarialConfig52XDAndReg022C(unittest.TestCase):
         self.assertEqual(p_payload, bytes([0x00, 0x2c, 0x02, 0x05, 0x03]))
 
     def test_register_0x022c_presence_in_fdt_payloads(self):
-        """Verify that gain/exposure register 0x022c macros are configured consistently."""
-        reg_addr = parse_c_macro(self.tmp_header_str, "GOODIX_5E0A_REG_GAIN_EXPOSURE")
-        reg_val = parse_c_macro(self.tmp_header_str, "GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL")
-        self.assertEqual(reg_addr, 0x022c)
-        self.assertEqual(reg_val, 0x0305)
+        """Ticket 56: header REG defines removed (wire test below is authority)."""
+        for macro in ("GOODIX_5E0A_REG_GAIN_EXPOSURE",
+                      "GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL"):
+            self.assertNotIn(macro, self.tmp_header_str)
 
 
     # =========================================================================

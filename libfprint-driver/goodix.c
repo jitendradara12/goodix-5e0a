@@ -365,7 +365,7 @@ goodix_receive_ack (FpDevice *dev, guint8 *data, guint16 length,
 
   if (!priv->ack)
     {
-      fp_warn ("Didn't excpect an ACK for command: 0x%02x", priv->cmd);
+      fp_warn ("Didn't expect an ACK for command: 0x%02x", priv->cmd);
       return;
     }
 
@@ -414,7 +414,7 @@ goodix_receive_protocol (FpDevice *dev, guint8 *data, guint32 length)
 
   if (!priv->reply)
     {
-      fp_warn ("Didn't excpect a reply for command: 0x%02x", priv->cmd);
+      fp_warn ("Didn't expect a reply for command: 0x%02x", priv->cmd);
       return;
     }
 
