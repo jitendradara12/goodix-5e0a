@@ -1037,12 +1037,19 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
     {
       if (goodix5e0a_keep_best_frame (dev, ssm, img, len, frame_active, frame_range))
         return;
-      img = goodix5e0a_claim_best_frame (self);
-      if (img == NULL)
+      if (self->best_img == NULL)
         {
-          fpi_image_device_retry_scan (FP_IMAGE_DEVICE (dev), FP_DEVICE_RETRY_TOO_SHORT);
-          goto deliver_done;
+          /* Ticket 53: all frames rejected. Never retry_scan (PAM deadlock,
+           * ticket 19) nor mark_failed (voids warm/parked TLS): submit a
+           * blank (fp_image_new zero-fills); core no-matches, scan
+           * completes clean with warm/park intact. */
+          fp_dbg ("5e0a no usable frame, submitting blank");
+          img = fp_image_new (GOODIX_5E0A_SCALED_WIDTH, GOODIX_5E0A_SCALED_HEIGHT);
+          img->flags = FPI_IMAGE_COLORS_INVERTED;
+          img->ppmm = 500.0 / 25.4;
+          goto deliver;
         }
+      img = goodix5e0a_claim_best_frame (self);
     }
 
   /* In verify mode (and all non-enroll actions), unconditionally pass the captured image
@@ -1054,7 +1061,6 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 deliver:
   fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);
 
-deliver_done:
   if (action != FPI_DEVICE_ACTION_ENROLL)
     {
       self->scan_ssm = NULL;
