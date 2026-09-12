@@ -61,7 +61,9 @@ cat > /tmp/opencode/t69-verify.sh <<'T69EOF'
 # Ticket 69 one-go verify. No `set -e`: misses exit nonzero by design.
 sudo -v
 LOG=/tmp/opencode/t69-verify-$(date -u +%Y%m%d-%H%M%SZ).log
-SINCE=$(date -u +"%Y-%m-%d %H:%M:%S")
+# NOTE: local time — journalctl --since parses local tz; date -u once
+# widened the window 5.5h and pulled stale sessions (fixed 2026-09-12, §6).
+SINCE=$(date +"%Y-%m-%d %H:%M:%S")
 echo "=== T69 run SINCE=$SINCE ===" | tee "$LOG"
 
 # 0. Precondition: ticket-68 driver (gallery_len=10). If unsure, deploy first:
@@ -120,3 +122,46 @@ bash /tmp/opencode/t69-verify.sh
 ```
 
 9. Verdict: conclude only (a) / (b) / inconclusive-because-[flaw] + the single next lane, per §2 branch logic. Paste back `$LOG` plus the firm-center stage number. If a match block is missing, the debug env (step 1) was not active — re-run with it.
+
+---
+
+## 6. Hardware run 2026-09-12 09:48–09:50 UTC (one-go script — inconclusive)
+
+Full protocol executed via the §5 block (`t69-verify-20260912-094820Z.log`,
+6/6 attempts with per-tap timestamps). Script flaw, cosmetic: `SINCE` used
+`date -u` but `journalctl --since` parses local time — the window opened
+5.5h early and pulled two stale sessions (15:12:05 PID 390501 match blocks,
+15:12:18–50 PID 390614 enroll+verify). Mapping below uses PID fencing +
+`enroll-completed` 15:18:39 (PID 395679) + the six consecutive PID-396646
+blocks; stale sessions excluded. Fixed in §5 (local-time `SINCE`).
+
+- Floor: PASS — 7× `enrollment touch rejected` (9,11,14,13,15,15,12 < 16,
+  15:18:29–38), `enroll-completed` 15:18:39, gallery
+  [17,19,22,27,21,16,17,16,18,16], all ≥ 16.
+- Phase 1 (09:48:39–09:49:39 UTC = 15:18:39–15:19:39 local): silent — no
+  match/enrollment lines in-window; rule-7 smoke grep empty across the run
+  (no `timed out|Invalid ACK|verify-unknown-error|failed to`). PASS.
+- Attempts (client UTC → journal local, +5:30):
+
+| attempt | client UTC | journal | probe | max | result |
+| A1 duplicate | 09:49:47 | 15:19:50 | 18 | gallery[3] 12/14 | no-match |
+| A2 duplicate | 09:49:57 | 15:20:00 | 23 | gallery[8] 12/14 | no-match |
+| A3 duplicate | 09:50:13 | 15:20:13 | 14 | gallery[1] 12/14 | no-match |
+| B1 casual | 09:50:18 | 15:20:19 | 18 | gallery[3] 11/14 | no-match |
+| B2 casual | 09:50:23 | 15:20:24 | 19 | gallery[8] 9/14 | no-match |
+| B3 casual | 09:50:28 | 15:20:29 | 23 | gallery[2] 15/14 | MATCH |
+
+(B3 prints gallery[0..2] only — driver stops at first threshold clear; normal.)
+
+Verdict: inconclusive-because-[firm-center-stage-unreported]. Branch (a)
+needs an A-match (0/3 — not met); branch (b)'s trigger (A miss despite
+probe≥20: A2 23→12) is literally met, BUT A-fidelity is unverifiable
+without the reference stage number, and B3's casual 23→15/14 proves the
+pipeline CAN pair on this gallery — contradicting pure (b) as sole cause.
+
+Single next experiment (cheap, no re-enroll — gallery above persists): 3×
+Attempt-A taps vs the current gallery, reporting the firm-center stage
+number + per-tap placement notes, pasting the 3 blocks. If A still misses
+at probe≥20 → (b) confirmed, lane = offline contrast/upscale analysis on
+captublack frames. If A matches → the original duplicate was off-position,
+(a) coverage, lane = ladder/position guidance.
