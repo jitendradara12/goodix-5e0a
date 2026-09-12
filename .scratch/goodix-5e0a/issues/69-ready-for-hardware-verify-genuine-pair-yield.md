@@ -165,3 +165,80 @@ number + per-tap placement notes, pasting the 3 blocks. If A still misses
 at probe≥20 → (b) confirmed, lane = offline contrast/upscale analysis on
 captublack frames. If A matches → the original duplicate was off-position,
 (a) coverage, lane = ladder/position guidance.
+
+---
+
+## 7. Hardware run 2026-09-12 15:24:16–26 local (A-repeat, 3 taps — provisional-(a))
+
+User ran the §6 follow-up (same gallery, no re-enroll — gallery vector
+identical: [17,19,22,27,21,16,17,16,18,16]). Firm-center stage number still
+unreported; the outcome falsifies pure-(b) but leaves positive (a)
+one datum short of demonstrated. One PID (399740), three
+consecutive blocks:
+
+| tap | journal | probe | max | result |
+| 1 | 15:24:16 | 17 | gallery[3] 13/14 | no-match (near miss) |
+| 2 | 15:24:21 | 22 | gallery[3] 16/14 | MATCH (early exit at gallery[3]) |
+| 3 | 15:24:26 | 25 | gallery[2] 15/14 | MATCH (early exit at gallery[2]) |
+
+Combined with §6: position-duplicate taps go 2/3 here (plus B3's casual
+23→15/14), while §6's A-set went 0/3 including a 23→12 miss. The pipeline
+pairs well (15, 16/14 clears) whenever the placed skin overlaps an enrolled
+template — pure (b) image-quality failure is falsified as the sole cause.
+The §6 A-misses are consistent with off-position duplicates (the 10-stage
+ladder covers 10 pressure/angle/flank samples; a tap landing between them
+has no overlapping template — Bozorth tolerates ≤10% stretch, ≤11°), but
+without the stage number this remains the leading hypothesis, not proof.
+Tap 1's 13/14 near-miss on gallery[3] (27-minutiae, the richest
+template) is the signature of partial overlap, not blur.
+
+Verdict: provisional-(a), firm on one half only. FALSIFIED as sole cause:
+pure (b) image-quality failure — 22→16/14 and 25→15/14 pair cleanly on the
+same gallery that gave §6's A-set 23→12, so the pipeline CAN pair; uniform
+blur/clipping cannot explain the data. LEANING (not demonstrated): (a)
+enrollment coverage — the §6-prescribed discriminator (firm-center stage
+number + per-tap placement notes) is still unreported, so placement
+fidelity for both the §6 A-misses and these taps remains self-reported and
+a transient-condition confound stays open. Tap 1's 13/14 near-miss on
+gallery[3] (27 minutiae, richest template) reads as partial overlap, but
+that is inference, not demonstration.
+
+Outstanding evidence for a firm (a): firm-center stage number, per-tap
+placement notes, Phase-1 hands-off + rule-7 smoke for this run (not
+performed — user pasted blocks only; AGENTS.md protocol notes the gap).
+
+Next lane (per §2, new ticket): ladder/position guidance or stage-count
+revisit within the ticket-65 FAR budget (K=10→1.09%, K=20→2.18% at
+threshold 14) — one variable per build, no driver change in 69. Floor
+stays 16, threshold stays 14.
+
+Raw blocks (PID 399740, user-pasted 2026-09-12):
+
+```text
+Sep 12 15:24:16 sastapc fprintd[399740]: 5e0a bz3 match start: probe_nrows=17 gallery_len=10 (probe_len=106)
+Sep 12 15:24:16 sastapc fprintd[399740]: 5e0a bz3 match: gallery[0]_nrows=17 score=6/14 (probe_nrows=17)
+Sep 12 15:24:16 sastapc fprintd[399740]: 5e0a bz3 match: gallery[1]_nrows=19 score=6/14 (probe_nrows=17)
+Sep 12 15:24:16 sastapc fprintd[399740]: 5e0a bz3 match: gallery[2]_nrows=22 score=12/14 (probe_nrows=17)
+Sep 12 15:24:16 sastapc fprintd[399740]: 5e0a bz3 match: gallery[3]_nrows=27 score=13/14 (probe_nrows=17)
+Sep 12 15:24:16 sastapc fprintd[399740]: 5e0a bz3 match: gallery[4]_nrows=21 score=4/14 (probe_nrows=17)
+Sep 12 15:24:16 sastapc fprintd[399740]: 5e0a bz3 match: gallery[5]_nrows=16 score=7/14 (probe_nrows=17)
+Sep 12 15:24:16 sastapc fprintd[399740]: 5e0a bz3 match: gallery[6]_nrows=17 score=5/14 (probe_nrows=17)
+Sep 12 15:24:16 sastapc fprintd[399740]: 5e0a bz3 match: gallery[7]_nrows=16 score=8/14 (probe_nrows=17)
+Sep 12 15:24:16 sastapc fprintd[399740]: 5e0a bz3 match: gallery[8]_nrows=18 score=9/14 (probe_nrows=17)
+Sep 12 15:24:16 sastapc fprintd[399740]: 5e0a bz3 match: gallery[9]_nrows=16 score=5/14 (probe_nrows=17)
+Sep 12 15:24:16 sastapc fprintd[399740]: report_verify_status: result verify-no-match
+Sep 12 15:24:16 sastapc fprintd[399740]: verify_cb: result verify-no-match
+Sep 12 15:24:21 sastapc fprintd[399740]: 5e0a bz3 match start: probe_nrows=22 gallery_len=10 (probe_len=155)
+Sep 12 15:24:21 sastapc fprintd[399740]: 5e0a bz3 match: gallery[0]_nrows=17 score=9/14 (probe_nrows=22)
+Sep 12 15:24:21 sastapc fprintd[399740]: 5e0a bz3 match: gallery[1]_nrows=19 score=11/14 (probe_nrows=22)
+Sep 12 15:24:21 sastapc fprintd[399740]: 5e0a bz3 match: gallery[2]_nrows=22 score=13/14 (probe_nrows=22)
+Sep 12 15:24:21 sastapc fprintd[399740]: 5e0a bz3 match: gallery[3]_nrows=27 score=16/14 (probe_nrows=22)
+Sep 12 15:24:21 sastapc fprintd[399740]: report_verify_status: result verify-match
+Sep 12 15:24:21 sastapc fprintd[399740]: verify_cb: result verify-match
+Sep 12 15:24:26 sastapc fprintd[399740]: 5e0a bz3 match start: probe_nrows=25 gallery_len=10 (probe_len=194)
+Sep 12 15:24:26 sastapc fprintd[399740]: 5e0a bz3 match: gallery[0]_nrows=17 score=6/14 (probe_nrows=25)
+Sep 12 15:24:26 sastapc fprintd[399740]: 5e0a bz3 match: gallery[1]_nrows=19 score=8/14 (probe_nrows=25)
+Sep 12 15:24:26 sastapc fprintd[399740]: 5e0a bz3 match: gallery[2]_nrows=22 score=15/14 (probe_nrows=25)
+Sep 12 15:24:26 sastapc fprintd[399740]: report_verify_status: result verify-match
+Sep 12 15:24:26 sastapc fprintd[399740]: verify_cb: result verify-match
+```
