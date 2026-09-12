@@ -39,7 +39,10 @@
 #define GOODIX_5E0A_FRAME_WIRE_BYTES (GOODIX_5E0A_FRAME_BLOCKS * GOODIX_5E0A_BLOCK_BYTES + 4) /* 10564 */
 
 #define GOODIX_5E0A_CONTRAST_GAIN (1.0f)
-#define GOODIX_5E0A_ENROLL_MIN_MINUTIAE (12)
+/* Ticket 68 quality floor: 16 minutiae so every saved template can clear
+ * bz3_threshold=14 (match count <= min(P,G): a 12-13 template is dead
+ * weight that can never verify) with ~75% genuine pairing headroom. */
+#define GOODIX_5E0A_ENROLL_MIN_MINUTIAE (16)
 
 /* Ticket 56 slop purge: symbolic constants for former magic numbers.
  * Values unchanged (hardware-verified): FDT_UP guard 2000ms / normal

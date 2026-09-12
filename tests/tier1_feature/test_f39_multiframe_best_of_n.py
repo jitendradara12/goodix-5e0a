@@ -45,7 +45,7 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
         """Burst length N=4 lives in the header next to the enroll floor."""
         hdr = _read(GOODIX5E0A_H)
         self.assertIn("#define GOODIX_5E0A_FRAMES_PER_TOUCH (4)", hdr)
-        self.assertIn("#define GOODIX_5E0A_ENROLL_MIN_MINUTIAE (12)", hdr)
+        self.assertIn("#define GOODIX_5E0A_ENROLL_MIN_MINUTIAE (16)", hdr)
 
     def test_b_struct_counter_and_best_fields(self):
         """Per-touch burst state lives on the device struct; park fields stay."""

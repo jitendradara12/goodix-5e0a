@@ -68,8 +68,8 @@ class MockDBusDeviceManager:
         """
         if not is_verify_mode:
             # Enrollment action checks minutiae floor
-            # (GOODIX_5E0A_ENROLL_MIN_MINUTIAE = 12, libfprint-driver/goodix5e0a.h)
-            if minutiae_count < 12:
+            # (GOODIX_5E0A_ENROLL_MIN_MINUTIAE = 16, libfprint-driver/goodix5e0a.h)
+            if minutiae_count < 16:
                 return "retry_scan"
 
         # Verify action (Ticket 19): unconditionally forwards to image_captured

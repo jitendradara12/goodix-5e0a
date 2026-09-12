@@ -185,14 +185,14 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 - **Active State:** Tickets 01–49 closed (43 pins threshold 14 / 5 stages, 46–49 harden session reuse and cold boot, all hardware-confirmed 2026-09-09). 448-test automated suite passes (100% via `bash tests/run_all_tests.sh`). Ticket 41 frozen, not just blocked: no matching-pipeline tuning per operator constraint.
 - **Upstream Repository:** `/home/sastauser/code/temp/libfprint-upstream` (`test-5e0a` branch; symlink at `/tmp/libfprint-upstream`).
 - **Power Management:** Genuine `FpDeviceClass` `.suspend` and `.resume` vfunctions handle S3 sleep cleanly.
-- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `746eca2071e93345e1307ab326b78fd463d163ab983cecd9ea2ce68ff6343dd6`; single base `goodix-fp-linux-dev@c343b69` shared with the repo derivation — one patch cannot serve two bases). Ticket 65 hardware-verified: 10 enrollment stages, 4-frame settling burst.
+- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `c7fc32c234a08de29d40220eddd17a3a18a23588d3af6c5c707be3b6b5d819be`; single base `goodix-fp-linux-dev@c343b69` shared with the repo derivation — one patch cannot serve two bases). Ticket 65 hardware-verified: 10 enrollment stages, 4-frame settling burst.
 - **Activation Sequence:** 7-state SSM: NOP -> (reset skipped) -> Read Chip ID (cold only) -> Read OTP (cold only) -> Query FW Version -> PSK-latch read (cold only) -> TLS PSK Handshake -> Upload Config (cold, post-TLS) -> Enable Chip.
 - **Verify Latency:** Sub-300ms instant unlock via immediate scan SSM completion and finger status reporting.
 - **Frame Decoder:** Strip each 132-byte block's first 96 bytes, discard 36-byte zero pad; unpack sequentially into 5,120 pixels.
 - **Dimensions:** Native $64 \times 80$ (WxH), upscaled 2x via bilinear interpolation to $128 \times 160$.
 - **Resolution:** Explicitly calibrated: `scaled->ppmm = 500.0 / 25.4`.
 - **Normalization:** 3x3 local mean subtraction (`val - local_mean`) with direct non-saturating residual contrast ($G=1.0$), clamped to [0, 255].
-- **Enrollment Quality Floor:** `GOODIX_5E0A_ENROLL_MIN_MINUTIAE = 12`. Faint touches rejected with retry prompt.
+- **Enrollment Quality Floor:** `GOODIX_5E0A_ENROLL_MIN_MINUTIAE = 16`. Faint touches rejected with retry prompt.
 - **Flags:** `scaled->flags = FPI_IMAGE_COLORS_INVERTED` (capacitive high ADC inverted to black ink 0; `FPI_IMAGE_PARTIAL` omitted to retain edge minutiae).
 - **Matching Invariants:** `bz3_threshold = 14`, `MIN_COMPUTABLE_BOZORTH_MINUTIAE = 10`. Frozen — no tuning without impostor data (operator constraint 2026-09-09).
 

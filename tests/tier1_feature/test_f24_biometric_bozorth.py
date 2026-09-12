@@ -3,7 +3,7 @@ Tier 1 - Feature 24: Automated Biometric Bozorth Matching and NBIS Minutiae Veri
 Requirements:
 - Verify NBIS mindtct minutiae extraction on real/fixture frames extracts >= 12 minutiae (no floor abort).
 - Verify Bozorth3 matching against gallery prints yields a score clearing threshold (>= 12).
-- Verify enrollment gate GOODIX_5E0A_ENROLL_MIN_MINUTIAE >= 12 guarantees gallery template quality.
+- Verify enrollment gate GOODIX_5E0A_ENROLL_MIN_MINUTIAE >= 16 guarantees gallery template quality.
 """
 
 import os
@@ -152,21 +152,21 @@ class TestF24BiometricBozorth(unittest.TestCase):
         self.assertTrue(any(px > 0 for px in upscaled), "Filtered frame must have non-zero pixels")
 
     def test_enrollment_quality_gate_in_driver_code(self):
-        """Verify GOODIX_5E0A_ENROLL_MIN_MINUTIAE is configured >= 12 in driver header and C file."""
+        """Verify GOODIX_5E0A_ENROLL_MIN_MINUTIAE is configured >= 16 in driver header and C file."""
         self.assertTrue(HEADER_PATH.exists(), f"Header not found: {HEADER_PATH}")
         header_text = HEADER_PATH.read_text(encoding="utf-8")
 
         enroll_match = re.search(r"#define\s+GOODIX_5E0A_ENROLL_MIN_MINUTIAE\s+\(?(\d+)\)?", header_text)
         self.assertIsNotNone(enroll_match, "GOODIX_5E0A_ENROLL_MIN_MINUTIAE not found in header")
         enroll_min = int(enroll_match.group(1))
-        self.assertGreaterEqual(enroll_min, 12, "Enrollment minutiae floor must be >= 12")
+        self.assertGreaterEqual(enroll_min, 16, "Enrollment minutiae floor must be >= 16")
 
         c_text = C_PATH.read_text(encoding="utf-8")
         self.assertIn("img_dev_class->bz3_threshold = 14;", c_text)
         self.assertIn("minutiae_count < GOODIX_5E0A_ENROLL_MIN_MINUTIAE", c_text)
 
     def test_bozorth_floor_guarantee(self):
-        """Verify that minutiae floor >= 12 strictly prevents NBIS Bozorth floor abort (< 10 minutiae)."""
+        """Verify that minutiae floor >= 16 strictly prevents NBIS Bozorth floor abort (< 10 minutiae)."""
         bozorth_min_computable = 10
         header_text = HEADER_PATH.read_text(encoding="utf-8")
         enroll_min = int(re.search(r"#define\s+GOODIX_5E0A_ENROLL_MIN_MINUTIAE\s+\(?(\d+)\)?", header_text).group(1))
