@@ -4,7 +4,7 @@
 
 **Blocked by:** 69 (closed — cause (a) confirmed: verified stage-2 duplicates match 16–22/14 incl. 24→22/14; casual taps occasionally land between enrolled samples, e.g. 20→13/14; pipeline exonerated).
 
-**Status:** closed (verdict: inconclusive-because-[no-probe≥20-tap-on-a-live-observed-gallery] — operator-closed 2026-09-12; N=14 ships, next experiment named below)
+**Status:** closed (verdict: CONFIRMED 2026-09-12 — §12 decider experiment met both pre-registered bars; supersedes the §11 inconclusive close)
 
 ---
 
@@ -377,3 +377,32 @@ Scored record on N=14 galleries (all `gallery_len=14`, floor ≥16 everywhere):
   convenient): debug-on session, 3 firm full-pad ~1s presses; confirm on
   ≥2/3 match with any probe≥20 scoring 15+, falsify on any probe≥20 capped
   ≤13. If falsified, named lane is (a1) guidance per §4.
+
+## 12. Decider (2026-09-12 ~22:43 IST — CONFIRM, both bars met)
+
+User ran the §11 experiment deadass, on left-middle-finger (fresh finger,
+fresh 14-template gallery, nrows 19/18/16/19/19/17/17/17/21/21/17/17/18/20,
+all ≥16). Three firm full-pad ~1s presses (pid 210347):
+
+- 22:43:52 probe 22 → gallery[8] 15/14 `verify-match` (early exit).
+- 22:43:55 probe 19 → full block, max 9/14 `verify-no-match`.
+- 22:43:57 probe 23 → gallery[3] 15/14 `verify-match` (early exit).
+
+Client-side 2/3 with BOTH strong probes clearing at 15, zero probe≥20
+capped ≤13. Pre-registered confirm rule (§11) fires exactly. The gallery-A
+20→13 flag does not survive contact with observed data: on watched
+galleries, strong probes pair. The probe-19→9 miss is recorded honestly —
+placement spread is real, mid probes still vary — but it sits below the ≥20
+bar and changes nothing about the verdict.
+
+- Verdict: lane (a2) CONFIRMED. Densified N=14 sampling covers placements
+  inside Bozorth tolerance that the 10-stage ladder missed. N=14 stands as
+  the operating point with floor 16 / threshold 14.
+- Rule-7 smoke: not re-grepped this run; pasted lines show no error strings.
+  Prior scoped windows all empty.
+- Advisory, not a ticket: three fingers now enrolled (left-middle,
+  left-thumb, right-index) = K=42 regime, FAR 4.52% / P3 12.95% ex executed
+  `python3 -c` (method matches §5: K=14→1.53%, K=28→3.03% reproduced
+  exactly). Runbook still advises ≤2 slots — consider deleting one.
+- No successor. Lane (a1) guidance stays declined per §4 unless new hardware
+  evidence reopens it.
