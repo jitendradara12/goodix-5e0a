@@ -9,7 +9,7 @@ A reverse-engineered Linux driver for the **Goodix 27c6:5e0a** fingerprint scann
 - **Native `libfprint` Integration**: Clean subclass of `FpiDeviceGoodixTls5xx` adhering to minimal, event-driven design principles.
 - **Hardware FDT Touch & Release**: Uses hardware capacitive Finger Detection Trigger (`0x32` FDT DOWN, `0x34` FDT UP) with sampled channel-energy gating (short silent re-poll on idle).
 - **TLS 1.2 PSK Encryption**: On-wire `TLS_PSK_WITH_AES_128_CBC_SHA256` with a device-specific PSK; cold path latches MCU crypto state via a Geneva 16-byte `0xe4` read of slot `0xbb020001` before TLS and uploads chip config after TLS (ticket 48).
-- **NIST NBIS Minutiae Verification**: NBIS extraction with Bozorth3 matching at operating point threshold 14 (`bz3_threshold = 14`, 5 enroll stages; ticket 43).
+- **NIST NBIS Minutiae Verification**: NBIS extraction with Bozorth3 matching at operating point threshold 14 (`bz3_threshold = 14`, 14 enroll stages; tickets 43/65/70).
 - **Sub-300ms Instant Unlock**: Direct SSM completion and immediate finger release reporting on image capture eliminate perceived latency without stalling on finger-lift polling.
 - **Empty-Air Rejection Gate**: Touch-gated capture plus an enrollment minutiae floor keep untouched or faint touches out of templates.
 - **Multi-Run PAM Stability**: Parked-TLS session reuse with idle-only gating across back-to-back claims, no desync or unknown-errors (tickets 38, 46, 49).
@@ -58,5 +58,5 @@ LGPL-2.1-or-later (consistent with upstream `libfprint`).
 
 ## Known limitations
 
-- **Enrollment coverage**: `fprintd` enrolls 5 stages of limited sensor area — less than the vendor Windows driver captures. Same-finger multi-enroll is an operator workaround with a FAR tradeoff; the matching pipeline is frozen (no tuning without impostor data).
+- **Enrollment coverage**: `fprintd` enrolls 14 stages of limited sensor area — less than the vendor Windows driver captures. Same-finger multi-enroll is an operator workaround with a FAR tradeoff; the matching pipeline is frozen (no tuning without impostor data).
 - **First-tap misses**: occasional no-match on the first tap after boot/restart, matching on re-tap. Under watch; not yet a ticket.

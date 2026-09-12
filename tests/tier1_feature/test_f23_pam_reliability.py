@@ -1,6 +1,6 @@
 """
 Tier 1 - Feature 23: Multi-Run PAM Verification & Enrollment Reliability
-Requirements: Pass 100% of multi-stage enroll (12 stages) and consecutive verification tests on hardware.
+Requirements: Pass 100% of multi-stage enroll (14 stages) and consecutive verification tests on hardware.
 """
 
 import unittest
@@ -16,11 +16,11 @@ class TestF23PAMReliability(unittest.TestCase):
     def setUp(self):
         self.mcu = MockGoodixMCU()
 
-    def test_enroll_stage_count_is_10(self):
-        """Verify device driver specifies exactly 10 enrollment stages (Ticket 65)."""
+    def test_enroll_stage_count_is_14(self):
+        """Verify device driver specifies exactly 14 enrollment stages (Tickets 65 + 70)."""
         with open(repo("libfprint-driver", "goodix5e0a.c"), "r") as f:
             content = f.read()
-        self.assertIn("nr_enroll_stages = 10", content)
+        self.assertIn("nr_enroll_stages = 14", content)
 
     def test_scan_type_is_press(self):
         """Verify driver scan type is FP_SCAN_TYPE_PRESS."""

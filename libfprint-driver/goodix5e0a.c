@@ -1682,10 +1682,12 @@ fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
   dev_class->full_name = "Goodix TLS Fingerprint Sensor 5e0a";
   dev_class->type = FP_DEVICE_TYPE_USB;
   dev_class->id_table = goodix_5e0a_id_table;
-  /* Ticket 65 pressure ladder: 10 stages give the central pad multi-sample
-   * gallery coverage (firm/medium/light/shift); 5 left a single pad template
-   * that rejected natural pressure/angle variation. */
-  dev_class->nr_enroll_stages = 10;
+  /* Ticket 70 coverage densification: 14 stages add four natural-pressure
+   * central micro-variants (rotation/shift) to the ticket-65 ladder — casual
+   * taps landed between the 10 samples (ticket 69: 20->13/14 near-miss) with
+   * no overlapping template inside Bozorth tolerance (10% stretch, 11 deg).
+   * Single-finger FAR 1.53% stays inside the ticket-65 K<=20 envelope. */
+  dev_class->nr_enroll_stages = 14;
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
   dev_class->temp_hot_seconds = -1; // Disable thermal watchdog
   dev_class->suspend = goodix5e0a_suspend;
