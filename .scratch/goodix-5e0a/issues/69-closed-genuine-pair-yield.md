@@ -4,7 +4,7 @@
 
 **Blocked by:** 68 (floor verified at 16; unlock-consistency falsified — this is the prescribed falsify-branch successor).
 
-**Status:** ready-for-hardware-verify
+**Status:** closed (verdict: (a) enrollment coverage confirmed 2026-09-12 — stage-2 duplicates 3/3 at 16–22/14, casuals 2/3; pipeline exonerated; successor ticket 70)
 
 ---
 
@@ -242,3 +242,50 @@ Sep 12 15:24:26 sastapc fprintd[399740]: 5e0a bz3 match: gallery[2]_nrows=22 sco
 Sep 12 15:24:26 sastapc fprintd[399740]: report_verify_status: result verify-match
 Sep 12 15:24:26 sastapc fprintd[399740]: verify_cb: result verify-match
 ```
+
+---
+
+## 8. Hardware rerun 2026-09-12 15:31–15:32 local (fresh ladder, stage 2 — firm (a))
+
+User re-ran full steps minus Phase 1 (`t69b-20260912-100136Z.log`, read
+directly from /tmp/opencode). Fresh enroll after delete: 3× rejections
+(12,11,15 < 16), `enroll-completed` 15:32:04, gallery
+[20,21,19,20,21,17,19,16,17,17] all ≥ 16. Firm-center stage reported: 2.
+
+| attempt | client UTC | journal | probe | max | result |
+| A1 duplicate stage-2 | 10:02:10 | 15:32:13 | 22 | gallery[3] 16/14 | MATCH |
+| A2 duplicate stage-2 | 10:02:19 | 15:32:21 | 24 | gallery[3] 22/14 | MATCH |
+| A3 duplicate stage-2 | 10:02:25 | 15:32:27 | 24 | gallery[3] 19/14 | MATCH |
+| B1 casual | 10:02:33 | 15:32:35 | 21 | gallery[3] 14/14 | MATCH |
+| B2 casual | 10:02:40 | 15:32:41 | 20 | gallery[4] 13/14 | no-match |
+| B3 casual | 10:02:45 | 15:32:50 | 22 | gallery[1] 16/14 | MATCH |
+
+- A-fidelity verified (stage 2 reported; all three hit gallery[3] at
+  16–22/14). Duplicates match strongly and consistently. A2's 24→22/14
+  (~92% pairing yield) kills (b): the pipeline pairs excellently when skin
+  overlaps template.
+- B 2/3 with B2's 20→13 near-miss on gallery[4]: casual angles still land
+  between enrolled samples. Exact §2 branch-(a) signature (A matches, B
+  misses).
+- Smoke: one `5e0a D34 reply (tolerant): Command timed out: 0x34` at
+  15:31:47 (pre-enroll claim, finger-on-sensor) — designed ticket-47
+  re-issue path per the ticket-53 reading note, not a failure. No
+  `Invalid ACK|verify-unknown-error|failed to`. Effectively PASS.
+- No Phase 1 in this rerun (user-skipped; silence proven §6 on this driver).
+
+Verdict: (a) enrollment coverage — FIRM. Next lane per §2: ladder/position
+guidance or stage-count revisit within ticket-65 FAR budget. Successor
+ticket 70. Floor stays 16, threshold stays 14; no driver change in 69.
+
+---
+
+## 9. Closure (2026-09-12)
+
+- Discriminating experiment complete across three runs: §6 (A 0/3
+  off-position, B 1/3), §7 (2/3, pure-(b) falsified, provisional), §8 (A
+  3/3 at 16–22/14 with verified stage-2 fidelity, B 2/3 — firm).
+- Cause (a) confirmed: genuine-pair yield follows placement overlap, not
+  image quality. Scores up to 22/14 prove the pipeline headroom.
+- No code change in this ticket (ticket-file only; driver/tests/patch
+  untouched throughout). Successor: 70-ready-for-agent-* coverage lane.
+  Do not re-litigate (a)/(b) without new hardware evidence.
