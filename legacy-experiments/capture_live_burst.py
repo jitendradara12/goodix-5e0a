@@ -52,6 +52,46 @@ CONFIG_52XD = bytes.fromhex(
 N_FRAMES = 4
 
 
+WIDTH = 64
+HEIGHT = 80
+BLOCKS = 80
+BLOCK_BYTES = 132
+ACTIVE_BYTES = 96
+WIRE_BYTES = BLOCKS * BLOCK_BYTES + 4  # 10564
+
+
+def unpack_12bit(data: bytes) -> list[int]:
+    pixels: list[int] = []
+    for offset in range(0, len(data), 6):
+        chunk = data[offset : offset + 6]
+        if len(chunk) < 6:
+            break
+        pixels.extend(
+            [
+                ((chunk[0] & 0x0F) << 8) | chunk[1],
+                (chunk[3] << 4) | (chunk[0] >> 4),
+                ((chunk[5] & 0x0F) << 8) | chunk[2],
+                (chunk[4] << 4) | (chunk[5] >> 4),
+            ]
+        )
+    return pixels
+
+
+def decode_canonical_frame(frame: bytes) -> list[int]:
+    packed = bytearray()
+    for block in range(BLOCKS):
+        start = block * BLOCK_BYTES
+        packed.extend(frame[start : start + ACTIVE_BYTES])
+    return unpack_12bit(bytes(packed))
+
+
+def write_canonical_pgm(path: str, pixels: list[int]) -> None:
+    lines = ["P2", f"{WIDTH} {HEIGHT}", "4095"]
+    lines.extend(str(value) for value in pixels)
+    with open(path, "w", encoding="ascii") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-prefix", required=True,
@@ -107,20 +147,20 @@ def main() -> int:
                     goodix.FLAGS_TRANSPORT_LAYER_SECURITY_DATA)
                 tls_client.sendall(img_req[9:])
                 time.sleep(0.15)
-                dec = tls_server.stdout.read(7684)
+                dec = tls_server.stdout.read(WIRE_BYTES)
                 print(f"frame {n}: encrypted={len(img_req)} decrypted={len(dec)}")
-                if len(dec) != 7684:
-                    print(f"frame {n}: SHORT READ ({len(dec)} != 7684) — "
+                if len(dec) != WIRE_BYTES:
+                    print(f"frame {n}: SHORT READ ({len(dec)} != {WIRE_BYTES}) — "
                           f"not saving; hold stiller and re-run.",
                           file=sys.stderr)
                     continue
-                pixels = tool.decode_image(dec[:-4])
+                pixels = decode_canonical_frame(dec)
                 active = sum(1 for p in pixels if p > 30)
                 print(f"frame {n}: pixels={len(pixels)} "
                       f"min={min(pixels)} max={max(pixels)} "
                       f"avg={sum(pixels)/len(pixels):.1f} active(>30)={active}")
                 out = f"{args.out_prefix}_{n:02d}.pgm"
-                tool.write_pgm(pixels, 80, 64, out)
+                write_canonical_pgm(out, pixels)
                 print(f"frame {n}: saved {out}")
             print(">>> BURST DONE — you may lift <<<")
         finally:

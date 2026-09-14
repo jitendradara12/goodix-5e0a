@@ -911,11 +911,17 @@ static int read_p5_pgm(const char *path, u8 *out_bytes, int *out_w, int *out_h) 
 //
 // Usage:
 //   gcc -O2 -o /tmp/opencode/enroll79 legacy-experiments/test_enroll_live_burst.c -lm
-//   timeout 180 /tmp/opencode/enroll79 [1.0|1.5] [live|live8|densectrl] [prefix]
+//   timeout 180 /tmp/opencode/enroll79 [1.0|1.5] [live|live8|densectrl|combo8pt|combo12] [prefix]
 //   prefix (ticket 80): enroll-burst path prefix without the _NN.pgm suffix,
 //     default "legacy-experiments/live_burst_press". Fuller-contact retest:
 //     timeout 180 /tmp/opencode/enroll79 1.0 live legacy-experiments/live_burst_press2
+//   ticket 81 combos ignore prefix (fixed burst-grouped paths logged per touch).
 // Exit 0 with [VERDICT ...]; exit 1 INCONCLUSIVE (DLL/template/frames missing).
+// NOTE (ticket 81): the [VERDICT ...] macros below are ticket-79 press-centric
+// text reused as data only; judge ticket-81 branches solely per the ticket-81
+// predicted signatures (confirm/falsify/inconclusive-because-[flaw]) using
+// [enroll-src] pre-enroll values, [touch] add_res/stitched/progress, packed
+// size, and match counts — never cite post-enroll q/ov (state-polluted).
 
 // Driver-faithful local-contrast normalization at the as-shipped shaping.
 // Matches libfprint-driver/goodix5e0a.c goodix5e0a_normalize_raw_frame:
@@ -1007,20 +1013,31 @@ int main(int argc, char **argv) {
     // Modes (argv): live = 4 press frames direct (default); live8 = press
     // frames cycled x2 (8 touches); densectrl = ticket-72 faithful control
     // (synthetic dense + shift perturbation, proves the enroll path works).
-    // Gain (argv): shaping gain at midpoint 128 (default 1.0 = driver).
+    // Ticket 81: combo8pt = 8 DISTINCT press+tap frames burst-grouped
+    // _04.._01 per burst (press_04,03,02,01 then tap_04,03,02,01) — matches
+    // live8's 8-touch count at fixed total touches, isolating independence;
+    // combo12 = 12 DISTINCT press+tap+press2 frames burst-grouped _04.._01
+    // per burst concatenated — gated dose-escalation AFTER combo8pt, not a
+    // combined verdict. Order rule is fixed (burst-grouped _04.._01, the
+    // live-mode per-burst convention concatenated); no interleaving or
+    // range-sorting. Gain (argv): shaping gain at midpoint 128 (default
+    // 1.0 = driver).
     float gain = 1.0f;
     const char *mode = "live";
     const char *prefix = "legacy-experiments/live_burst_press";
     if (argc > 1) gain = strtof(argv[1], NULL);
     if (argc > 2) mode = argv[2];
     if (argc > 3) prefix = argv[3];
-    if (!(gain == 1.0f || gain == 1.5f)) { fprintf(stderr, "[usage] enroll79 [1.0|1.5] [live|live8|densectrl] [prefix]\n"); return 1; }
+    if (!(gain == 1.0f || gain == 1.5f)) { fprintf(stderr, "[usage] enroll79 [1.0|1.5] [live|live8|densectrl|combo8pt|combo12] [prefix]\n"); return 1; }
     fprintf(stderr, "[config] gain=%.1f mode=%s prefix=%s\n", gain, mode,
             (strcmp(mode, "densectrl") == 0) ? "(n/a)" : prefix);
 
     // ---- Enrollment sources (shaped at <gain>; quality read PRE-enroll so
     // post-enroll engine state can never pollute the quality column) ----
-    u8 enrol_imgs[8][GOODIX_FRAME_SIZE];
+    // Ticket 81: sized [16] for combo12 (max_images=16 below); completion
+    // criterion *(ctx+8)=8 stays unchanged for all modes (touches 9-12 in
+    // combo12 are extra beyond 100%, logged as-is — not a second variable).
+    u8 enrol_imgs[16][GOODIX_FRAME_SIZE];
     int n_enrol = 0;
     if (strcmp(mode, "densectrl") == 0) {
         // Ticket-72 faithful: synthetic dense base + sub-pixel shifts.
@@ -1047,13 +1064,67 @@ int main(int argc, char **argv) {
     } else {
         // Live burst from <prefix>_04.._01.pgm, most settled first (ticket 80:
         // prefix argv points at the fuller-contact burst without re-editing);
-        // live8 cycles twice.
+        // live8 cycles twice. Ticket 81 combos use FIXED burst-grouped
+        // _04.._01 per-burst order concatenated (the live-mode convention,
+        // no interleaving): combo8pt = press_04..01 + tap_04..01 (8 distinct,
+        // fixed paths, prefix argv ignored); combo12 = press_04..01 +
+        // tap_04..01 + press2_04..01 (12 distinct, third-attempt press2 bytes;
+        // second-attempt console-only data never used as image input).
+        static const char *combo8pt_paths[8] = {
+            "legacy-experiments/live_burst_press_04.pgm",
+            "legacy-experiments/live_burst_press_03.pgm",
+            "legacy-experiments/live_burst_press_02.pgm",
+            "legacy-experiments/live_burst_press_01.pgm",
+            "legacy-experiments/live_burst_tap_04.pgm",
+            "legacy-experiments/live_burst_tap_03.pgm",
+            "legacy-experiments/live_burst_tap_02.pgm",
+            "legacy-experiments/live_burst_tap_01.pgm",
+        };
+        static const char *combo12_paths[12] = {
+            "legacy-experiments/live_burst_press_04.pgm",
+            "legacy-experiments/live_burst_press_03.pgm",
+            "legacy-experiments/live_burst_press_02.pgm",
+            "legacy-experiments/live_burst_press_01.pgm",
+            "legacy-experiments/live_burst_tap_04.pgm",
+            "legacy-experiments/live_burst_tap_03.pgm",
+            "legacy-experiments/live_burst_tap_02.pgm",
+            "legacy-experiments/live_burst_tap_01.pgm",
+            "legacy-experiments/live_burst_press2_04.pgm",
+            "legacy-experiments/live_burst_press2_03.pgm",
+            "legacy-experiments/live_burst_press2_02.pgm",
+            "legacy-experiments/live_burst_press2_01.pgm",
+        };
+        const char **combo_paths = NULL;
+        int combo_n = 0;
+        if (strcmp(mode, "combo8pt") == 0) { combo_paths = combo8pt_paths; combo_n = 8; }
+        else if (strcmp(mode, "combo12") == 0) { combo_paths = combo12_paths; combo_n = 12; }
+        if (combo_paths) {
+            fprintf(stderr, "[enroll-src] %s: %d DISTINCT frames burst-grouped _04.._01 (order below)\n",
+                    mode, combo_n);
+            for (int i = 0; i < combo_n; i++) {
+                u16 raw[GOODIX_FRAME_SIZE];
+                int pw = 0, ph = 0;
+                if (read_p2_pgm(combo_paths[i], raw, &pw, &ph) != 0) {
+                    fprintf(stderr, "[INCONCLUSIVE-because-live-missing] %s unreadable\n", combo_paths[i]);
+                    return 1;
+                }
+                float rmin = 0, rmax = 0;
+                normalize_driver_shaping(raw, enrol_imgs[n_enrol], &rmin, &rmax, gain);
+                GoodixImage qimg;
+                make_goodix_image(&qimg, enrol_imgs[n_enrol], sensor_type);
+                u32 qout[2] = {0xdeadbeef, 0xdeadbeef};
+                getQuality(&qimg, qout);
+                fprintf(stderr, "[enroll-src] touch-order %d/%d %s range=%.1f q=%u ov=%u (pre-enroll)\n",
+                        i + 1, combo_n, combo_paths[i], rmax - rmin, qimg.quality, qimg.overlap);
+                n_enrol++;
+            }
+        } else {
         char press_paths[4][256];
         for (int i = 0; i < 4; i++)
             snprintf(press_paths[i], sizeof(press_paths[i]), "%s_%02d.pgm", prefix, 4 - i);
         int cycles = (strcmp(mode, "live8") == 0) ? 2 : 1;
         if (strcmp(mode, "live") != 0 && strcmp(mode, "live8") != 0) {
-            fprintf(stderr, "[usage] enroll79 [1.0|1.5] [live|live8|densectrl] [prefix]\n");
+            fprintf(stderr, "[usage] enroll79 [1.0|1.5] [live|live8|densectrl|combo8pt|combo12] [prefix]\n");
             return 1;
         }
         for (int c = 0; c < cycles; c++) {
@@ -1075,6 +1146,7 @@ int main(int argc, char **argv) {
                 n_enrol++;
             }
         }
+        } // end non-combo live/live8 branch
     }
 
     // ---- Multi-touch enrollment ----
