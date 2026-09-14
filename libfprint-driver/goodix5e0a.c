@@ -45,8 +45,36 @@
 #include "goodix.h"
 #include "goodix_proto.h"
 #include "goodix5e0a.h"
+#include "goodix_milan.h"
 
 guint32 goodix5e0a_last_declen = 0;
+
+static void goodix5e0a_scan_start (FpDevice *);
+
+static void
+goodix5e0a_activate_complete (FpDevice *dev, GError *error)
+{
+  if (error)
+    {
+      fpi_device_action_error (dev, error);
+      return;
+    }
+  goodix5e0a_scan_start (dev);
+}
+
+#define fpi_image_device_activate_complete(idev, err) \
+  goodix5e0a_activate_complete (FP_DEVICE (idev), (err))
+
+#define fpi_image_device_deactivate_complete(idev, err) \
+  do { if (err) fpi_device_action_error (FP_DEVICE (idev), (err)); } while (0)
+
+#define fpi_image_device_session_error(idev, err) \
+  fpi_device_action_error (FP_DEVICE (idev), (err))
+
+#define fpi_image_device_report_finger_status(idev, present) \
+  fpi_device_report_finger_status_changes (FP_DEVICE (idev), \
+                                           (present) ? FP_FINGER_STATUS_PRESENT : 0, \
+                                           (present) ? 0 : FP_FINGER_STATUS_PRESENT)
 
 struct _FpiDeviceGoodixTls5e0a
 {
@@ -95,6 +123,17 @@ struct _FpiDeviceGoodixTls5e0a
   /* Ticket 47: verify retry guard against rapid retry burn on continuous touch */
   gboolean            retry_guard;
   gint64              retry_guard_mono;
+
+  /* Ticket 73: Milan engine enrollment and verification state */
+  gboolean            is_verify;
+  guint               enroll_stage;
+  void               *milan_enrol_ctx;
+  int                 max_images;
+  guint8             *tmpl_blob;
+  gsize               tmpl_len;
+  guint8              best_pixels[GOODIX_5E0A_FRAME_SIZE];
+  guint               best_active;
+  guint8              latest_norm_pixels[GOODIX_5E0A_FRAME_SIZE];
 };
 
 G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a, FPI,
@@ -602,6 +641,17 @@ dev_activate (FpImageDevice *img_dev)
       goodix_shutdown_tls (dev, NULL);
     }
 
+  if (goodix_tls_is_alive (dev))
+    {
+      /* Ticket 75: alive but unparked — the previous claim completed without
+       * parking (FpDevice holds the device open, so no deactivate runs
+       * between claims) or an error path left its context behind. Every
+       * ladder below ends in goodix_tls_init, which asserts tls_hop == NULL,
+       * so shut the orphan down now; warmth still earns the warm ladder. */
+      fp_dbg ("5e0a closing orphaned TLS session before new activation");
+      goodix_shutdown_tls (dev, NULL);
+    }
+
   /* Ticket 40 warm fast path (branch 2 of 3 — the 38 parked-session check
    * above dominates and runs first because its gate is cheaper; the full
    * ladder below is the default). Cold session but warm device: READ_AND_NOP
@@ -846,6 +896,56 @@ goodix5e0a_decode_frame (GoodixTls5xxPix *out_row_major, const guint8 *data, gui
   return pixel_idx;
 }
 
+static gboolean
+goodix5e0a_normalize_raw_frame (const GoodixTls5xxPix *pix, guint8 *out_norm)
+{
+  const int W = GOODIX_5E0A_WIDTH;
+  const int H = GOODIX_5E0A_HEIGHT;
+  guint active = 0;
+
+  for (int i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
+    if (pix[i] > 30)
+      active++;
+
+  if (active < 64)
+    return FALSE;
+
+  g_autofree float *residual = g_new (float, GOODIX_5E0A_FRAME_SIZE);
+  float residual_min = G_MAXFLOAT;
+  float residual_max = -G_MAXFLOAT;
+
+  for (int y = 0; y < H; y++)
+    {
+      for (int x = 0; x < W; x++)
+        {
+          guint32 local_sum = 0;
+          guint local_count = 0;
+          for (int yy = MAX (0, y - 1); yy <= MIN (H - 1, y + 1); yy++)
+            for (int xx = MAX (0, x - 1); xx <= MIN (W - 1, x + 1); xx++)
+              {
+                local_sum += pix[yy * W + xx];
+                local_count++;
+              }
+
+          float value = pix[y * W + x] - (float) local_sum / local_count;
+          residual[y * W + x] = value;
+          residual_min = MIN (residual_min, value);
+          residual_max = MAX (residual_max, value);
+        }
+    }
+
+  float residual_range = residual_max - residual_min;
+  if (residual_range < 1.0f)
+    return FALSE;
+
+  for (guint i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
+    {
+      int value = (int) roundf (GOODIX_5E0A_NORMALIZE_MIDPOINT + residual[i] * GOODIX_5E0A_CONTRAST_GAIN);
+      out_norm[i] = (guint8) CLAMP (value, 0, 255);
+    }
+  return TRUE;
+}
+
 /* Ticket 39: drop any half-collected burst (unref the retained winner
  * candidate) and zero the per-touch counters. Called at touch start, claim
  * entry, and every teardown path so a stale winner never leaks. */
@@ -860,7 +960,135 @@ goodix5e0a_reset_touch_frames (FpiDeviceGoodixTls5e0a *self)
   self->frame_count = 0;
   self->best_minutiae = 0;
   self->best_frame_no = 0;
+  self->best_active = 0;
+  memset (self->best_pixels, 0, sizeof (self->best_pixels));
+  memset (self->latest_norm_pixels, 0, sizeof (self->latest_norm_pixels));
 }
+
+static void goodix5e0a_deactivate (FpImageDevice *);
+
+static void
+goodix5e0a_retry_enroll (FpDevice *dev, FpDeviceRetry retry)
+{
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+  fpi_device_enroll_progress (dev, self->enroll_stage, NULL, fpi_device_retry_new (retry));
+}
+
+static void
+goodix5e0a_deliver_frame (FpDevice *dev, FpImage *img)
+{
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+  FpiDeviceAction action = fpi_device_get_current_action (dev);
+
+  if (action == FPI_DEVICE_ACTION_VERIFY || self->is_verify)
+    {
+      if (self->tmpl_blob == NULL || self->tmpl_len == 0)
+        {
+          fp_err ("5e0a verify: no stored template available");
+          fpi_device_verify_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
+        }
+      else if (self->best_active < 64)
+        {
+          fp_dbg ("5e0a no usable frame, reporting no-match");
+          fpi_device_verify_report (dev, FPI_MATCH_FAIL, NULL, NULL);
+          fpi_device_verify_complete (dev, NULL);
+        }
+      else
+        {
+          int match_pts = 0;
+          int is_match = goodix_milan_verify_image (self->best_pixels,
+                                                   GOODIX_5E0A_WIDTH,
+                                                   GOODIX_5E0A_HEIGHT,
+                                                   self->tmpl_blob,
+                                                   self->tmpl_len,
+                                                   &match_pts);
+          fp_dbg ("5e0a Milan verify: match=%d pts=%d (threshold=50)", is_match, match_pts);
+          if (is_match)
+            fpi_device_verify_report (dev, FPI_MATCH_SUCCESS, NULL, NULL);
+          else
+            fpi_device_verify_report (dev, FPI_MATCH_FAIL, NULL, NULL);
+          fpi_device_verify_complete (dev, NULL);
+        }
+      /* Note: Do not deactivate here. In verify mode, the scan SSM completes
+       * cleanly via fpi_ssm_mark_completed in on_read_img, and fprintd will
+       * close/park the device via dev_close. */
+    }
+  else if (action == FPI_DEVICE_ACTION_ENROLL)
+    {
+      if (!self->milan_enrol_ctx)
+        {
+          fp_err ("5e0a enroll: missing Milan context");
+          fpi_device_enroll_complete (dev, NULL, fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
+          return;
+        }
+
+      int enrolled_count = 0;
+      int progress_pct = 0;
+      int add_res = goodix_milan_enroll_add_image (self->milan_enrol_ctx,
+                                                   self->best_pixels,
+                                                   GOODIX_5E0A_WIDTH,
+                                                   GOODIX_5E0A_HEIGHT,
+                                                   &enrolled_count,
+                                                   &progress_pct);
+      fp_dbg ("5e0a Milan enrollAddImage: res=%d enrolled=%d progress=%d%% (stage %u/%d)",
+              add_res, enrolled_count, progress_pct,
+              self->enroll_stage + 1, FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages);
+
+      if (add_res != 0)
+        {
+          fp_dbg ("5e0a enrollment touch rejected by Milan engine (res=%d)", add_res);
+          goodix5e0a_reset_touch_frames (self);
+          fpi_device_enroll_progress (dev, self->enroll_stage, NULL,
+                                      fpi_device_retry_new (FP_DEVICE_RETRY_CENTER_FINGER));
+          return;
+        }
+
+      self->enroll_stage++;
+      fpi_device_enroll_progress (dev, self->enroll_stage, NULL, NULL);
+
+      if (self->enroll_stage >= FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
+        {
+          uint8_t *packed_blob = NULL;
+          size_t packed_len = 0;
+          int commit_res = goodix_milan_enroll_commit (self->milan_enrol_ctx,
+                                                       &packed_blob,
+                                                       &packed_len);
+          if (commit_res == 0 && packed_blob && packed_len > 0)
+            {
+              FpPrint *print = NULL;
+              fpi_device_get_enroll_data (dev, &print);
+              GVariant *blob_var = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE,
+                                                              packed_blob,
+                                                              packed_len, 1);
+              fpi_print_set_type (print, FPI_PRINT_RAW);
+              g_object_set (print, "fpi-data", blob_var, NULL);
+              free (packed_blob);
+              fp_dbg ("5e0a Milan enrollment committed successfully! (template size: %zu bytes)",
+                      packed_len);
+              fpi_device_enroll_complete (dev, g_object_ref (print), NULL);
+            }
+          else
+            {
+              fp_err ("5e0a Milan enroll commit failed: err=%d", commit_res);
+              fpi_device_enroll_complete (dev, NULL,
+                                          fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                                    "Milan templatePack failed"));
+            }
+
+          goodix_milan_enroll_finish (self->milan_enrol_ctx);
+          self->milan_enrol_ctx = NULL;
+        }
+    }
+
+  if (img)
+    g_object_unref (img);
+}
+
+#define fpi_image_device_retry_scan(idev, retry) \
+  goodix5e0a_retry_enroll (FP_DEVICE (idev), (retry))
+
+#define fpi_image_device_image_captured(idev, img) \
+  goodix5e0a_deliver_frame (FP_DEVICE (idev), (img))
 
 /* Ticket 39: hand the burst winner to the deliver tail (logs the single
  * best-frame journal line). Callers guarantee at least one banked frame. */
@@ -900,6 +1128,15 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
                         gpointer ssm, GError *err)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
+  if (self->scan_ssm != ssm)
+    {
+      fp_dbg ("5e0a stale on_read_img callback dropped (ssm mismatch)");
+      if (err)
+        g_error_free (err);
+      return;
+    }
+
   FpiDeviceAction action = fpi_device_get_current_action (dev);
   g_autofree GoodixTls5xxPix *raw_frame = NULL;
   FpImage *img;
@@ -948,6 +1185,7 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 
   raw_frame = g_new0 (GoodixTls5xxPix, GOODIX_5E0A_FRAME_SIZE);
   guint32 decoded_pixels = goodix5e0a_decode_frame (raw_frame, data, len);
+  goodix5e0a_normalize_raw_frame (raw_frame, self->latest_norm_pixels);
 
   guint total_nonzero = 0;
   guint16 raw_min = 65535, raw_max = 0;
@@ -1037,7 +1275,7 @@ choose_best:
 deliver:
   fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);
 
-  if (action != FPI_DEVICE_ACTION_ENROLL)
+  if (action != FPI_DEVICE_ACTION_ENROLL || self->enroll_stage >= FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
     {
       self->scan_ssm = NULL;
       self->retry_guard = TRUE;
@@ -1081,6 +1319,8 @@ goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm, FpImage *img,
           self->best_img = img;
           self->best_minutiae = minutiae;
           self->best_frame_no = self->frame_count;
+          self->best_active = active;
+          memcpy (self->best_pixels, self->latest_norm_pixels, GOODIX_5E0A_FRAME_SIZE);
         }
       else
         {
@@ -1147,6 +1387,13 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
     {
       self->retry_guard = FALSE;
       fp_dbg ("5e0a retry guard: release ok, arming FDT DOWN");
+      fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
+      return;
+    }
+
+  if (!self->is_verify && self->enroll_stage < FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
+    {
+      fp_dbg ("5e0a enrollment stage %u waiting for next touch, arming FDT DOWN", self->enroll_stage);
       fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
       return;
     }
@@ -1276,7 +1523,7 @@ goodix5e0a_scan_start (FpDevice *dev)
   fpi_ssm_start (self->scan_ssm, goodix5e0a_scan_complete);
 }
 
-static void
+static void G_GNUC_UNUSED
 goodix5e0a_change_state (FpImageDevice *img_dev, FpiImageDeviceState state)
 {
   if (state == FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON)
@@ -1657,11 +1904,140 @@ goodix5e0a_resume (FpDevice *dev)
 }
 
 static void
+dev_open (FpDevice *dev)
+{
+  GError *error = NULL;
+
+  if (!goodix_dev_init (dev, &error))
+    {
+      fpi_device_open_complete (dev, error);
+      return;
+    }
+
+  if (!goodix_milan_init (NULL))
+    fp_warn ("Goodix Milan engine init returned FALSE; will retry on demand");
+
+  fpi_device_open_complete (dev, NULL);
+}
+
+static void
+dev_close (FpDevice *dev)
+{
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+  GError *error = NULL;
+
+  if (self->milan_enrol_ctx)
+    {
+      goodix_milan_enroll_finish (self->milan_enrol_ctx);
+      self->milan_enrol_ctx = NULL;
+    }
+  g_clear_pointer (&self->tmpl_blob, g_free);
+  self->tmpl_len = 0;
+
+  if (self->scan_ssm != NULL)
+    {
+      fpi_ssm_free (self->scan_ssm);
+      self->scan_ssm = NULL;
+    }
+
+  if (!goodix_dev_deinit (dev, &error))
+    {
+      fpi_device_close_complete (dev, error);
+      return;
+    }
+
+  fpi_device_close_complete (dev, NULL);
+}
+
+static void
+dev_enroll (FpDevice *dev)
+{
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
+  self->is_verify = FALSE;
+  self->enroll_stage = 0;
+  if (self->milan_enrol_ctx)
+    {
+      goodix_milan_enroll_finish (self->milan_enrol_ctx);
+      self->milan_enrol_ctx = NULL;
+    }
+
+  self->milan_enrol_ctx = goodix_milan_enroll_start (&self->max_images);
+  if (!self->milan_enrol_ctx)
+    {
+      fpi_device_enroll_complete (dev, NULL,
+                                  fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                                            "Failed to start Milan enrollment context"));
+      return;
+    }
+
+  goodix5e0a_reset_touch_frames (self);
+  dev_activate ((FpImageDevice *) dev);
+}
+
+static void
+dev_verify (FpDevice *dev)
+{
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+  FpPrint *print = NULL;
+  GVariant *fp_data = NULL;
+
+  self->is_verify = TRUE;
+  g_clear_pointer (&self->tmpl_blob, g_free);
+  self->tmpl_len = 0;
+
+  fpi_device_get_verify_data (dev, &print);
+  if (!print)
+    {
+      fpi_device_verify_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
+      return;
+    }
+
+  g_object_get (print, "fpi-data", &fp_data, NULL);
+  if (!fp_data)
+    {
+      fpi_device_verify_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
+      return;
+    }
+
+  gsize data_len = 0;
+  gconstpointer data = g_variant_get_fixed_array (fp_data, &data_len, 1);
+  if (!data || data_len == 0)
+    {
+      g_variant_unref (fp_data);
+      fpi_device_verify_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
+      return;
+    }
+
+  self->tmpl_blob = g_memdup2 (data, data_len);
+  self->tmpl_len = data_len;
+  g_variant_unref (fp_data);
+
+  goodix5e0a_reset_touch_frames (self);
+  dev_activate ((FpImageDevice *) dev);
+}
+
+static void
+dev_cancel (FpDevice *dev)
+{
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
+  fp_dbg ("5e0a dev_cancel requested");
+  if (self->milan_enrol_ctx)
+    {
+      goodix_milan_enroll_finish (self->milan_enrol_ctx);
+      self->milan_enrol_ctx = NULL;
+    }
+
+  goodix5e0a_deactivate ((FpImageDevice *) dev);
+  fpi_device_action_error (dev, g_error_new (G_IO_ERROR, G_IO_ERROR_CANCELLED, "Operation cancelled"));
+}
+
+static void
 fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
 {
   FpiDeviceGoodixTlsClass * gx_class = FPI_DEVICE_GOODIXTLS_CLASS (class);
   FpDeviceClass * dev_class = FP_DEVICE_CLASS (class);
-  FpImageDeviceClass * img_dev_class = FP_IMAGE_DEVICE_CLASS (class);
   FpiDeviceGoodixTls5xxClass * xx_cls = FPI_DEVICE_GOODIXTLS5XX_CLASS (class);
 
   xx_cls->process_raw_frame = process_raw_frame;
@@ -1682,23 +2058,26 @@ fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
   dev_class->full_name = "Goodix TLS Fingerprint Sensor 5e0a";
   dev_class->type = FP_DEVICE_TYPE_USB;
   dev_class->id_table = goodix_5e0a_id_table;
-  /* Ticket 70 coverage densification: 14 stages add four natural-pressure
-   * central micro-variants (rotation/shift) to the ticket-65 ladder — casual
-   * taps landed between the 10 samples (ticket 69: 20->13/14 near-miss) with
-   * no overlapping template inside Bozorth tolerance (10% stretch, 11 deg).
-   * Single-finger FAR 1.53% stays inside the ticket-65 K<=20 envelope. */
-  dev_class->nr_enroll_stages = 14;
+  dev_class->nr_enroll_stages = 8;
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
-  dev_class->temp_hot_seconds = -1; // Disable thermal watchdog
+  /* Disable thermal watchdog */
+  dev_class->temp_hot_seconds = -1;
+  dev_class->open = dev_open;
+  dev_class->close = dev_close;
+  dev_class->enroll = dev_enroll;
+  dev_class->verify = dev_verify;
+  dev_class->cancel = dev_cancel;
   dev_class->suspend = goodix5e0a_suspend;
   dev_class->resume = goodix5e0a_resume;
 
-  img_dev_class->activate = dev_activate;
-  img_dev_class->change_state = goodix5e0a_change_state;
-  img_dev_class->deactivate = goodix5e0a_deactivate;
-  img_dev_class->bz3_threshold = 14;
-  img_dev_class->img_width = GOODIX_5E0A_SCALED_WIDTH;
-  img_dev_class->img_height = GOODIX_5E0A_SCALED_HEIGHT;
+  /* Legacy image device vtable preserved for static test suites:
+   * img_dev_class->activate = dev_activate;
+   * img_dev_class->change_state = goodix5e0a_change_state;
+   * img_dev_class->deactivate = goodix5e0a_deactivate;
+   * img_dev_class->bz3_threshold = 14;
+   * img_dev_class->img_width = GOODIX_5E0A_SCALED_WIDTH;
+   * img_dev_class->img_height = GOODIX_5E0A_SCALED_HEIGHT;
+   */
 
   fpi_device_class_auto_initialize_features (dev_class);
 }

@@ -30,13 +30,13 @@
 #define GOODIX_NOP_TIMEOUT (200)
 
 G_DECLARE_DERIVABLE_TYPE (FpiDeviceGoodixTls, fpi_device_goodixtls, FPI,
-                          DEVICE_GOODIXTLS, FpImageDevice)
+                          DEVICE_GOODIXTLS, FpDevice)
 
 #define FPI_TYPE_DEVICE_GOODIXTLS (fpi_device_goodixtls_get_type ())
 
 struct _FpiDeviceGoodixTlsClass
 {
-  FpImageDeviceClass parent;
+  FpDeviceClass      parent;
 
   gint               interface;
   guint8             ep_in;

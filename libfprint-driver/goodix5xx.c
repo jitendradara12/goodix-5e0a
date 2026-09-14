@@ -548,7 +548,7 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 max_pixels, guint32 
     }
 }
 
-static void
+static void G_GNUC_UNUSED
 dev_change_state (FpImageDevice * img_dev, FpiImageDeviceState state)
 {
   if (state == FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON)
@@ -560,13 +560,13 @@ dev_deinit (FpImageDevice * img_dev)
   FpDevice *dev = FP_DEVICE (img_dev);
   GError *error = NULL;
 
-  if (goodix_dev_deinit (dev, &error))
+  if (!goodix_dev_deinit (dev, &error))
     {
-      fpi_image_device_close_complete (img_dev, error);
+      fpi_device_close_complete (dev, error);
       return;
     }
 
-  fpi_image_device_close_complete (img_dev, NULL);
+  fpi_device_close_complete (dev, NULL);
 }
 static void
 dev_init (FpImageDevice *img_dev)
@@ -574,16 +574,16 @@ dev_init (FpImageDevice *img_dev)
   FpDevice *dev = FP_DEVICE (img_dev);
   GError *error = NULL;
 
-  if (goodix_dev_init (dev, &error))
+  if (!goodix_dev_init (dev, &error))
     {
-      fpi_image_device_open_complete (img_dev, error);
+      fpi_device_open_complete (dev, error);
       return;
     }
 
-  fpi_image_device_open_complete (img_dev, NULL);
+  fpi_device_open_complete (dev, NULL);
 }
 
-static void
+static void G_GNUC_UNUSED
 dev_deactivate (FpImageDevice *img_dev)
 {
   FpDevice *dev = FP_DEVICE (img_dev);
@@ -650,12 +650,10 @@ fpi_device_goodixtls5xx_class_init (FpiDeviceGoodixTls5xxClass * self)
   self->scan_width = 0;
   self->reset_state = NULL;
 
-  FpImageDeviceClass *img_cls = FP_IMAGE_DEVICE_CLASS (self);
+  FpDeviceClass *dev_cls = FP_DEVICE_CLASS (self);
 
-  img_cls->change_state = dev_change_state;
-  img_cls->deactivate = dev_deactivate;
-  img_cls->img_close = dev_deinit;
-  img_cls->img_open = dev_init;
+  dev_cls->close = (void (*)(FpDevice *)) dev_deinit;
+  dev_cls->open = (void (*)(FpDevice *)) dev_init;
 }
 
 void

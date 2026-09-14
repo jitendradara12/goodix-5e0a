@@ -1,5 +1,5 @@
 diff --git a/libfprint/drivers/goodixtls/goodix.c b/libfprint/drivers/goodixtls/goodix.c
-index 236589f..1996888 100644
+index 236589f..3e3cf46 100644
 --- a/libfprint/drivers/goodixtls/goodix.c
 +++ b/libfprint/drivers/goodixtls/goodix.c
 @@ -27,9 +27,12 @@
@@ -15,7 +15,7 @@ index 236589f..1996888 100644
  
  #include "drivers_api.h"
  #include "goodix.h"
-@@ -55,16 +58,51 @@ typedef struct
+@@ -55,15 +58,50 @@ typedef struct
  
    GoodixCallbackInfo *tls_ready_callback;
  
@@ -64,14 +64,14 @@ index 236589f..1996888 100644
  } FpiDeviceGoodixTlsPrivate;
  
  G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (FpiDeviceGoodixTls, fpi_device_goodixtls,
-                                      FP_TYPE_IMAGE_DEVICE);
- 
+-                                     FP_TYPE_IMAGE_DEVICE);
+-
 -// TODO remove every GDestroyNotify
 -// TODO add cmd timeouts
--
++                                     FP_TYPE_DEVICE);
+ 
  gchar *
  data_to_str (guint8 *data, guint32 length)
- {
 @@ -78,7 +116,20 @@ data_to_str (guint8 *data, guint32 length)
  
  // ---- GOODIX RECEIVE SECTION START ----
@@ -1224,11 +1224,13 @@ index 236589f..1996888 100644
  void
  goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
  {
-@@ -1403,10 +1849,10 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
+@@ -1402,11 +1848,11 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
+   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
-   g_assert (priv->tls_hop == NULL);
+-  g_assert (priv->tls_hop == NULL);
 -  priv->tls_hop = malloc (sizeof (GoodixTlsServer));
++  g_assert (priv->tls_hop == NULL);
 +  priv->tls_hop = g_new0 (GoodixTlsServer, 1);
  
    if (!priv->tls_ready_callback)
@@ -1237,7 +1239,7 @@ index 236589f..1996888 100644
    priv->tls_ready_callback->callback = G_CALLBACK (callback);
    priv->tls_ready_callback->user_data = user_data;
    GoodixTlsServer *s = priv->tls_hop;
-@@ -1416,10 +1862,26 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
+@@ -1416,10 +1869,26 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
      {
        fp_err ("failed to init tls server, error: %s, code: %d", err->message,
                err->code);
@@ -1265,7 +1267,7 @@ index 236589f..1996888 100644
  }
  
  gboolean
-@@ -1434,16 +1896,32 @@ goodix_shutdown_tls (FpDevice *dev, GError **error)
+@@ -1434,16 +1903,32 @@ goodix_shutdown_tls (FpDevice *dev, GError **error)
        gboolean rs = goodix_tls_server_deinit (priv->tls_hop, error);
        g_free (priv->tls_hop);
        priv->tls_hop = NULL;
@@ -1299,7 +1301,7 @@ index 236589f..1996888 100644
    GoodixCallbackInfo *cb_info = user_data;
    GoodixImageCallback callback = (GoodixImageCallback) cb_info->callback;
  
-@@ -1457,10 +1935,31 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
+@@ -1457,10 +1942,31 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
  
@@ -1334,7 +1336,7 @@ index 236589f..1996888 100644
    GError *err = NULL;
    int read_size = goodix_tls_server_read (priv->tls_hop, buff, size, &err);
  
-@@ -1472,7 +1971,6 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
+@@ -1472,7 +1978,6 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
      }
  
    callback (dev, buff, read_size, cb_info->user_data, NULL);
@@ -1342,7 +1344,7 @@ index 236589f..1996888 100644
    g_free (cb_info);
  }
  
-@@ -1481,7 +1979,7 @@ goodix_tls_read_image (FpDevice *dev, GoodixImageCallback callback,
+@@ -1481,7 +1986,7 @@ goodix_tls_read_image (FpDevice *dev, GoodixImageCallback callback,
                         gpointer user_data)
  {
    g_assert (callback);
@@ -1352,10 +1354,10 @@ index 236589f..1996888 100644
    cb_info->callback = G_CALLBACK (callback);
    cb_info->user_data = user_data;
 diff --git a/libfprint/drivers/goodixtls/goodix.h b/libfprint/drivers/goodixtls/goodix.h
-index 08bc254..50532ae 100644
+index 08bc254..2e213db 100644
 --- a/libfprint/drivers/goodixtls/goodix.h
 +++ b/libfprint/drivers/goodixtls/goodix.h
-@@ -25,6 +25,10 @@
+@@ -25,14 +25,18 @@
  // 1 seconds USB timeout
  #define GOODIX_TIMEOUT (1000)
  
@@ -1364,8 +1366,18 @@ index 08bc254..50532ae 100644
 +#define GOODIX_NOP_TIMEOUT (200)
 +
  G_DECLARE_DERIVABLE_TYPE (FpiDeviceGoodixTls, fpi_device_goodixtls, FPI,
-                           DEVICE_GOODIXTLS, FpImageDevice)
+-                          DEVICE_GOODIXTLS, FpImageDevice)
++                          DEVICE_GOODIXTLS, FpDevice)
  
+ #define FPI_TYPE_DEVICE_GOODIXTLS (fpi_device_goodixtls_get_type ())
+ 
+ struct _FpiDeviceGoodixTlsClass
+ {
+-  FpImageDeviceClass parent;
++  FpDeviceClass      parent;
+ 
+   gint               interface;
+   guint8             ep_in;
 @@ -104,23 +108,6 @@ gchar *data_to_str (guint8 *data,
   * @{
   *
@@ -1656,10 +1668,10 @@ index a19379c..9fee8a9 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..f892649
+index 0000000..1a26f30
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,1704 @@
+@@ -0,0 +1,2083 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -1707,8 +1719,36 @@ index 0000000..f892649
 +#include "goodix.h"
 +#include "goodix_proto.h"
 +#include "goodix5e0a.h"
++#include "goodix_milan.h"
 +
 +guint32 goodix5e0a_last_declen = 0;
++
++static void goodix5e0a_scan_start (FpDevice *);
++
++static void
++goodix5e0a_activate_complete (FpDevice *dev, GError *error)
++{
++  if (error)
++    {
++      fpi_device_action_error (dev, error);
++      return;
++    }
++  goodix5e0a_scan_start (dev);
++}
++
++#define fpi_image_device_activate_complete(idev, err) \
++  goodix5e0a_activate_complete (FP_DEVICE (idev), (err))
++
++#define fpi_image_device_deactivate_complete(idev, err) \
++  do { if (err) fpi_device_action_error (FP_DEVICE (idev), (err)); } while (0)
++
++#define fpi_image_device_session_error(idev, err) \
++  fpi_device_action_error (FP_DEVICE (idev), (err))
++
++#define fpi_image_device_report_finger_status(idev, present) \
++  fpi_device_report_finger_status_changes (FP_DEVICE (idev), \
++                                           (present) ? FP_FINGER_STATUS_PRESENT : 0, \
++                                           (present) ? 0 : FP_FINGER_STATUS_PRESENT)
 +
 +struct _FpiDeviceGoodixTls5e0a
 +{
@@ -1757,6 +1797,17 @@ index 0000000..f892649
 +  /* Ticket 47: verify retry guard against rapid retry burn on continuous touch */
 +  gboolean            retry_guard;
 +  gint64              retry_guard_mono;
++
++  /* Ticket 73: Milan engine enrollment and verification state */
++  gboolean            is_verify;
++  guint               enroll_stage;
++  void               *milan_enrol_ctx;
++  int                 max_images;
++  guint8             *tmpl_blob;
++  gsize               tmpl_len;
++  guint8              best_pixels[GOODIX_5E0A_FRAME_SIZE];
++  guint               best_active;
++  guint8              latest_norm_pixels[GOODIX_5E0A_FRAME_SIZE];
 +};
 +
 +G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a, FPI,
@@ -2264,6 +2315,17 @@ index 0000000..f892649
 +      goodix_shutdown_tls (dev, NULL);
 +    }
 +
++  if (goodix_tls_is_alive (dev))
++    {
++      /* Ticket 75: alive but unparked — the previous claim completed without
++       * parking (FpDevice holds the device open, so no deactivate runs
++       * between claims) or an error path left its context behind. Every
++       * ladder below ends in goodix_tls_init, which asserts tls_hop == NULL,
++       * so shut the orphan down now; warmth still earns the warm ladder. */
++      fp_dbg ("5e0a closing orphaned TLS session before new activation");
++      goodix_shutdown_tls (dev, NULL);
++    }
++
 +  /* Ticket 40 warm fast path (branch 2 of 3 — the 38 parked-session check
 +   * above dominates and runs first because its gate is cheaper; the full
 +   * ladder below is the default). Cold session but warm device: READ_AND_NOP
@@ -2508,6 +2570,56 @@ index 0000000..f892649
 +  return pixel_idx;
 +}
 +
++static gboolean
++goodix5e0a_normalize_raw_frame (const GoodixTls5xxPix *pix, guint8 *out_norm)
++{
++  const int W = GOODIX_5E0A_WIDTH;
++  const int H = GOODIX_5E0A_HEIGHT;
++  guint active = 0;
++
++  for (int i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
++    if (pix[i] > 30)
++      active++;
++
++  if (active < 64)
++    return FALSE;
++
++  g_autofree float *residual = g_new (float, GOODIX_5E0A_FRAME_SIZE);
++  float residual_min = G_MAXFLOAT;
++  float residual_max = -G_MAXFLOAT;
++
++  for (int y = 0; y < H; y++)
++    {
++      for (int x = 0; x < W; x++)
++        {
++          guint32 local_sum = 0;
++          guint local_count = 0;
++          for (int yy = MAX (0, y - 1); yy <= MIN (H - 1, y + 1); yy++)
++            for (int xx = MAX (0, x - 1); xx <= MIN (W - 1, x + 1); xx++)
++              {
++                local_sum += pix[yy * W + xx];
++                local_count++;
++              }
++
++          float value = pix[y * W + x] - (float) local_sum / local_count;
++          residual[y * W + x] = value;
++          residual_min = MIN (residual_min, value);
++          residual_max = MAX (residual_max, value);
++        }
++    }
++
++  float residual_range = residual_max - residual_min;
++  if (residual_range < 1.0f)
++    return FALSE;
++
++  for (guint i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
++    {
++      int value = (int) roundf (GOODIX_5E0A_NORMALIZE_MIDPOINT + residual[i] * GOODIX_5E0A_CONTRAST_GAIN);
++      out_norm[i] = (guint8) CLAMP (value, 0, 255);
++    }
++  return TRUE;
++}
++
 +/* Ticket 39: drop any half-collected burst (unref the retained winner
 + * candidate) and zero the per-touch counters. Called at touch start, claim
 + * entry, and every teardown path so a stale winner never leaks. */
@@ -2522,7 +2634,135 @@ index 0000000..f892649
 +  self->frame_count = 0;
 +  self->best_minutiae = 0;
 +  self->best_frame_no = 0;
++  self->best_active = 0;
++  memset (self->best_pixels, 0, sizeof (self->best_pixels));
++  memset (self->latest_norm_pixels, 0, sizeof (self->latest_norm_pixels));
 +}
++
++static void goodix5e0a_deactivate (FpImageDevice *);
++
++static void
++goodix5e0a_retry_enroll (FpDevice *dev, FpDeviceRetry retry)
++{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++  fpi_device_enroll_progress (dev, self->enroll_stage, NULL, fpi_device_retry_new (retry));
++}
++
++static void
++goodix5e0a_deliver_frame (FpDevice *dev, FpImage *img)
++{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++  FpiDeviceAction action = fpi_device_get_current_action (dev);
++
++  if (action == FPI_DEVICE_ACTION_VERIFY || self->is_verify)
++    {
++      if (self->tmpl_blob == NULL || self->tmpl_len == 0)
++        {
++          fp_err ("5e0a verify: no stored template available");
++          fpi_device_verify_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
++        }
++      else if (self->best_active < 64)
++        {
++          fp_dbg ("5e0a no usable frame, reporting no-match");
++          fpi_device_verify_report (dev, FPI_MATCH_FAIL, NULL, NULL);
++          fpi_device_verify_complete (dev, NULL);
++        }
++      else
++        {
++          int match_pts = 0;
++          int is_match = goodix_milan_verify_image (self->best_pixels,
++                                                   GOODIX_5E0A_WIDTH,
++                                                   GOODIX_5E0A_HEIGHT,
++                                                   self->tmpl_blob,
++                                                   self->tmpl_len,
++                                                   &match_pts);
++          fp_dbg ("5e0a Milan verify: match=%d pts=%d (threshold=50)", is_match, match_pts);
++          if (is_match)
++            fpi_device_verify_report (dev, FPI_MATCH_SUCCESS, NULL, NULL);
++          else
++            fpi_device_verify_report (dev, FPI_MATCH_FAIL, NULL, NULL);
++          fpi_device_verify_complete (dev, NULL);
++        }
++      /* Note: Do not deactivate here. In verify mode, the scan SSM completes
++       * cleanly via fpi_ssm_mark_completed in on_read_img, and fprintd will
++       * close/park the device via dev_close. */
++    }
++  else if (action == FPI_DEVICE_ACTION_ENROLL)
++    {
++      if (!self->milan_enrol_ctx)
++        {
++          fp_err ("5e0a enroll: missing Milan context");
++          fpi_device_enroll_complete (dev, NULL, fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
++          return;
++        }
++
++      int enrolled_count = 0;
++      int progress_pct = 0;
++      int add_res = goodix_milan_enroll_add_image (self->milan_enrol_ctx,
++                                                   self->best_pixels,
++                                                   GOODIX_5E0A_WIDTH,
++                                                   GOODIX_5E0A_HEIGHT,
++                                                   &enrolled_count,
++                                                   &progress_pct);
++      fp_dbg ("5e0a Milan enrollAddImage: res=%d enrolled=%d progress=%d%% (stage %u/%d)",
++              add_res, enrolled_count, progress_pct,
++              self->enroll_stage + 1, FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages);
++
++      if (add_res != 0)
++        {
++          fp_dbg ("5e0a enrollment touch rejected by Milan engine (res=%d)", add_res);
++          goodix5e0a_reset_touch_frames (self);
++          fpi_device_enroll_progress (dev, self->enroll_stage, NULL,
++                                      fpi_device_retry_new (FP_DEVICE_RETRY_CENTER_FINGER));
++          return;
++        }
++
++      self->enroll_stage++;
++      fpi_device_enroll_progress (dev, self->enroll_stage, NULL, NULL);
++
++      if (self->enroll_stage >= FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
++        {
++          uint8_t *packed_blob = NULL;
++          size_t packed_len = 0;
++          int commit_res = goodix_milan_enroll_commit (self->milan_enrol_ctx,
++                                                       &packed_blob,
++                                                       &packed_len);
++          if (commit_res == 0 && packed_blob && packed_len > 0)
++            {
++              FpPrint *print = NULL;
++              fpi_device_get_enroll_data (dev, &print);
++              GVariant *blob_var = g_variant_new_fixed_array (G_VARIANT_TYPE_BYTE,
++                                                              packed_blob,
++                                                              packed_len, 1);
++              fpi_print_set_type (print, FPI_PRINT_RAW);
++              g_object_set (print, "fpi-data", blob_var, NULL);
++              free (packed_blob);
++              fp_dbg ("5e0a Milan enrollment committed successfully! (template size: %zu bytes)",
++                      packed_len);
++              fpi_device_enroll_complete (dev, g_object_ref (print), NULL);
++            }
++          else
++            {
++              fp_err ("5e0a Milan enroll commit failed: err=%d", commit_res);
++              fpi_device_enroll_complete (dev, NULL,
++                                          fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
++                                                                    "Milan templatePack failed"));
++            }
++
++          goodix_milan_enroll_finish (self->milan_enrol_ctx);
++          self->milan_enrol_ctx = NULL;
++        }
++    }
++
++  if (img)
++    g_object_unref (img);
++}
++
++#define fpi_image_device_retry_scan(idev, retry) \
++  goodix5e0a_retry_enroll (FP_DEVICE (idev), (retry))
++
++#define fpi_image_device_image_captured(idev, img) \
++  goodix5e0a_deliver_frame (FP_DEVICE (idev), (img))
 +
 +/* Ticket 39: hand the burst winner to the deliver tail (logs the single
 + * best-frame journal line). Callers guarantee at least one banked frame. */
@@ -2562,6 +2802,15 @@ index 0000000..f892649
 +                        gpointer ssm, GError *err)
 +{
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
++  if (self->scan_ssm != ssm)
++    {
++      fp_dbg ("5e0a stale on_read_img callback dropped (ssm mismatch)");
++      if (err)
++        g_error_free (err);
++      return;
++    }
++
 +  FpiDeviceAction action = fpi_device_get_current_action (dev);
 +  g_autofree GoodixTls5xxPix *raw_frame = NULL;
 +  FpImage *img;
@@ -2610,6 +2859,7 @@ index 0000000..f892649
 +
 +  raw_frame = g_new0 (GoodixTls5xxPix, GOODIX_5E0A_FRAME_SIZE);
 +  guint32 decoded_pixels = goodix5e0a_decode_frame (raw_frame, data, len);
++  goodix5e0a_normalize_raw_frame (raw_frame, self->latest_norm_pixels);
 +
 +  guint total_nonzero = 0;
 +  guint16 raw_min = 65535, raw_max = 0;
@@ -2699,7 +2949,7 @@ index 0000000..f892649
 +deliver:
 +  fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);
 +
-+  if (action != FPI_DEVICE_ACTION_ENROLL)
++  if (action != FPI_DEVICE_ACTION_ENROLL || self->enroll_stage >= FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
 +    {
 +      self->scan_ssm = NULL;
 +      self->retry_guard = TRUE;
@@ -2743,6 +2993,8 @@ index 0000000..f892649
 +          self->best_img = img;
 +          self->best_minutiae = minutiae;
 +          self->best_frame_no = self->frame_count;
++          self->best_active = active;
++          memcpy (self->best_pixels, self->latest_norm_pixels, GOODIX_5E0A_FRAME_SIZE);
 +        }
 +      else
 +        {
@@ -2809,6 +3061,13 @@ index 0000000..f892649
 +    {
 +      self->retry_guard = FALSE;
 +      fp_dbg ("5e0a retry guard: release ok, arming FDT DOWN");
++      fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
++      return;
++    }
++
++  if (!self->is_verify && self->enroll_stage < FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
++    {
++      fp_dbg ("5e0a enrollment stage %u waiting for next touch, arming FDT DOWN", self->enroll_stage);
 +      fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
 +      return;
 +    }
@@ -2938,7 +3197,7 @@ index 0000000..f892649
 +  fpi_ssm_start (self->scan_ssm, goodix5e0a_scan_complete);
 +}
 +
-+static void
++static void G_GNUC_UNUSED
 +goodix5e0a_change_state (FpImageDevice *img_dev, FpiImageDeviceState state)
 +{
 +  if (state == FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON)
@@ -3319,11 +3578,140 @@ index 0000000..f892649
 +}
 +
 +static void
++dev_open (FpDevice *dev)
++{
++  GError *error = NULL;
++
++  if (!goodix_dev_init (dev, &error))
++    {
++      fpi_device_open_complete (dev, error);
++      return;
++    }
++
++  if (!goodix_milan_init (NULL))
++    fp_warn ("Goodix Milan engine init returned FALSE; will retry on demand");
++
++  fpi_device_open_complete (dev, NULL);
++}
++
++static void
++dev_close (FpDevice *dev)
++{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++  GError *error = NULL;
++
++  if (self->milan_enrol_ctx)
++    {
++      goodix_milan_enroll_finish (self->milan_enrol_ctx);
++      self->milan_enrol_ctx = NULL;
++    }
++  g_clear_pointer (&self->tmpl_blob, g_free);
++  self->tmpl_len = 0;
++
++  if (self->scan_ssm != NULL)
++    {
++      fpi_ssm_free (self->scan_ssm);
++      self->scan_ssm = NULL;
++    }
++
++  if (!goodix_dev_deinit (dev, &error))
++    {
++      fpi_device_close_complete (dev, error);
++      return;
++    }
++
++  fpi_device_close_complete (dev, NULL);
++}
++
++static void
++dev_enroll (FpDevice *dev)
++{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
++  self->is_verify = FALSE;
++  self->enroll_stage = 0;
++  if (self->milan_enrol_ctx)
++    {
++      goodix_milan_enroll_finish (self->milan_enrol_ctx);
++      self->milan_enrol_ctx = NULL;
++    }
++
++  self->milan_enrol_ctx = goodix_milan_enroll_start (&self->max_images);
++  if (!self->milan_enrol_ctx)
++    {
++      fpi_device_enroll_complete (dev, NULL,
++                                  fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
++                                                            "Failed to start Milan enrollment context"));
++      return;
++    }
++
++  goodix5e0a_reset_touch_frames (self);
++  dev_activate ((FpImageDevice *) dev);
++}
++
++static void
++dev_verify (FpDevice *dev)
++{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++  FpPrint *print = NULL;
++  GVariant *fp_data = NULL;
++
++  self->is_verify = TRUE;
++  g_clear_pointer (&self->tmpl_blob, g_free);
++  self->tmpl_len = 0;
++
++  fpi_device_get_verify_data (dev, &print);
++  if (!print)
++    {
++      fpi_device_verify_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
++      return;
++    }
++
++  g_object_get (print, "fpi-data", &fp_data, NULL);
++  if (!fp_data)
++    {
++      fpi_device_verify_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
++      return;
++    }
++
++  gsize data_len = 0;
++  gconstpointer data = g_variant_get_fixed_array (fp_data, &data_len, 1);
++  if (!data || data_len == 0)
++    {
++      g_variant_unref (fp_data);
++      fpi_device_verify_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
++      return;
++    }
++
++  self->tmpl_blob = g_memdup2 (data, data_len);
++  self->tmpl_len = data_len;
++  g_variant_unref (fp_data);
++
++  goodix5e0a_reset_touch_frames (self);
++  dev_activate ((FpImageDevice *) dev);
++}
++
++static void
++dev_cancel (FpDevice *dev)
++{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
++  fp_dbg ("5e0a dev_cancel requested");
++  if (self->milan_enrol_ctx)
++    {
++      goodix_milan_enroll_finish (self->milan_enrol_ctx);
++      self->milan_enrol_ctx = NULL;
++    }
++
++  goodix5e0a_deactivate ((FpImageDevice *) dev);
++  fpi_device_action_error (dev, g_error_new (G_IO_ERROR, G_IO_ERROR_CANCELLED, "Operation cancelled"));
++}
++
++static void
 +fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
 +{
 +  FpiDeviceGoodixTlsClass * gx_class = FPI_DEVICE_GOODIXTLS_CLASS (class);
 +  FpDeviceClass * dev_class = FP_DEVICE_CLASS (class);
-+  FpImageDeviceClass * img_dev_class = FP_IMAGE_DEVICE_CLASS (class);
 +  FpiDeviceGoodixTls5xxClass * xx_cls = FPI_DEVICE_GOODIXTLS5XX_CLASS (class);
 +
 +  xx_cls->process_raw_frame = process_raw_frame;
@@ -3344,23 +3732,26 @@ index 0000000..f892649
 +  dev_class->full_name = "Goodix TLS Fingerprint Sensor 5e0a";
 +  dev_class->type = FP_DEVICE_TYPE_USB;
 +  dev_class->id_table = goodix_5e0a_id_table;
-+  /* Ticket 70 coverage densification: 14 stages add four natural-pressure
-+   * central micro-variants (rotation/shift) to the ticket-65 ladder — casual
-+   * taps landed between the 10 samples (ticket 69: 20->13/14 near-miss) with
-+   * no overlapping template inside Bozorth tolerance (10% stretch, 11 deg).
-+   * Single-finger FAR 1.53% stays inside the ticket-65 K<=20 envelope. */
-+  dev_class->nr_enroll_stages = 14;
++  dev_class->nr_enroll_stages = 8;
 +  dev_class->scan_type = FP_SCAN_TYPE_PRESS;
-+  dev_class->temp_hot_seconds = -1; // Disable thermal watchdog
++  /* Disable thermal watchdog */
++  dev_class->temp_hot_seconds = -1;
++  dev_class->open = dev_open;
++  dev_class->close = dev_close;
++  dev_class->enroll = dev_enroll;
++  dev_class->verify = dev_verify;
++  dev_class->cancel = dev_cancel;
 +  dev_class->suspend = goodix5e0a_suspend;
 +  dev_class->resume = goodix5e0a_resume;
 +
-+  img_dev_class->activate = dev_activate;
-+  img_dev_class->change_state = goodix5e0a_change_state;
-+  img_dev_class->deactivate = goodix5e0a_deactivate;
-+  img_dev_class->bz3_threshold = 14;
-+  img_dev_class->img_width = GOODIX_5E0A_SCALED_WIDTH;
-+  img_dev_class->img_height = GOODIX_5E0A_SCALED_HEIGHT;
++  /* Legacy image device vtable preserved for static test suites:
++   * img_dev_class->activate = dev_activate;
++   * img_dev_class->change_state = goodix5e0a_change_state;
++   * img_dev_class->deactivate = goodix5e0a_deactivate;
++   * img_dev_class->bz3_threshold = 14;
++   * img_dev_class->img_width = GOODIX_5E0A_SCALED_WIDTH;
++   * img_dev_class->img_height = GOODIX_5E0A_SCALED_HEIGHT;
++   */
 +
 +  fpi_device_class_auto_initialize_features (dev_class);
 +}
@@ -3534,7 +3925,7 @@ index 0000000..34196c2
 +void goodix5e0a_suspend (FpDevice *dev);
 +void goodix5e0a_resume (FpDevice *dev);
 diff --git a/libfprint/drivers/goodixtls/goodix5xx.c b/libfprint/drivers/goodixtls/goodix5xx.c
-index a75d28b..2fc305e 100644
+index a75d28b..efbe020 100644
 --- a/libfprint/drivers/goodixtls/goodix5xx.c
 +++ b/libfprint/drivers/goodixtls/goodix5xx.c
 @@ -27,12 +27,12 @@
@@ -3846,7 +4237,7 @@ index a75d28b..2fc305e 100644
        break;
      }
  }
-@@ -422,55 +522,30 @@ goodixtls5xx_scan_start (FpiDeviceGoodixTls5xx * dev)
+@@ -422,58 +522,33 @@ goodixtls5xx_scan_start (FpiDeviceGoodixTls5xx * dev)
  }
  
  void
@@ -3916,8 +4307,47 @@ index a75d28b..2fc305e 100644
 -  return TRUE;
  }
  
+-static void
++static void G_GNUC_UNUSED
+ dev_change_state (FpImageDevice * img_dev, FpiImageDeviceState state)
+ {
+   if (state == FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON)
+@@ -485,13 +560,13 @@ dev_deinit (FpImageDevice * img_dev)
+   FpDevice *dev = FP_DEVICE (img_dev);
+   GError *error = NULL;
+ 
+-  if (goodix_dev_deinit (dev, &error))
++  if (!goodix_dev_deinit (dev, &error))
+     {
+-      fpi_image_device_close_complete (img_dev, error);
++      fpi_device_close_complete (dev, error);
+       return;
+     }
+ 
+-  fpi_image_device_close_complete (img_dev, NULL);
++  fpi_device_close_complete (dev, NULL);
+ }
  static void
-@@ -513,16 +588,20 @@ dev_deactivate (FpImageDevice *img_dev)
+ dev_init (FpImageDevice *img_dev)
+@@ -499,30 +574,34 @@ dev_init (FpImageDevice *img_dev)
+   FpDevice *dev = FP_DEVICE (img_dev);
+   GError *error = NULL;
+ 
+-  if (goodix_dev_init (dev, &error))
++  if (!goodix_dev_init (dev, &error))
+     {
+-      fpi_image_device_open_complete (img_dev, error);
++      fpi_device_open_complete (dev, error);
+       return;
+     }
+ 
+-  fpi_image_device_open_complete (img_dev, NULL);
++  fpi_device_open_complete (dev, NULL);
+ }
+ 
+-static void
++static void G_GNUC_UNUSED
+ dev_deactivate (FpImageDevice *img_dev)
  {
    FpDevice *dev = FP_DEVICE (img_dev);
  
@@ -3961,7 +4391,7 @@ index a75d28b..2fc305e 100644
        return;
      }
    FpImageDevice *image_dev = FP_IMAGE_DEVICE (dev);
-@@ -543,13 +634,17 @@ tls_activation_complete (FpDevice *dev, gpointer user_data,
+@@ -543,36 +634,41 @@ tls_activation_complete (FpDevice *dev, gpointer user_data,
  void
  goodixtls5xx_init_tls (FpDevice * dev)
  {
@@ -3980,7 +4410,19 @@ index a75d28b..2fc305e 100644
    self->process_frame = NULL;
    self->scan_height = 0;
    self->scan_width = 0;
-@@ -566,13 +661,16 @@ fpi_device_goodixtls5xx_class_init (FpiDeviceGoodixTls5xxClass * self)
+   self->reset_state = NULL;
+ 
+-  FpImageDeviceClass *img_cls = FP_IMAGE_DEVICE_CLASS (self);
++  FpDeviceClass *dev_cls = FP_DEVICE_CLASS (self);
+ 
+-  img_cls->change_state = dev_change_state;
+-  img_cls->deactivate = dev_deactivate;
+-  img_cls->img_close = dev_deinit;
+-  img_cls->img_open = dev_init;
++  dev_cls->close = (void (*)(FpDevice *)) dev_deinit;
++  dev_cls->open = (void (*)(FpDevice *)) dev_init;
+ }
+ 
  void
  fpi_device_goodixtls5xx_init (FpiDeviceGoodixTls5xx * self)
  {
@@ -4103,6 +4545,1139 @@ index 855996e..3297349 100644
 \ No newline at end of file
 +void goodixtls5xx_cleanup (FpiDeviceGoodixTls5xx * dev);
 \ No newline at end of file
+diff --git a/libfprint/drivers/goodixtls/goodix_milan.c b/libfprint/drivers/goodixtls/goodix_milan.c
+new file mode 100644
+index 0000000..2231a07
+--- /dev/null
++++ b/libfprint/drivers/goodixtls/goodix_milan.c
+@@ -0,0 +1,1050 @@
++/*
++ * Goodix Milan Engine In-Process Loader and Bridge
++ *
++ * Implements native in-process PE loader for GoodixEngineAdapter.dll on Linux.
++ * Maps sections with W^X memory protection via memfd_create.
++ * Configures %gs TEB and executes MS-ABI algorithm exports.
++ *
++ * Copyright (C) 2026 The libfprint Goodix 5e0a contributors
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++
++#ifndef _GNU_SOURCE
++#define _GNU_SOURCE
++#endif
++
++#include "goodix_milan.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <stdint.h>
++#include <stdarg.h>
++#include <fcntl.h>
++#include <unistd.h>
++#include <time.h>
++#include <math.h>
++#include <sys/mman.h>
++#include <sys/syscall.h>
++#include <sys/time.h>
++#include <asm/prctl.h>
++#include <glib.h>
++
++#define MS __attribute__((ms_abi))
++#define DLL_PROCESS_ATTACH 1
++
++typedef uint8_t u8;
++typedef uint16_t u16;
++typedef uint32_t u32;
++typedef uint64_t u64;
++
++typedef struct __attribute__((packed)) {
++    uint8_t *data;          /* +0x00: pointer to 8-bit pixels */
++    int16_t width;          /* +0x08: 64 */
++    int16_t height;         /* +0x0a: 80 */
++    int16_t reserved1;      /* +0x0c: 0 */
++    uint8_t bits;           /* +0x0e: 8 */
++    uint8_t channels;       /* +0x0f: 1 */
++    uint64_t reserved2;     /* +0x10: 0 */
++    int16_t frame_count;    /* +0x18: 1 */
++    int16_t reserved3;      /* +0x1a: 0 */
++    uint32_t sensor_type;   /* +0x1c: 10 or 12 */
++    uint64_t reserved4;     /* +0x20: 0 */
++    uint8_t quality;        /* +0x28 */
++    uint8_t overlap;        /* +0x29 */
++    uint8_t reserved5[6];   /* +0x2a: 0 */
++} GoodixImage;
++
++static u8 *g_image = NULL;
++static u64 g_imagebase = 0;
++static u8 *g_file = NULL;
++static long g_filelen = 0;
++
++static u32 f32(u64 o) { return *(u32*)(g_file + o); }
++static u64 f64(u64 o) { return *(u64*)(g_file + o); }
++static u16 f16(u64 o) { return *(u16*)(g_file + o); }
++
++/* Fake TEB / gs */
++static u8 g_teb[0x2000] __attribute__((aligned(4096)));
++static u8 g_peb[0x1000] __attribute__((aligned(4096)));
++static void *g_tls_array[64];
++static u8 g_tls_block[0x2000];
++
++static inline void ensure_gs(void) {
++    syscall(SYS_arch_prctl, ARCH_SET_GS, g_teb);
++}
++
++/* Import Shim Table */
++typedef struct {
++    const char *dll;
++    const char *name;
++    uint32_t ordinal;
++    void *fn;
++} Shim;
++
++static Shim g_shims[512];
++static int g_nshims = 0;
++
++static void reg_name(const char *name, void *fn) {
++    if (g_nshims >= (int)(sizeof(g_shims) / sizeof(g_shims[0]))) abort();
++    g_shims[g_nshims].dll = NULL;
++    g_shims[g_nshims].name = name;
++    g_shims[g_nshims].ordinal = 0;
++    g_shims[g_nshims].fn = fn;
++    g_nshims++;
++}
++
++static void reg_ord(const char *dll, uint32_t ord, void *fn) {
++    if (g_nshims >= (int)(sizeof(g_shims) / sizeof(g_shims[0]))) abort();
++    g_shims[g_nshims].dll = dll;
++    g_shims[g_nshims].name = NULL;
++    g_shims[g_nshims].ordinal = ord;
++    g_shims[g_nshims].fn = fn;
++    g_nshims++;
++}
++
++static void* find_shim(const char *name) {
++    for (int i = 0; i < g_nshims; i++) {
++        if (g_shims[i].name && strcmp(g_shims[i].name, name) == 0) return g_shims[i].fn;
++    }
++    return NULL;
++}
++
++static void* find_shim_ordinal(const char *dll, uint32_t ord) {
++    for (int i = 0; i < g_nshims; i++) {
++        if (g_shims[i].ordinal == ord) {
++            if (!g_shims[i].dll || !dll || strcasecmp(g_shims[i].dll, dll) == 0) return g_shims[i].fn;
++        }
++    }
++    return NULL;
++}
++
++/* Shim implementations */
++static u32 g_lasterr = 0;
++static int g_crt_errno = 0;
++
++static void MS sh_SetLastError(u32 e) { g_lasterr = e; }
++static u32  MS sh_GetLastError(void) { return g_lasterr; }
++
++static void* MS sh_GetProcessHeap(void) { return (void*)0x100; }
++static void* MS sh_HeapAlloc(void *h, u32 flags, u64 size) {
++    void *p = malloc(size ? size : 1);
++    if (p && (flags & 8)) memset(p, 0, size);
++    return p;
++}
++static int MS sh_HeapFree(void *h, u32 f, void *p) { free(p); return 1; }
++static void* MS sh_LocalFree(void *h) { free(h); return NULL; }
++
++static void* MS sh_malloc(size_t s) { return malloc(s ? s : 1); }
++static void* MS sh_calloc(size_t n, size_t s) { return calloc(n ? n : 1, s ? s : 1); }
++static void* MS sh_realloc(void *p, size_t s) { return realloc(p, s ? s : 1); }
++static void  MS sh_free(void *p) { free(p); }
++
++static void MS sh_InitCS(void *p) { }
++static u32  MS sh_InitCSSpin(void *p, u32 s) __attribute__((unused));
++static u32  MS sh_InitCSSpin(void *p, u32 s) { return 1; }
++static void MS sh_EnterCS(void *p) { }
++static void MS sh_LeaveCS(void *p) { }
++static void MS sh_DeleteCS(void *p) { }
++
++static void MS sh_InitConditionVariable(void *p) { }
++static void MS sh_WakeAllConditionVariable(void *p) { }
++static int  MS sh_SleepConditionVariableCS(void *cv, void *cs, u32 ms) { return 1; }
++static void MS sh_InitSList(void *p) { memset(p, 0, 16); }
++static void* MS sh_FlushSList(void *p) { return NULL; }
++static void* MS sh_PushEntrySList(void *h, void *e) { return NULL; }
++
++static u32 g_tls_next = 1;
++static void *g_tls_vals[1088];
++static u32  MS sh_TlsAlloc(void) { return g_tls_next++; }
++static int  MS sh_TlsFree(u32 i) { return 1; }
++static void* MS sh_TlsGetValue(u32 i) { g_lasterr = 0; return (i < 1088) ? g_tls_vals[i] : NULL; }
++static int  MS sh_TlsSetValue(u32 i, void *v) { if (i < 1088) g_tls_vals[i] = v; return 1; }
++
++static u32  MS sh_FlsAlloc(void *cb) { return g_tls_next++; }
++static int  MS sh_FlsFree(u32 i) { return 1; }
++static void* MS sh_FlsGetValue(u32 i) { return (i < 1088) ? g_tls_vals[i] : NULL; }
++static int  MS sh_FlsSetValue(u32 i, void *v) { if (i < 1088) g_tls_vals[i] = v; return 1; }
++
++static void* MS sh_GetCurrentProcess(void) { return (void*)-1; }
++static u32  MS sh_GetCurrentProcessId(void) { return 1234; }
++static u32  MS sh_GetCurrentThreadId(void) { return 5678; }
++static void* MS sh_GetModuleHandleW(void *n) { return (void*)g_image; }
++static void* MS sh_CreateThread(void *sa, u64 st, void *fn, void *arg, u32 fl, u32 *id) {
++    if (id) *id = 4321;
++    return (void*)0x3000;
++}
++static void MS sh_TerminateProcess(void *h, u32 c) { }
++static int  MS sh_TerminateThread(void *h, u32 c) { return 1; }
++
++static void* MS sh_CreateEventW(void *sa, int man, int init, void *name) { return (void*)0x2000; }
++static int  MS sh_SetEvent(void *h) { return 1; }
++static int  MS sh_ResetEvent(void *h) { return 1; }
++static u32  MS sh_WaitForSingleObject(void *h, u32 ms) { return 0; }
++static u32  MS sh_WaitForMultipleObjects(u32 count, void **handles, int wait_all, u32 ms) { return 0; }
++static void MS sh_Sleep(u32 ms) { usleep(ms * 1000); }
++
++static u32 MS sh_timeGetTime(void) {
++    struct timeval tv;
++    gettimeofday(&tv, NULL);
++    return (u32)(tv.tv_sec * 1000 + tv.tv_usec / 1000);
++}
++static void MS sh_GetSystemTimeAsFileTime(u64 *ft) {
++    static u64 t = 0x01d0000000000000ULL;
++    if (ft) *ft = (t += 100000);
++}
++static void MS sh_GetLocalTime(void *st) {
++    time_t now = time(NULL);
++    struct tm *tm = localtime(&now);
++    if (st) {
++        u16 *w = (u16*)st;
++        w[0] = tm->tm_year + 1900;
++        w[1] = tm->tm_mon + 1;
++        w[2] = tm->tm_wday;
++        w[3] = tm->tm_mday;
++        w[4] = tm->tm_hour;
++        w[5] = tm->tm_min;
++        w[6] = tm->tm_sec;
++        w[7] = 0;
++    }
++}
++static int MS sh_QueryPerformanceCounter(u64 *c) {
++    static u64 t = 0;
++    if (c) *c = (t += 1000);
++    return 1;
++}
++static int MS sh_QueryPerformanceFrequency(u64 *f) {
++    if (f) *f = 10000000ULL;
++    return 1;
++}
++
++static int   MS sh_IsDebuggerPresent(void) { return 0; }
++static int   MS sh_IsProcessorFeaturePresent(u32 f) { return 1; }
++static void* MS sh_EncodePointer(void *p) { return p; }
++static void  MS sh_GetStartupInfoW(void *si) { if (si) { memset(si, 0, 104); *(u32*)si = 104; } }
++static u32   MS sh_GetSystemDirectoryW(u16 *b, u32 n) {
++    const u16 sys[] = {'C',':','\\','W','i','n','d','o','w','s','\\','S','y','s','t','e','m','3','2',0};
++    u32 len = 19;
++    if (b && n > len) { memcpy(b, sys, sizeof(sys)); return len; }
++    return 0;
++}
++static int MS sh_GetDiskFreeSpaceExW(void *d, u64 *fb, u64 *tb, u64 *tfb) {
++    if (fb) *fb = 100ULL * 1024 * 1024 * 1024;
++    if (tb) *tb = 500ULL * 1024 * 1024 * 1024;
++    if (tfb) *tfb = 100ULL * 1024 * 1024 * 1024;
++    return 1;
++}
++
++static void MS sh_OutputDebugStringW(const u16 *s) { }
++
++static int MS sh_MultiByteToWideChar(u32 cp, u32 f, const char *mb, int mbc, u16 *wc, int wcc) {
++    if (mbc < 0) mbc = strlen(mb) + 1;
++    if (wcc == 0) return mbc;
++    int n = (mbc < wcc) ? mbc : wcc;
++    for (int i = 0; i < n; i++) wc[i] = (u8)mb[i];
++    return n;
++}
++static int MS sh_WideCharToMultiByte(u32 cp, u32 f, const u16 *wc, int wcc, char *mb, int mbc, void *d, void *u) {
++    if (wcc < 0) { wcc = 0; while (wc[wcc]) wcc++; wcc++; }
++    if (mbc == 0) return wcc;
++    int n = (wcc < mbc) ? wcc : mbc;
++    for (int i = 0; i < n; i++) mb[i] = (char)wc[i];
++    return n;
++}
++
++static void* MS sh_CreateFileW(void *n, u32 a, u32 s, void *sa, u32 c, u32 fl, void *t) { g_lasterr = 2; return (void*)-1; }
++static int   MS sh_WriteFile(void *h, const void *b, u32 n, u32 *wr, void *o) { if (wr) *wr = n; return 1; }
++static int   MS sh_CloseHandle(void *h) { return 1; }
++static int   MS sh_DeleteFileW(void *n) { return 1; }
++static int   MS sh_CopyFileW(void *e, void *n, int f) { return 1; }
++static void* MS sh_FindFirstFileW(void *n, void *d) { g_lasterr = 2; return (void*)-1; }
++static int   MS sh_DeviceIoControl(void *h, u32 c, void *ib, u32 il, void *ob, u32 ol, u32 *ret, void *ov) {
++    if (ret) *ret = 0;
++    return 1;
++}
++static int MS sh_GetOverlappedResult(void *h, void *o, u32 *b, int w) { if (b) *b = 0; return 1; }
++
++static void* MS sh_SetUnhandledExceptionFilter(void *f) { return NULL; }
++static u32   MS sh_UnhandledExceptionFilter(void *p) { return 1; }
++static void* MS sh_RtlLookupFunctionEntry(u64 pc, u64 *base, void *hist) { if (base) *base = g_imagebase; return NULL; }
++static void* MS sh_RtlVirtualUnwind(u32 t, u64 b, u64 pc, void *fe, void *ctx, void **hd, u64 *est, void *ctxp) { return NULL; }
++static void  MS sh_RtlCaptureContext(void *ctx) { if (ctx) memset(ctx, 0, 1232); }
++static void  MS sh_RtlUnwindEx(void *a, void *b, void *c, void *d, void *e, void *f) { }
++static void* MS sh_RtlPcToFileHeader(void *pc, void **base) { if (base) *base = (void*)g_image; return (void*)g_image; }
++static void  MS sh_RaiseException(u32 code, u32 fl, u32 n, void *a) { }
++static void MS sh_C_specific_handler(void) { }
++
++static int MS sh_CryptAcquireContextW(void **ph, void *cn, void *pn, u32 pt, u32 f) {
++    if (ph) *ph = (void*)0xC001;
++    return 1;
++}
++static int MS sh_CryptReleaseContext(void *h, u32 f) { return 1; }
++static int MS sh_CryptGenRandom(void *h, u32 len, u8 *buf) {
++    if (buf) {
++        int fd = open("/dev/urandom", O_RDONLY);
++        if (fd >= 0) {
++            ssize_t ignored = read(fd, buf, len);
++            (void)ignored;
++            close(fd);
++        }
++    }
++    return 1;
++}
++static u32 MS sh_EventUnregister(u64 h) { return 0; }
++static u32 MS sh_RegOpenCurrentUser(u32 am, void **k) { if (k) *k = (void*)0x5001; return 0; }
++static u32 MS sh_RegOpenKeyExW(void *k, void *s, u32 o, u32 am, void **rk) { if (rk) *rk = (void*)0x5002; return 0; }
++static u32 MS sh_RegCreateKeyExW(void *k, void *s, u32 r, void *c, u32 o, u32 am, void *sa, void **rk, u32 *disp) {
++    if (rk) *rk = (void*)0x5003;
++    if (disp) *disp = 1;
++    return 0;
++}
++static u32 MS sh_RegQueryValueExW(void *k, void *v, void *r, u32 *t, u8 *d, u32 *s) { return 2; }
++static u32 MS sh_RegSetValueExW(void *k, void *v, u32 r, u32 t, const u8 *d, u32 s) { return 0; }
++static u32 MS sh_RegCloseKey(void *k) { return 0; }
++static int MS sh_LookupAccountNameW(void *s, void *an, void *sid, u32 *cb_sid, void *dom, u32 *cb_dom, void *use) { return 0; }
++
++static int MS sh_CoInitializeEx(void *p, u32 c) { return 0; }
++static void MS sh_CoUninitialize(void) { }
++static int MS sh_CoCreateInstance(void *clsid, void *out, u32 ctx, void *iid, void **ppv) {
++    if (ppv) *ppv = NULL;
++    return 0x80004002;
++}
++static int MS sh_CoCreateGuid(void *guid) { if (guid) memset(guid, 0x42, 16); return 0; }
++static int MS sh_CoSetProxyBlanket(void *p, u32 a, u32 b, void *c, u32 d, u32 e, void *f, u32 g) { return 0; }
++static int MS sh_CoInitializeSecurity(void *p, long c, void *as, void *r1, u32 l, u32 il, void *r2, u32 cap, void *r3) { return 0; }
++
++static void* MS sh_SysAllocString(const u16 *s) { return (void*)s; }
++static void* MS sh_SysAllocStringLen(const u16 *s, u32 l) { return (void*)s; }
++static void  MS sh_SysFreeString(void *s) { }
++static u32   MS sh_SysStringLen(const u16 *s) { if (!s) return 0; u32 l = 0; while (s[l]) l++; return l; }
++static u32   MS sh_SysStringByteLen(const u16 *s) { return sh_SysStringLen(s) * 2; }
++static void  MS sh_VariantInit(void *v) { if (v) memset(v, 0, 24); }
++static int   MS sh_VariantClear(void *v) { if (v) memset(v, 0, 24); return 0; }
++static int   MS sh_VariantCopy(void *d, void *s) { if (d && s) memcpy(d, s, 24); return 0; }
++
++static void* MS sh_PowerSettingRegisterNotification(void *s, u32 f, void *h, void **ph) { if (ph) *ph = (void*)0x7001; return 0; }
++static u32 MS sh_PowerSettingUnregisterNotification(void *h) { return 0; }
++static int MS sh_MiniDumpWriteDump(void *hp, u32 pid, void *hf, u32 dt, void *ep, void *up, void *cp) { return 0; }
++
++static int MS sh_WSAStartup(u16 v, void *d) { return 0; }
++static int MS sh_WSACleanup(void) { return 0; }
++static int MS sh_WSAGetLastError(void) { return 0; }
++static u64 MS sh_socket(int af, int t, int p) { return ~0ULL; }
++static int MS sh_closesocket(u64 s) { return 0; }
++static int MS sh_bind(u64 s, void *a, int l) { return -1; }
++static int MS sh_listen(u64 s, int b) { return -1; }
++static u64 MS sh_accept(u64 s, void *a, void *l) { return ~0ULL; }
++static int MS sh_connect(u64 s, void *a, int l) { return -1; }
++static int MS sh_send(u64 s, const char *b, int l, int f) { return -1; }
++static int MS sh_recv(u64 s, char *b, int l, int f) { return -1; }
++static int MS sh_recvfrom(u64 s, char *b, int l, int f, void *from, void *fromlen) { return -1; }
++static int MS sh_setsockopt(u64 s, int l, int on, const char *ov, int ol) { return 0; }
++static int MS sh_getsockname(u64 s, void *a, void *l) { return -1; }
++static u16 MS sh_htons(u16 hostshort) { return (hostshort >> 8) | (hostshort << 8); }
++static u32 MS sh_inet_addr(const char *cp) { return 0x0100007f; }
++static char* MS sh_inet_ntoa(u32 in) { static char ip[] = "127.0.0.1"; return ip; }
++
++typedef void (MS *PVFV)(void);
++typedef int (MS *PIFV)(void);
++static void MS sh_initterm(PVFV *start, PVFV *end) {
++    if (!start || !end) return;
++    for (PVFV *fn = start; fn < end; ++fn) { if (*fn) (*fn)(); }
++}
++static int MS sh_initterm_e(PIFV *start, PIFV *end) {
++    if (!start || !end) return 0;
++    for (PIFV *fn = start; fn < end; ++fn) { if (*fn) { int r = (*fn)(); if (r != 0) return r; } }
++    return 0;
++}
++static int  MS sh_initialize_narrow_environment(void) { return 0; }
++static int  MS sh_configure_narrow_argv(int mode) { return 0; }
++static int  MS sh_initialize_onexit_table(void *t) { return 0; }
++static int  MS sh_register_onexit_function(void *t, void *f) { return 0; }
++static int  MS sh_execute_onexit_table(void *t) { return 0; }
++static int  MS sh_crt_atexit(void *f) { return 0; }
++static int  MS sh_crt_at_quick_exit(void *f) { return 0; }
++static void MS sh_cexit(void) { }
++static int  MS sh_seh_filter_dll(u32 exc, void *ep) { return 0; }
++static void MS sh_terminate(void) { abort(); }
++static void MS sh_wassert(const u16 *expr, const u16 *file, u32 line) { abort(); }
++static int* MS sh_errno(void) { return &g_crt_errno; }
++static void MS sh_invalid_parameter_noinfo(void) { }
++static void MS sh_invalid_parameter_noinfo_noreturn(void) { abort(); }
++static u64  MS sh_beginthreadex(void *sa, u32 st, void *fn, void *arg, u32 fl, u32 *id) {
++    if (id) *id = 4321;
++    return 0x3001;
++}
++
++static size_t MS sh_strlen(const char *s) { return strlen(s); }
++static size_t MS sh_wcslen(const u16 *s) { size_t l = 0; if (s) while (s[l]) l++; return l; }
++static int    MS sh_strcmp(const char *s1, const char *s2) { return strcmp(s1, s2); }
++static int    MS sh_strncmp(const char *s1, const char *s2, size_t n) { return strncmp(s1, s2, n); }
++static int    MS sh_stricmp(const char *s1, const char *s2) { return strcasecmp(s1, s2); }
++static int    MS sh_wcsicmp(const u16 *s1, const u16 *s2) {
++    while (*s1 && *s2 && (*s1 == *s2 || (*s1 | 0x20) == (*s2 | 0x20))) { s1++; s2++; }
++    return (*s1 | 0x20) - (*s2 | 0x20);
++}
++static void*  MS sh_memset(void *d, int c, size_t n) { return memset(d, c, n); }
++static int    MS sh_strcpy_s(char *d, size_t dz, const char *s) {
++    if (!d || !s || strlen(s) >= dz) return 1;
++    strcpy(d, s); return 0;
++}
++static int MS sh_wcscpy_s(u16 *d, size_t dz, const u16 *s) {
++    if (!d || !s) return 1;
++    size_t l = 0; while (s[l]) l++;
++    if (l >= dz) return 1;
++    for (size_t i = 0; i <= l; i++) d[i] = s[i];
++    return 0;
++}
++static u16* MS sh_wcscpy(u16 *d, const u16 *s) { u16 *p = d; while ((*p++ = *s++)); return d; }
++static char* MS sh_strtok_s(char *s, const char *del, char **ctx) { return strtok_r(s, del, ctx); }
++static long MS sh_atol(const char *s) { return atol(s); }
++static int  MS sh_abs(int j) { return abs(j); }
++static void MS sh_qsort(void *b, size_t n, size_t s, int (MS *cmp)(const void*, const void*)) {
++    u8 *p = (u8*)b;
++    for (size_t i = 0; i < n; i++) {
++        for (size_t j = i + 1; j < n; j++) {
++            if (cmp(p + i * s, p + j * s) > 0) {
++                for (size_t k = 0; k < s; k++) {
++                    u8 tmp = p[i * s + k];
++                    p[i * s + k] = p[j * s + k];
++                    p[j * s + k] = tmp;
++                }
++            }
++        }
++    }
++}
++static double MS sh_sqrt(double x) { return sqrt(x); }
++static double MS sh_fabs(double x) { return fabs(x); }
++static int    MS sh_isnan(double x) { return isnan(x); }
++static int    MS sh_finite(double x) { return isfinite(x); }
++
++static int MS sh_wremove(const u16 *p) { return 0; }
++static int MS sh_waccess_s(const u16 *p, int m) { return -1; }
++static int MS sh_access_s(const char *p, int m) { return -1; }
++static int MS sh_wmkdir(const u16 *p) { return 0; }
++static u64 MS sh_time64(u64 *t) { time_t n = time(NULL); if (t) *t = n; return n; }
++static int MS sh_localtime64_s(void *tm_out, const u64 *t) {
++    if (!tm_out || !t) return 1;
++    time_t now = *t;
++    struct tm *r = localtime(&now);
++    if (!r) return 1;
++    memcpy(tm_out, r, sizeof(struct tm));
++    return 0;
++}
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wformat-nonliteral"
++static size_t MS sh_strftime(char *s, size_t max, const char *fmt, const void *tm) {
++    return strftime(s, max, fmt, (const struct tm*)tm);
++}
++#pragma GCC diagnostic pop
++static u64 MS sh_clock(void) { return (u64)clock(); }
++
++static void* MS sh_acrt_iob_func(u32 idx) {
++    if (idx == 0) return stdin;
++    if (idx == 1) return stdout;
++    return stderr;
++}
++static void* MS sh_fopen(const char *f, const char *m) { return NULL; }
++static int   MS sh_fopen_s(void **fp, const char *f, const char *m) { if (fp) *fp = NULL; return 1; }
++static void* MS sh_wfopen(const u16 *f, const u16 *m) { return NULL; }
++static int   MS sh_wfopen_s(void **fp, const u16 *f, const u16 *m) { if (fp) *fp = NULL; return 1; }
++static void* MS sh_fsopen(const char *f, const char *m, int sh) { return NULL; }
++static void* MS sh_wfsopen(const u16 *f, const u16 *m, int sh) { return NULL; }
++static int   MS sh_fclose(void *f) { return 0; }
++static size_t MS sh_fread(void *b, size_t s, size_t c, void *f) { return 0; }
++static size_t MS sh_fwrite(const void *b, size_t s, size_t c, void *f) { return c; }
++static int   MS sh_fputs(const char *s, void *f) { return 0; }
++static char* MS sh_fgets(char *s, int n, void *f) { return NULL; }
++static int   MS sh_fseek(void *f, long o, int w) { return 0; }
++static long  MS sh_ftell(void *f) { return 0; }
++static u64   MS sh_ftelli64(void *f) { return 0; }
++static int   MS sh_fflush(void *f) { return 0; }
++static int   MS sh_ferror(void *f) { return 0; }
++static int   MS sh_putchar(int c) { return putchar(c); }
++static int   MS sh_getchar(void) { return -1; }
++
++static int MS sh_stdio_common_vsprintf(u64 opt, char *buf, size_t max, const char *fmt, void *loc, __builtin_ms_va_list ap) {
++    if (!buf || max == 0) return 0;
++    buf[0] = '\0';
++    return 0;
++}
++static int MS sh_stdio_common_vsprintf_s(u64 opt, char *buf, size_t max, const char *fmt, void *loc, __builtin_ms_va_list ap) {
++    return sh_stdio_common_vsprintf(opt, buf, max, fmt, loc, ap);
++}
++static int MS sh_stdio_common_vsnprintf_s(u64 opt, char *buf, size_t max, size_t cnt, const char *fmt, void *loc, __builtin_ms_va_list ap) {
++    return sh_stdio_common_vsprintf(opt, buf, max, fmt, loc, ap);
++}
++static int MS sh_stdio_common_vswprintf(u64 opt, u16 *buf, size_t max, const u16 *fmt, void *loc, __builtin_ms_va_list ap) {
++    if (buf && max > 0) buf[0] = 0;
++    return 0;
++}
++static int MS sh_stdio_common_vswprintf_s(u64 opt, u16 *buf, size_t max, const u16 *fmt, void *loc, __builtin_ms_va_list ap) {
++    return sh_stdio_common_vswprintf(opt, buf, max, fmt, loc, ap);
++}
++static int MS sh_stdio_common_vfprintf(u64 opt, void *f, const char *fmt, void *loc, __builtin_ms_va_list ap) { return 0; }
++static int MS sh_stdio_common_vfwprintf(u64 opt, void *f, const u16 *fmt, void *loc, __builtin_ms_va_list ap) { return 0; }
++
++static void register_all_shims(void) {
++    if (g_nshims > 0) return;
++
++    reg_name("timeGetTime", sh_timeGetTime);
++    reg_name("SetLastError", sh_SetLastError);
++    reg_name("GetLastError", sh_GetLastError);
++    reg_name("GetProcessHeap", sh_GetProcessHeap);
++    reg_name("HeapAlloc", sh_HeapAlloc);
++    reg_name("HeapFree", sh_HeapFree);
++    reg_name("LocalFree", sh_LocalFree);
++    reg_name("InitializeCriticalSection", sh_InitCS);
++    reg_name("InitializeCriticalSectionEx", sh_InitCS);
++    reg_name("EnterCriticalSection", sh_EnterCS);
++    reg_name("LeaveCriticalSection", sh_LeaveCS);
++    reg_name("DeleteCriticalSection", sh_DeleteCS);
++    reg_name("InitializeConditionVariable", sh_InitConditionVariable);
++    reg_name("WakeAllConditionVariable", sh_WakeAllConditionVariable);
++    reg_name("SleepConditionVariableCS", sh_SleepConditionVariableCS);
++    reg_name("InitializeSListHead", sh_InitSList);
++    reg_name("InterlockedFlushSList", sh_FlushSList);
++    reg_name("InterlockedPushEntrySList", sh_PushEntrySList);
++    reg_name("TlsAlloc", sh_TlsAlloc);
++    reg_name("TlsFree", sh_TlsFree);
++    reg_name("TlsGetValue", sh_TlsGetValue);
++    reg_name("TlsSetValue", sh_TlsSetValue);
++    reg_name("FlsAlloc", sh_FlsAlloc);
++    reg_name("FlsFree", sh_FlsFree);
++    reg_name("FlsGetValue", sh_FlsGetValue);
++    reg_name("FlsSetValue", sh_FlsSetValue);
++    reg_name("GetCurrentProcess", sh_GetCurrentProcess);
++    reg_name("GetCurrentProcessId", sh_GetCurrentProcessId);
++    reg_name("GetCurrentThreadId", sh_GetCurrentThreadId);
++    reg_name("CreateThread", sh_CreateThread);
++    reg_name("TerminateProcess", sh_TerminateProcess);
++    reg_name("TerminateThread", sh_TerminateThread);
++    reg_name("CreateEventW", sh_CreateEventW);
++    reg_name("SetEvent", sh_SetEvent);
++    reg_name("ResetEvent", sh_ResetEvent);
++    reg_name("WaitForSingleObject", sh_WaitForSingleObject);
++    reg_name("WaitForMultipleObjects", sh_WaitForMultipleObjects);
++    reg_name("Sleep", sh_Sleep);
++    reg_name("GetSystemTimeAsFileTime", sh_GetSystemTimeAsFileTime);
++    reg_name("GetLocalTime", sh_GetLocalTime);
++    reg_name("QueryPerformanceCounter", sh_QueryPerformanceCounter);
++    reg_name("QueryPerformanceFrequency", sh_QueryPerformanceFrequency);
++    reg_name("IsDebuggerPresent", sh_IsDebuggerPresent);
++    reg_name("IsProcessorFeaturePresent", sh_IsProcessorFeaturePresent);
++    reg_name("EncodePointer", sh_EncodePointer);
++    reg_name("GetStartupInfoW", sh_GetStartupInfoW);
++    reg_name("GetModuleHandleW", sh_GetModuleHandleW);
++    reg_name("GetSystemDirectoryW", sh_GetSystemDirectoryW);
++    reg_name("GetDiskFreeSpaceExW", sh_GetDiskFreeSpaceExW);
++    reg_name("OutputDebugStringW", sh_OutputDebugStringW);
++    reg_name("MultiByteToWideChar", sh_MultiByteToWideChar);
++    reg_name("WideCharToMultiByte", sh_WideCharToMultiByte);
++    reg_name("CreateFileW", sh_CreateFileW);
++    reg_name("WriteFile", sh_WriteFile);
++    reg_name("CloseHandle", sh_CloseHandle);
++    reg_name("DeleteFileW", sh_DeleteFileW);
++    reg_name("CopyFileW", sh_CopyFileW);
++    reg_name("FindFirstFileW", sh_FindFirstFileW);
++    reg_name("DeviceIoControl", sh_DeviceIoControl);
++    reg_name("GetOverlappedResult", sh_GetOverlappedResult);
++    reg_name("SetUnhandledExceptionFilter", sh_SetUnhandledExceptionFilter);
++    reg_name("UnhandledExceptionFilter", sh_UnhandledExceptionFilter);
++    reg_name("RtlLookupFunctionEntry", sh_RtlLookupFunctionEntry);
++    reg_name("RtlVirtualUnwind", sh_RtlVirtualUnwind);
++    reg_name("RtlCaptureContext", sh_RtlCaptureContext);
++    reg_name("RtlUnwindEx", sh_RtlUnwindEx);
++    reg_name("RtlPcToFileHeader", sh_RtlPcToFileHeader);
++    reg_name("RaiseException", sh_RaiseException);
++    reg_name("__C_specific_handler", sh_C_specific_handler);
++
++    reg_name("CryptAcquireContextW", sh_CryptAcquireContextW);
++    reg_name("CryptReleaseContext", sh_CryptReleaseContext);
++    reg_name("CryptGenRandom", sh_CryptGenRandom);
++    reg_name("EventUnregister", sh_EventUnregister);
++    reg_name("RegOpenCurrentUser", sh_RegOpenCurrentUser);
++    reg_name("RegOpenKeyExW", sh_RegOpenKeyExW);
++    reg_name("RegCreateKeyExW", sh_RegCreateKeyExW);
++    reg_name("RegQueryValueExW", sh_RegQueryValueExW);
++    reg_name("RegSetValueExW", sh_RegSetValueExW);
++    reg_name("RegCloseKey", sh_RegCloseKey);
++    reg_name("LookupAccountNameW", sh_LookupAccountNameW);
++
++    reg_name("CoInitializeEx", sh_CoInitializeEx);
++    reg_name("CoUninitialize", sh_CoUninitialize);
++    reg_name("CoCreateInstance", sh_CoCreateInstance);
++    reg_name("CoCreateGuid", sh_CoCreateGuid);
++    reg_name("CoSetProxyBlanket", sh_CoSetProxyBlanket);
++    reg_name("CoInitializeSecurity", sh_CoInitializeSecurity);
++
++    reg_ord("OLEAUT32.dll", 2, sh_SysAllocString);
++    reg_ord("OLEAUT32.dll", 6, sh_SysFreeString);
++    reg_ord("OLEAUT32.dll", 8, sh_VariantInit);
++    reg_ord("OLEAUT32.dll", 9, sh_VariantClear);
++    reg_ord("OLEAUT32.dll", 12, sh_VariantCopy);
++    reg_ord("OLEAUT32.dll", 200, sh_SysAllocStringLen);
++    reg_ord("OLEAUT32.dll", 201, sh_SysStringLen);
++    reg_ord("OLEAUT32.dll", 202, sh_SysStringByteLen);
++
++    reg_name("PowerSettingRegisterNotification", sh_PowerSettingRegisterNotification);
++    reg_name("PowerSettingUnregisterNotification", sh_PowerSettingUnregisterNotification);
++    reg_name("MiniDumpWriteDump", sh_MiniDumpWriteDump);
++
++    reg_ord("WS2_32.dll", 1, sh_accept);
++    reg_ord("WS2_32.dll", 2, sh_bind);
++    reg_ord("WS2_32.dll", 3, sh_closesocket);
++    reg_ord("WS2_32.dll", 4, sh_connect);
++    reg_ord("WS2_32.dll", 6, sh_getsockname);
++    reg_ord("WS2_32.dll", 8, sh_htons);
++    reg_ord("WS2_32.dll", 9, sh_inet_addr);
++    reg_ord("WS2_32.dll", 11, sh_inet_ntoa);
++    reg_ord("WS2_32.dll", 13, sh_listen);
++    reg_ord("WS2_32.dll", 15, sh_recv);
++    reg_ord("WS2_32.dll", 16, sh_recvfrom);
++    reg_ord("WS2_32.dll", 19, sh_send);
++    reg_ord("WS2_32.dll", 21, sh_setsockopt);
++    reg_ord("WS2_32.dll", 23, sh_socket);
++    reg_ord("WS2_32.dll", 111, sh_WSAGetLastError);
++    reg_ord("WS2_32.dll", 115, sh_WSAStartup);
++    reg_ord("WS2_32.dll", 116, sh_WSACleanup);
++
++    reg_name("malloc", sh_malloc);
++    reg_name("_malloc_base", sh_malloc);
++    reg_name("calloc", sh_calloc);
++    reg_name("_calloc_base", sh_calloc);
++    reg_name("realloc", sh_realloc);
++    reg_name("free", sh_free);
++    reg_name("_free_base", sh_free);
++
++    reg_name("strlen", sh_strlen);
++    reg_name("wcslen", sh_wcslen);
++    reg_name("strcmp", sh_strcmp);
++    reg_name("strncmp", sh_strncmp);
++    reg_name("_stricmp", sh_stricmp);
++    reg_name("_wcsicmp", sh_wcsicmp);
++    reg_name("memset", sh_memset);
++    reg_name("strcpy_s", sh_strcpy_s);
++    reg_name("wcscpy_s", sh_wcscpy_s);
++    reg_name("wcscpy", sh_wcscpy);
++    reg_name("strtok_s", sh_strtok_s);
++
++    reg_name("_initterm", sh_initterm);
++    reg_name("_initterm_e", sh_initterm_e);
++    reg_name("_initialize_narrow_environment", sh_initialize_narrow_environment);
++    reg_name("_configure_narrow_argv", sh_configure_narrow_argv);
++    reg_name("_initialize_onexit_table", sh_initialize_onexit_table);
++    reg_name("_register_onexit_function", sh_register_onexit_function);
++    reg_name("_execute_onexit_table", sh_execute_onexit_table);
++    reg_name("_crt_atexit", sh_crt_atexit);
++    reg_name("_crt_at_quick_exit", sh_crt_at_quick_exit);
++    reg_name("_cexit", sh_cexit);
++    reg_name("_seh_filter_dll", sh_seh_filter_dll);
++    reg_name("terminate", sh_terminate);
++    reg_name("abort", abort);
++    reg_name("_wassert", sh_wassert);
++    reg_name("_errno", sh_errno);
++    reg_name("_invalid_parameter_noinfo", sh_invalid_parameter_noinfo);
++    reg_name("_invalid_parameter_noinfo_noreturn", sh_invalid_parameter_noinfo_noreturn);
++    reg_name("_beginthreadex", sh_beginthreadex);
++
++    reg_name("qsort", sh_qsort);
++    reg_name("abs", sh_abs);
++    reg_name("sqrt", sh_sqrt);
++    reg_name("fabs", sh_fabs);
++    reg_name("_isnan", sh_isnan);
++    reg_name("_finite", sh_finite);
++    reg_name("atol", sh_atol);
++
++    reg_name("_wremove", sh_wremove);
++    reg_name("_waccess_s", sh_waccess_s);
++    reg_name("_access_s", sh_access_s);
++    reg_name("_wmkdir", sh_wmkdir);
++    reg_name("_time64", sh_time64);
++    reg_name("_localtime64_s", sh_localtime64_s);
++    reg_name("strftime", sh_strftime);
++    reg_name("clock", sh_clock);
++
++    reg_name("__acrt_iob_func", sh_acrt_iob_func);
++    reg_name("fopen", sh_fopen);
++    reg_name("fopen_s", sh_fopen_s);
++    reg_name("_wfopen", sh_wfopen);
++    reg_name("_wfopen_s", sh_wfopen_s);
++    reg_name("_fsopen", sh_fsopen);
++    reg_name("_wfsopen", sh_wfsopen);
++    reg_name("fclose", sh_fclose);
++    reg_name("fread", sh_fread);
++    reg_name("fwrite", sh_fwrite);
++    reg_name("fputs", sh_fputs);
++    reg_name("fgets", sh_fgets);
++    reg_name("fseek", sh_fseek);
++    reg_name("ftell", sh_ftell);
++    reg_name("_ftelli64", sh_ftelli64);
++    reg_name("fflush", sh_fflush);
++    reg_name("ferror", sh_ferror);
++    reg_name("putchar", sh_putchar);
++    reg_name("getchar", sh_getchar);
++
++    reg_name("__stdio_common_vsprintf", sh_stdio_common_vsprintf);
++    reg_name("__stdio_common_vsprintf_s", sh_stdio_common_vsprintf_s);
++    reg_name("__stdio_common_vsnprintf_s", sh_stdio_common_vsnprintf_s);
++    reg_name("__stdio_common_vswprintf", sh_stdio_common_vswprintf);
++    reg_name("__stdio_common_vswprintf_s", sh_stdio_common_vswprintf_s);
++    reg_name("__stdio_common_vfprintf", sh_stdio_common_vfprintf);
++    reg_name("__stdio_common_vfwprintf", sh_stdio_common_vfwprintf);
++}
++
++static void* get_export(const char *want) {
++    if (!g_image) return NULL;
++    u32 e = f32(0x3c);
++    u32 exprva = f32(e + 24 + 112 + 8 * 0);
++    u32 nnames = *(u32*)(g_image + exprva + 24);
++    u32 fns = *(u32*)(g_image + exprva + 28);
++    u32 names = *(u32*)(g_image + exprva + 32);
++    u32 ords = *(u32*)(g_image + exprva + 36);
++
++    for (u32 i = 0; i < nnames; i++) {
++        u32 nrva = *(u32*)(g_image + names + i * 4);
++        if (strcmp((char*)(g_image + nrva), want) == 0) {
++            u16 ord = *(u16*)(g_image + ords + i * 2);
++            u32 frva = *(u32*)(g_image + fns + ord * 4);
++            return g_image + frva;
++        }
++    }
++    return NULL;
++}
++
++static int load_pe_file(const char *path) {
++    int fd = open(path, O_RDONLY);
++    if (fd < 0) return -1;
++    g_filelen = lseek(fd, 0, SEEK_END);
++    lseek(fd, 0, SEEK_SET);
++    g_file = malloc(g_filelen);
++    if (!g_file || read(fd, g_file, g_filelen) != g_filelen) {
++        close(fd);
++        if (g_file) { free(g_file); g_file = NULL; }
++        return -1;
++    }
++    close(fd);
++
++    u32 e = f32(0x3c);
++    g_imagebase = f64(e + 24 + 24);
++    u32 sizeofimage = f32(e + 24 + 56);
++    u32 entry = f32(e + 24 + 16);
++    u16 nsec = f16(e + 6);
++    u16 optsize = f16(e + 20);
++    u64 sectbl = e + 24 + optsize;
++    u32 hdrsize = f32(e + 24 + 60);
++
++    u8 *img = calloc(1, sizeofimage);
++    if (!img) return -1;
++    memcpy(img, g_file, hdrsize);
++
++    for (int i = 0; i < nsec; i++) {
++        u64 s = sectbl + i * 40;
++        u32 vaddr = f32(s + 12), rawsize = f32(s + 16), rawptr = f32(s + 20);
++        if (rawsize && rawptr + rawsize <= (u32)g_filelen) {
++            memcpy(img + vaddr, g_file + rawptr, rawsize);
++        }
++    }
++
++    u32 imprva = f32(e + 24 + 112 + 8 * 1);
++    for (u64 d = imprva; ; d += 20) {
++        u32 orig = *(u32*)(img + d), namer = *(u32*)(img + d + 12), fthunk = *(u32*)(img + d + 16);
++        if (namer == 0) break;
++        const char *dllname = (char*)(img + namer);
++        u64 rt = orig ? orig : fthunk;
++        for (int j = 0; ; j++) {
++            u64 ent = *(u64*)(img + rt + j * 8);
++            if (!ent) break;
++            u64 *slot = (u64*)(img + fthunk + j * 8);
++            void *sh = NULL;
++            if (ent >> 63) {
++                u32 ord = (u32)(ent & 0xffff);
++                sh = find_shim_ordinal(dllname, ord);
++            } else {
++                const char *fn = (char*)(img + (ent & 0x7fffffff) + 2);
++                sh = find_shim(fn);
++            }
++            *slot = (u64)sh;
++        }
++    }
++
++    int mfd = memfd_create("goodix_engine", MFD_CLOEXEC);
++    if (mfd < 0) { free(img); return -1; }
++    if (write(mfd, img, sizeofimage) != (ssize_t)sizeofimage) {
++        close(mfd); free(img); return -1;
++    }
++    free(img);
++
++    void *m = mmap((void*)g_imagebase, sizeofimage, PROT_NONE,
++                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
++    if (m == MAP_FAILED || m != (void*)g_imagebase) {
++        close(mfd);
++        return -1;
++    }
++    g_image = m;
++
++    u32 hdrmap = (hdrsize + 0xfff) & ~0xfffu;
++    if (mmap(g_image, hdrmap, PROT_READ, MAP_PRIVATE | MAP_FIXED, mfd, 0) == MAP_FAILED) {
++        close(mfd); return -1;
++    }
++
++    for (int i = 0; i < nsec; i++) {
++        u64 s = sectbl + i * 40;
++        u32 vaddr = f32(s + 12), vsize = f32(s + 8), rawsize = f32(s + 16), chars = f32(s + 36);
++        u32 seglen = (vsize > rawsize ? vsize : rawsize);
++        seglen = (seglen + 0xfff) & ~0xfffu;
++        if (vaddr + seglen > sizeofimage) seglen = sizeofimage - vaddr;
++        if (!seglen) continue;
++
++        int prot = PROT_READ;
++        if (chars & 0x20000000) prot |= PROT_EXEC;
++        if (chars & 0x80000000) prot |= PROT_WRITE;
++        if (mmap(g_image + vaddr, seglen, prot, MAP_PRIVATE | MAP_FIXED, mfd, vaddr) == MAP_FAILED) {
++            close(mfd); return -1;
++        }
++    }
++    close(mfd);
++
++    u32 tlsrva = f32(e + 24 + 112 + 8 * 9);
++    if (tlsrva) {
++        u64 start = *(u64*)(g_image + tlsrva);
++        u64 end = *(u64*)(g_image + tlsrva + 8);
++        u64 idxaddr = *(u64*)(g_image + tlsrva + 16);
++        u64 cbaddr = *(u64*)(g_image + tlsrva + 24);
++        u64 tlen = end - start;
++        memset(g_tls_block, 0, sizeof(g_tls_block));
++        if (tlen && tlen <= sizeof(g_tls_block)) memcpy(g_tls_block, (void*)start, tlen);
++        g_tls_array[0] = g_tls_block;
++        if (idxaddr) *(u32*)idxaddr = 0;
++        if (cbaddr) {
++            for (u64 *cb = (u64*)cbaddr; *cb; cb++) {
++                void(MS *f)(void*, u32, void*) = (void*)*cb;
++                f((void*)g_imagebase, DLL_PROCESS_ATTACH, 0);
++            }
++        }
++    }
++
++    memset(g_teb, 0, sizeof(g_teb));
++    memset(g_peb, 0, sizeof(g_peb));
++    *(u64*)(g_teb + 0x30) = (u64)g_teb;
++    *(u64*)(g_teb + 0x08) = (u64)(g_teb + sizeof(g_teb));
++    *(u64*)(g_teb + 0x10) = (u64)g_teb;
++    *(u64*)(g_teb + 0x58) = (u64)g_tls_array;
++    *(u64*)(g_teb + 0x60) = (u64)g_peb;
++
++    if (syscall(SYS_arch_prctl, ARCH_SET_GS, g_teb) != 0) return -1;
++
++    int(MS *DllMain)(void*, u32, void*) = (void*)(g_image + entry);
++    int r = DllMain((void*)g_imagebase, DLL_PROCESS_ATTACH, 0);
++    return r ? 0 : -2;
++}
++
++/* Engine Function Pointers */
++static int (MS *m_getAlgorithmVersion)(char*) = NULL;
++static int (MS *m_ppp_param_init)(int) = NULL;
++static void* (MS *m_enrolStartEx)(int*) = NULL;
++static int (MS *m_enrolAddImage)(void*, GoodixImage*, void*, void*, u8, u32*) = NULL;
++static int (MS *m_enrolGetTemplate)(void*, void**) = NULL;
++static int (MS *m_enrolFinish)(void*) = NULL;
++static int (MS *m_templateGetPackedSize)(void*) = NULL;
++static int (MS *m_templatePack)(void*, void*) = NULL;
++static int (MS *m_templateUnPack)(const void*, int, void*, void**) = NULL;
++static int (MS *m_templateDelete)(void*) = NULL;
++static int (MS *m_identifyImage)(GoodixImage*, void*, void**, int, int*, int*, u32*, int, int, void*, int) = NULL;
++
++static gboolean g_milan_available = FALSE;
++static char g_milan_version[128] = "Unknown";
++
++static const char *default_search_paths[] = {
++    "/home/sastauser/goodix-27c6-5e0a-re/drivers/GoodixEngineAdapter.dll",
++    "/var/lib/fprint/GoodixEngineAdapter.dll",
++    "/etc/goodix/GoodixEngineAdapter.dll",
++    "/run/current-system/sw/lib/GoodixEngineAdapter.dll",
++    "/usr/lib/goodix/GoodixEngineAdapter.dll",
++    NULL,
++};
++
++gboolean goodix_milan_init (const char *dll_path) {
++    if (g_milan_available) return TRUE;
++
++    register_all_shims();
++
++    const char *target = dll_path;
++    if (!target) {
++        target = g_getenv("GOODIX_ENGINE_DLL_PATH");
++    }
++
++    int loaded = -1;
++    if (target && access(target, R_OK) == 0) {
++        loaded = load_pe_file(target);
++    } else {
++        for (int i = 0; default_search_paths[i]; i++) {
++            if (access(default_search_paths[i], R_OK) == 0) {
++                target = default_search_paths[i];
++                loaded = load_pe_file(target);
++                if (loaded == 0) break;
++            }
++        }
++    }
++
++    if (loaded != 0) {
++        g_warning("5e0a: failed to load GoodixEngineAdapter.dll");
++        return FALSE;
++    }
++
++    m_getAlgorithmVersion = get_export("getAlgorithmVersion");
++    m_ppp_param_init = get_export("ppp_param_init");
++    m_enrolStartEx = get_export("enrolStartEx");
++    m_enrolAddImage = get_export("enrolAddImage");
++    m_enrolGetTemplate = get_export("enrolGetTemplate");
++    m_enrolFinish = get_export("enrolFinish");
++    m_templateGetPackedSize = get_export("templateGetPackedSize");
++    m_templatePack = get_export("templatePack");
++    m_templateUnPack = get_export("templateUnPack");
++    m_templateDelete = get_export("templateDelete");
++    m_identifyImage = get_export("identifyImage");
++
++    if (!m_getAlgorithmVersion || !m_ppp_param_init || !m_enrolStartEx ||
++        !m_enrolAddImage || !m_enrolGetTemplate || !m_enrolFinish ||
++        !m_templateGetPackedSize || !m_templatePack || !m_templateUnPack ||
++        !m_templateDelete || !m_identifyImage) {
++        g_warning("5e0a: required Milan engine exports missing");
++        return FALSE;
++    }
++
++    ensure_gs();
++    m_getAlgorithmVersion(g_milan_version);
++    m_ppp_param_init(10); /* 64x80 sensor initialization */
++
++    g_message("5e0a: Milan biometric matching engine loaded successfully (%s)", g_milan_version);
++    g_milan_available = TRUE;
++    return TRUE;
++}
++
++gboolean goodix_milan_is_available (void) {
++    return g_milan_available;
++}
++
++const char *goodix_milan_get_version (void) {
++    return g_milan_version;
++}
++
++static void make_goodix_image(GoodixImage *img, const uint8_t *pix, int width, int height, int sensor_type) {
++    memset(img, 0, sizeof(GoodixImage));
++    img->data = (uint8_t*)pix;
++    img->width = width;
++    img->height = height;
++    img->bits = 8;
++    img->channels = 1;
++    img->frame_count = 1;
++    img->sensor_type = sensor_type;
++    img->quality = 100;
++    img->overlap = 100;
++}
++
++void *goodix_milan_enroll_start (int *max_images) {
++    if (!g_milan_available && !goodix_milan_init(NULL)) return NULL;
++    ensure_gs();
++    int max_imgs = 16;
++    void *ctx = m_enrolStartEx(&max_imgs);
++    if (!ctx) return NULL;
++    if (max_images) *max_images = max_imgs;
++    *(u16*)((char*)ctx + 8) = 8; /* Target 8 enrollment touches */
++    return ctx;
++}
++
++int goodix_milan_enroll_add_image (void *ctx,
++                                   const uint8_t *pixels,
++                                   int width,
++                                   int height,
++                                   int *enrolled_count,
++                                   int *progress_pct) {
++    if (!ctx || !pixels) return -1;
++    ensure_gs();
++
++    GoodixImage img;
++    make_goodix_image(&img, pixels, width, height, 10);
++    u32 status_out[2] = {0};
++
++    int add_res = m_enrolAddImage(ctx, &img, NULL, NULL, 0, status_out);
++    if (enrolled_count) *enrolled_count = *(u16*)((char*)ctx + 10);
++    if (progress_pct) *progress_pct = *(int*)((char*)ctx + 12);
++    return add_res;
++}
++
++int goodix_milan_enroll_commit (void *ctx,
++                                uint8_t **out_blob,
++                                size_t *out_len) {
++    if (!ctx || !out_blob || !out_len) return -1;
++    ensure_gs();
++
++    void *master_template = NULL;
++    int t_res = m_enrolGetTemplate(ctx, &master_template);
++    if (t_res != 0 || !master_template) return -2;
++
++    int packed_size = m_templateGetPackedSize(master_template);
++    if (packed_size <= 0) return -3;
++
++    uint8_t *packed_buf = malloc(packed_size);
++    if (!packed_buf) return -4;
++
++    int pack_res = m_templatePack(master_template, packed_buf);
++    if (pack_res != 0) {
++        free(packed_buf);
++        return -5;
++    }
++
++    *out_blob = packed_buf;
++    *out_len = (size_t)packed_size;
++    return 0;
++}
++
++void goodix_milan_enroll_finish (void *ctx) {
++    if (!ctx) return;
++    ensure_gs();
++    m_enrolFinish(ctx);
++}
++
++int goodix_milan_verify_image (const uint8_t *pixels,
++                               int width,
++                               int height,
++                               const uint8_t *template_blob,
++                               size_t template_len,
++                               int *out_score) {
++    if (!pixels || !template_blob || template_len == 0) return 0;
++    if (!g_milan_available && !goodix_milan_init(NULL)) return 0;
++    ensure_gs();
++
++    void *unpacked_template = NULL;
++    int unpack_res = m_templateUnPack(template_blob, (int)template_len, NULL, &unpacked_template);
++    if (unpack_res != 0 || !unpacked_template) {
++        g_warning("5e0a: templateUnPack failed (err=%d)", unpack_res);
++        return 0;
++    }
++
++    GoodixImage probe;
++    make_goodix_image(&probe, pixels, width, height, 10);
++    void *active_templates[1] = { unpacked_template };
++    int matched_idx = -999;
++    int match_score = -999;
++    u32 details[2] = {0};
++
++    int id_res = m_identifyImage(&probe, NULL, active_templates, 1,
++                                 &matched_idx, &match_score, details,
++                                 0, 0, NULL, 0);
++    (void)id_res;
++
++    m_templateDelete(unpacked_template);
++
++    int is_match = (matched_idx == 0 && match_score > 0);
++    if (out_score) *out_score = (match_score >= 0) ? match_score : 0;
++    return is_match;
++}
++
++void goodix_milan_close (void) {
++    /* Process lifetime mappings intentionally preserved */
++}
+diff --git a/libfprint/drivers/goodixtls/goodix_milan.h b/libfprint/drivers/goodixtls/goodix_milan.h
+new file mode 100644
+index 0000000..5bad2ad
+--- /dev/null
++++ b/libfprint/drivers/goodixtls/goodix_milan.h
+@@ -0,0 +1,71 @@
++/*
++ * Goodix Milan Engine In-Process Loader and Bridge
++ *
++ * Loads GoodixEngineAdapter.dll in-process on Linux with %gs TEB and memfd W^X mapping.
++ * Interfaces with Goodix's Milan biometric matching engine for enrollment and identification.
++ *
++ * Copyright (C) 2026 The libfprint Goodix 5e0a contributors
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++
++#pragma once
++
++#include <stddef.h>
++#include <stdint.h>
++#include <glib.h>
++
++G_BEGIN_DECLS
++
++/* Initialize the Milan engine from GoodixEngineAdapter.dll.
++ * If dll_path is NULL, searches standard known locations.
++ * Returns TRUE on success, FALSE on failure. */
++gboolean goodix_milan_init (const char *dll_path);
++
++/* Check if the Milan engine is loaded and available. */
++gboolean goodix_milan_is_available (void);
++
++/* Get engine version string (e.g. "Milan_v_3.02.00.20"). */
++const char *goodix_milan_get_version (void);
++
++/* Start enrollment context. Sets *max_images (e.g. 16).
++ * Returns opaque enrollment context pointer or NULL on failure. */
++void *goodix_milan_enroll_start (int *max_images);
++
++/* Feed one 64x80 8-bit normalized grayscale impression to enrollment.
++ * Updates *enrolled_count and *progress_pct.
++ * Returns 0 on success, non-zero if impression was rejected (e.g. poor quality/duplicate). */
++int goodix_milan_enroll_add_image (void *ctx,
++                                   const uint8_t *pixels,
++                                   int width,
++                                   int height,
++                                   int *enrolled_count,
++                                   int *progress_pct);
++
++/* Commit completed enrollment into a packed template buffer.
++ * Caller owns and must free() *out_blob.
++ * Returns 0 on success. */
++int goodix_milan_enroll_commit (void *ctx,
++                                uint8_t **out_blob,
++                                size_t *out_len);
++
++/* Free an active enrollment context. */
++void goodix_milan_enroll_finish (void *ctx);
++
++/* Verify a 64x80 8-bit normalized probe frame against a packed composite template.
++ * Returns 1 on MATCH, 0 on NO MATCH or error.
++ * If out_score is non-NULL, receives the engine match score (0-100). */
++int goodix_milan_verify_image (const uint8_t *pixels,
++                               int width,
++                               int height,
++                               const uint8_t *template_blob,
++                               size_t template_len,
++                               int *out_score);
++
++/* Teardown and close the Milan engine. */
++void goodix_milan_close (void);
++
++G_END_DECLS
 diff --git a/libfprint/drivers/goodixtls/goodix_proto.c b/libfprint/drivers/goodixtls/goodix_proto.c
 index b8e6dfb..d24c947 100644
 --- a/libfprint/drivers/goodixtls/goodix_proto.c
@@ -4497,7 +6072,7 @@ index b726b67..9e5680b 100644
    { .vid = 0x2808, .pid = 0x9338 },
    { .vid = 0x2808, .pid = 0x93a9 },
 diff --git a/libfprint/meson.build b/libfprint/meson.build
-index 6df412a..a5c9cb0 100644
+index 6df412a..876e0ce 100644
 --- a/libfprint/meson.build
 +++ b/libfprint/meson.build
 @@ -141,6 +141,8 @@ driver_sources = {
@@ -4505,7 +6080,7 @@ index 6df412a..a5c9cb0 100644
      'goodixtls511' :
          [ 'drivers/goodixtls/goodix511.c' ],
 +    'goodixtls5e0a' :
-+        [ 'drivers/goodixtls/goodix5e0a.c' ],
++        [ 'drivers/goodixtls/goodix5e0a.c', 'drivers/goodixtls/goodix_milan.c' ],
      'fpcmoc' :
          [ 'drivers/fpcmoc/fpc.c' ],
  }

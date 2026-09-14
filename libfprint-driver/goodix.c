@@ -101,7 +101,7 @@ typedef struct
 } FpiDeviceGoodixTlsPrivate;
 
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (FpiDeviceGoodixTls, fpi_device_goodixtls,
-                                     FP_TYPE_IMAGE_DEVICE);
+                                     FP_TYPE_DEVICE);
 
 gchar *
 data_to_str (guint8 *data, guint32 length)

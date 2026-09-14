@@ -1,0 +1,992 @@
+// experiments/test_goodix_loader.c
+// Native in-process PE loader for GoodixEngineAdapter.dll on x86-64 Linux (no Wine).
+// Derived from the ft9201-libfprint in-process loader architecture by OMGrant.
+//
+// Maps PE at preferred base 0x180000000 (W^X compliant), installs fake TEB in %gs,
+// resolves UCRT / Win32 imports to libc shims, calls DllMain, and verifies
+// Goodix Milan algorithm exports.
+
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <stdarg.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <time.h>
+#include <math.h>
+#include <sys/mman.h>
+#include <sys/syscall.h>
+#include <sys/time.h>
+#include <asm/prctl.h>
+
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+
+#define MS __attribute__((ms_abi))
+#define DLL_PROCESS_ATTACH 1
+
+static u8 *g_image;
+static u64 g_imagebase;
+static const char *g_dllpath;
+static u8 *g_file;
+static long g_filelen;
+
+static u32 f32(u64 o) { return *(u32*)(g_file + o); }
+static u64 f64(u64 o) { return *(u64*)(g_file + o); }
+static u16 f16(u64 o) { return *(u16*)(g_file + o); }
+
+// ---------- Fake TEB / gs ----------
+static u8 g_teb[0x2000] __attribute__((aligned(4096)));
+static u8 g_peb[0x1000] __attribute__((aligned(4096)));
+static void *g_tls_array[64];
+static u8 g_tls_block[0x2000];
+
+static int set_gs(void *base) {
+    return syscall(SYS_arch_prctl, ARCH_SET_GS, base);
+}
+
+// ---------- Import Shim Table ----------
+typedef struct {
+    const char *dll;
+    const char *name;
+    uint32_t ordinal;
+    void *fn;
+} Shim;
+
+static Shim g_shims[512];
+static int g_nshims = 0;
+
+static void reg_name(const char *name, void *fn) {
+    if (g_nshims >= (int)(sizeof(g_shims) / sizeof(g_shims[0]))) {
+        fprintf(stderr, "[loader] Shim table overflow!\n");
+        abort();
+    }
+    g_shims[g_nshims].dll = NULL;
+    g_shims[g_nshims].name = name;
+    g_shims[g_nshims].ordinal = 0;
+    g_shims[g_nshims].fn = fn;
+    g_nshims++;
+}
+
+static void reg_ord(const char *dll, uint32_t ord, void *fn) {
+    if (g_nshims >= (int)(sizeof(g_shims) / sizeof(g_shims[0]))) {
+        fprintf(stderr, "[loader] Shim table overflow!\n");
+        abort();
+    }
+    g_shims[g_nshims].dll = dll;
+    g_shims[g_nshims].name = NULL;
+    g_shims[g_nshims].ordinal = ord;
+    g_shims[g_nshims].fn = fn;
+    g_nshims++;
+}
+
+static void* find_shim(const char *name) {
+    for (int i = 0; i < g_nshims; i++) {
+        if (g_shims[i].name && strcmp(g_shims[i].name, name) == 0) {
+            return g_shims[i].fn;
+        }
+    }
+    return NULL;
+}
+
+static void* find_shim_ordinal(const char *dll, uint32_t ord) {
+    for (int i = 0; i < g_nshims; i++) {
+        if (g_shims[i].ordinal == ord) {
+            if (!g_shims[i].dll || !dll || strcasecmp(g_shims[i].dll, dll) == 0) {
+                return g_shims[i].fn;
+            }
+        }
+    }
+    return NULL;
+}
+
+// ================= SHIMS IMPLEMENTATION (All MS ABI) =================
+
+static u32 g_lasterr = 0;
+static int g_crt_errno = 0;
+
+static void MS sh_SetLastError(u32 e) { g_lasterr = e; }
+static u32  MS sh_GetLastError(void) { return g_lasterr; }
+
+// Heap
+static void* MS sh_GetProcessHeap(void) { return (void*)0x100; }
+static void* MS sh_HeapAlloc(void *h, u32 flags, u64 size) {
+    void *p = malloc(size ? size : 1);
+    if (p && (flags & 8)) memset(p, 0, size);
+    return p;
+}
+static int MS sh_HeapFree(void *h, u32 f, void *p) { free(p); return 1; }
+static void* MS sh_LocalFree(void *h) { free(h); return NULL; }
+
+// UCRT Heap
+static void* MS sh_malloc(size_t s) { return malloc(s ? s : 1); }
+static void* MS sh_calloc(size_t n, size_t s) { return calloc(n ? n : 1, s ? s : 1); }
+static void* MS sh_realloc(void *p, size_t s) { return realloc(p, s ? s : 1); }
+static void  MS sh_free(void *p) { free(p); }
+
+// Critical Sections
+static void MS sh_InitCS(void *p) { }
+static u32  MS sh_InitCSSpin(void *p, u32 s) { return 1; }
+static void MS sh_EnterCS(void *p) { }
+static void MS sh_LeaveCS(void *p) { }
+static void MS sh_DeleteCS(void *p) { }
+
+// Condition Variables & SList
+static void MS sh_InitConditionVariable(void *p) { }
+static void MS sh_WakeAllConditionVariable(void *p) { }
+static int  MS sh_SleepConditionVariableCS(void *cv, void *cs, u32 ms) { return 1; }
+static void MS sh_InitSList(void *p) { memset(p, 0, 16); }
+static void* MS sh_FlushSList(void *p) { return NULL; }
+static void* MS sh_PushEntrySList(void *h, void *e) { return NULL; }
+
+// TLS & FLS
+static u32 g_tls_next = 1;
+static void *g_tls_vals[1088];
+static u32  MS sh_TlsAlloc(void) { return g_tls_next++; }
+static int  MS sh_TlsFree(u32 i) { return 1; }
+static void* MS sh_TlsGetValue(u32 i) { g_lasterr = 0; return (i < 1088) ? g_tls_vals[i] : NULL; }
+static int  MS sh_TlsSetValue(u32 i, void *v) { if (i < 1088) g_tls_vals[i] = v; return 1; }
+
+static u32  MS sh_FlsAlloc(void *cb) { return g_tls_next++; }
+static int  MS sh_FlsFree(u32 i) { return 1; }
+static void* MS sh_FlsGetValue(u32 i) { return (i < 1088) ? g_tls_vals[i] : NULL; }
+static int  MS sh_FlsSetValue(u32 i, void *v) { if (i < 1088) g_tls_vals[i] = v; return 1; }
+
+// Process / Thread / Module
+static void* MS sh_GetCurrentProcess(void) { return (void*)-1; }
+static u32  MS sh_GetCurrentProcessId(void) { return 1234; }
+static u32  MS sh_GetCurrentThreadId(void) { return 5678; }
+static void* MS sh_GetModuleHandleW(void *n) { return (void*)g_image; }
+static void* MS sh_CreateThread(void *sa, u64 st, void *fn, void *arg, u32 fl, u32 *id) {
+    if (id) *id = 4321;
+    return (void*)0x3000;
+}
+static void MS sh_TerminateProcess(void *h, u32 c) { fprintf(stderr, "[!] TerminateProcess(%u)\n", c); }
+static int  MS sh_TerminateThread(void *h, u32 c) { return 1; }
+
+// Events & Synchronization
+static void* MS sh_CreateEventW(void *sa, int man, int init, void *name) { return (void*)0x2000; }
+static int  MS sh_SetEvent(void *h) { return 1; }
+static int  MS sh_ResetEvent(void *h) { return 1; }
+static u32  MS sh_WaitForSingleObject(void *h, u32 ms) { return 0; }
+static u32  MS sh_WaitForMultipleObjects(u32 count, void **handles, int wait_all, u32 ms) { return 0; }
+static void MS sh_Sleep(u32 ms) { usleep(ms * 1000); }
+
+// Time / Performance
+static u32 MS sh_timeGetTime(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return (u32)(tv.tv_sec * 1000 + tv.tv_usec / 1000);
+}
+static void MS sh_GetSystemTimeAsFileTime(u64 *ft) {
+    static u64 t = 0x01d0000000000000ULL;
+    if (ft) *ft = (t += 100000);
+}
+static void MS sh_GetLocalTime(void *st) {
+    time_t now = time(NULL);
+    struct tm *tm = localtime(&now);
+    if (st) {
+        u16 *w = (u16*)st;
+        w[0] = tm->tm_year + 1900;
+        w[1] = tm->tm_mon + 1;
+        w[2] = tm->tm_wday;
+        w[3] = tm->tm_mday;
+        w[4] = tm->tm_hour;
+        w[5] = tm->tm_min;
+        w[6] = tm->tm_sec;
+        w[7] = 0;
+    }
+}
+static int MS sh_QueryPerformanceCounter(u64 *c) {
+    static u64 t = 0;
+    if (c) *c = (t += 1000);
+    return 1;
+}
+static int MS sh_QueryPerformanceFrequency(u64 *f) {
+    if (f) *f = 10000000ULL;
+    return 1;
+}
+
+// System / Environment / Security
+static int   MS sh_IsDebuggerPresent(void) { return 0; }
+static int   MS sh_IsProcessorFeaturePresent(u32 f) { return 1; }
+static void* MS sh_EncodePointer(void *p) { return p; }
+static void  MS sh_GetStartupInfoW(void *si) { if (si) { memset(si, 0, 104); *(u32*)si = 104; } }
+static u32   MS sh_GetSystemDirectoryW(u16 *b, u32 n) {
+    const u16 sys[] = {'C',':','\\','W','i','n','d','o','w','s','\\','S','y','s','t','e','m','3','2',0};
+    u32 len = 19;
+    if (b && n > len) { memcpy(b, sys, sizeof(sys)); return len; }
+    return 0;
+}
+static int MS sh_GetDiskFreeSpaceExW(void *d, u64 *fb, u64 *tb, u64 *tfb) {
+    if (fb) *fb = 100ULL * 1024 * 1024 * 1024;
+    if (tb) *tb = 500ULL * 1024 * 1024 * 1024;
+    if (tfb) *tfb = 100ULL * 1024 * 1024 * 1024;
+    return 1;
+}
+
+// Logging / Output
+static void MS sh_OutputDebugStringW(const u16 *s) {
+    if (s) {
+        fprintf(stderr, "[Goodix DLL] ");
+        for (; *s; s++) fputc(*s & 0xff, stderr);
+        fputc('\n', stderr);
+    }
+}
+
+// Strings & Conversions
+static int MS sh_MultiByteToWideChar(u32 cp, u32 f, const char *mb, int mbc, u16 *wc, int wcc) {
+    if (mbc < 0) mbc = strlen(mb) + 1;
+    if (wcc == 0) return mbc;
+    int n = (mbc < wcc) ? mbc : wcc;
+    for (int i = 0; i < n; i++) wc[i] = (u8)mb[i];
+    return n;
+}
+static int MS sh_WideCharToMultiByte(u32 cp, u32 f, const u16 *wc, int wcc, char *mb, int mbc, void *d, void *u) {
+    if (wcc < 0) { wcc = 0; while (wc[wcc]) wcc++; wcc++; }
+    if (mbc == 0) return wcc;
+    int n = (wcc < mbc) ? wcc : mbc;
+    for (int i = 0; i < n; i++) mb[i] = (char)wc[i];
+    return n;
+}
+
+// File / Device I/O Stubs
+static void* MS sh_CreateFileW(void *n, u32 a, u32 s, void *sa, u32 c, u32 fl, void *t) { g_lasterr = 2; return (void*)-1; }
+static int   MS sh_WriteFile(void *h, const void *b, u32 n, u32 *wr, void *o) { if (wr) *wr = n; return 1; }
+static int   MS sh_CloseHandle(void *h) { return 1; }
+static int   MS sh_DeleteFileW(void *n) { return 1; }
+static int   MS sh_CopyFileW(void *e, void *n, int f) { return 1; }
+static void* MS sh_FindFirstFileW(void *n, void *d) { g_lasterr = 2; return (void*)-1; }
+static int   MS sh_DeviceIoControl(void *h, u32 c, void *ib, u32 il, void *ob, u32 ol, u32 *ret, void *ov) {
+    if (ret) *ret = 0;
+    return 1;
+}
+static int MS sh_GetOverlappedResult(void *h, void *o, u32 *b, int w) { if (b) *b = 0; return 1; }
+
+// Exception Handling Stubs
+static void* MS sh_SetUnhandledExceptionFilter(void *f) { return NULL; }
+static u32   MS sh_UnhandledExceptionFilter(void *p) { return 1; }
+static void* MS sh_RtlLookupFunctionEntry(u64 pc, u64 *base, void *hist) { if (base) *base = g_imagebase; return NULL; }
+static void* MS sh_RtlVirtualUnwind(u32 t, u64 b, u64 pc, void *fe, void *ctx, void **hd, u64 *est, void *ctxp) { return NULL; }
+static void  MS sh_RtlCaptureContext(void *ctx) { if (ctx) memset(ctx, 0, 1232); }
+static void  MS sh_RtlUnwindEx(void *a, void *b, void *c, void *d, void *e, void *f) { }
+static void* MS sh_RtlPcToFileHeader(void *pc, void **base) { if (base) *base = (void*)g_image; return (void*)g_image; }
+static void  MS sh_RaiseException(u32 code, u32 fl, u32 n, void *a) {
+    fprintf(stderr, "[loader] RaiseException code=%#x\n", code);
+}
+static void MS sh_C_specific_handler(void) { }
+
+// ADVAPI32 (Crypto / Registry)
+static int MS sh_CryptAcquireContextW(void **ph, void *cn, void *pn, u32 pt, u32 f) {
+    if (ph) *ph = (void*)0xC001;
+    return 1;
+}
+static int MS sh_CryptReleaseContext(void *h, u32 f) { return 1; }
+static int MS sh_CryptGenRandom(void *h, u32 len, u8 *buf) {
+    if (buf) {
+        int fd = open("/dev/urandom", O_RDONLY);
+        if (fd >= 0) { read(fd, buf, len); close(fd); }
+    }
+    return 1;
+}
+static u32 MS sh_EventUnregister(u64 h) { return 0; }
+static u32 MS sh_RegOpenCurrentUser(u32 am, void **k) { if (k) *k = (void*)0x5001; return 0; }
+static u32 MS sh_RegOpenKeyExW(void *k, void *s, u32 o, u32 am, void **rk) { if (rk) *rk = (void*)0x5002; return 0; }
+static u32 MS sh_RegCreateKeyExW(void *k, void *s, u32 r, void *c, u32 o, u32 am, void *sa, void **rk, u32 *disp) {
+    if (rk) *rk = (void*)0x5003;
+    if (disp) *disp = 1;
+    return 0;
+}
+static u32 MS sh_RegQueryValueExW(void *k, void *v, void *r, u32 *t, u8 *d, u32 *s) { return 2; /* NOT_FOUND */ }
+static u32 MS sh_RegSetValueExW(void *k, void *v, u32 r, u32 t, const u8 *d, u32 s) { return 0; }
+static u32 MS sh_RegCloseKey(void *k) { return 0; }
+static int MS sh_LookupAccountNameW(void *s, void *an, void *sid, u32 *cb_sid, void *dom, u32 *cb_dom, void *use) {
+    return 0;
+}
+
+// OLE32 / OLEAUT32 Stubs
+static int MS sh_CoInitializeEx(void *p, u32 c) { return 0; /* S_OK */ }
+static void MS sh_CoUninitialize(void) { }
+static int MS sh_CoCreateInstance(void *clsid, void *out, u32 ctx, void *iid, void **ppv) {
+    if (ppv) *ppv = NULL;
+    return 0x80004002; /* E_NOINTERFACE */
+}
+static int MS sh_CoCreateGuid(void *guid) {
+    if (guid) memset(guid, 0x42, 16);
+    return 0;
+}
+static int MS sh_CoSetProxyBlanket(void *p, u32 a, u32 b, void *c, u32 d, u32 e, void *f, u32 g) { return 0; }
+static int MS sh_CoInitializeSecurity(void *p, long c, void *as, void *r1, u32 l, u32 il, void *r2, u32 cap, void *r3) { return 0; }
+
+static void* MS sh_SysAllocString(const u16 *s) { return (void*)s; }
+static void* MS sh_SysAllocStringLen(const u16 *s, u32 l) { return (void*)s; }
+static void  MS sh_SysFreeString(void *s) { }
+static u32   MS sh_SysStringLen(const u16 *s) {
+    if (!s) return 0;
+    u32 l = 0; while (s[l]) l++; return l;
+}
+static u32   MS sh_SysStringByteLen(const u16 *s) { return sh_SysStringLen(s) * 2; }
+static void  MS sh_VariantInit(void *v) { if (v) memset(v, 0, 24); }
+static int   MS sh_VariantClear(void *v) { if (v) memset(v, 0, 24); return 0; }
+static int   MS sh_VariantCopy(void *d, void *s) { if (d && s) memcpy(d, s, 24); return 0; }
+
+// Power Setting Stubs
+static void* MS sh_PowerSettingRegisterNotification(void *s, u32 f, void *h, void **ph) {
+    if (ph) *ph = (void*)0x7001;
+    return 0;
+}
+static u32 MS sh_PowerSettingUnregisterNotification(void *h) { return 0; }
+
+// DbgHelp Stub
+static int MS sh_MiniDumpWriteDump(void *hp, u32 pid, void *hf, u32 dt, void *ep, void *up, void *cp) { return 0; }
+
+// WS2_32 Stubs (Ordinals)
+static int MS sh_WSAStartup(u16 v, void *d) { return 0; }
+static int MS sh_WSACleanup(void) { return 0; }
+static int MS sh_WSAGetLastError(void) { return 0; }
+static u64 MS sh_socket(int af, int t, int p) { return ~0ULL; /* INVALID_SOCKET */ }
+static int MS sh_closesocket(u64 s) { return 0; }
+static int MS sh_bind(u64 s, void *a, int l) { return -1; }
+static int MS sh_listen(u64 s, int b) { return -1; }
+static u64 MS sh_accept(u64 s, void *a, void *l) { return ~0ULL; }
+static int MS sh_connect(u64 s, void *a, int l) { return -1; }
+static int MS sh_send(u64 s, const char *b, int l, int f) { return -1; }
+static int MS sh_recv(u64 s, char *b, int l, int f) { return -1; }
+static int MS sh_recvfrom(u64 s, char *b, int l, int f, void *from, void *fromlen) { return -1; }
+static int MS sh_setsockopt(u64 s, int l, int on, const char *ov, int ol) { return 0; }
+static int MS sh_getsockname(u64 s, void *a, void *l) { return -1; }
+static u16 MS sh_htons(u16 hostshort) { return (hostshort >> 8) | (hostshort << 8); }
+static u32 MS sh_inet_addr(const char *cp) { return 0x0100007f; /* 127.0.0.1 */ }
+static char* MS sh_inet_ntoa(u32 in) { return "127.0.0.1"; }
+
+// UCRT Runtime Stubs
+typedef void (MS *PVFV)(void);
+typedef int (MS *PIFV)(void);
+
+static void MS sh_initterm(PVFV *start, PVFV *end) {
+    if (!start || !end) return;
+    for (PVFV *fn = start; fn < end; ++fn) {
+        if (*fn) (*fn)();
+    }
+}
+static int MS sh_initterm_e(PIFV *start, PIFV *end) {
+    if (!start || !end) return 0;
+    for (PIFV *fn = start; fn < end; ++fn) {
+        if (*fn) {
+            int r = (*fn)();
+            if (r != 0) return r;
+        }
+    }
+    return 0;
+}
+static int  MS sh_initialize_narrow_environment(void) { return 0; }
+static int  MS sh_configure_narrow_argv(int mode) { return 0; }
+static int  MS sh_initialize_onexit_table(void *t) { return 0; }
+static int  MS sh_register_onexit_function(void *t, void *f) { return 0; }
+static int  MS sh_execute_onexit_table(void *t) { return 0; }
+static int  MS sh_crt_atexit(void *f) { return 0; }
+static int  MS sh_crt_at_quick_exit(void *f) { return 0; }
+static void MS sh_cexit(void) { }
+static int  MS sh_seh_filter_dll(u32 exc, void *ep) { return 0; }
+static void MS sh_terminate(void) { abort(); }
+static void MS sh_wassert(const u16 *expr, const u16 *file, u32 line) {
+    fprintf(stderr, "[!] Assertion failed at line %u\n", line);
+    abort();
+}
+static int* MS sh_errno(void) { return &g_crt_errno; }
+static void MS sh_invalid_parameter_noinfo(void) { }
+static void MS sh_invalid_parameter_noinfo_noreturn(void) { abort(); }
+static u64  MS sh_beginthreadex(void *sa, u32 st, void *fn, void *arg, u32 fl, u32 *id) {
+    if (id) *id = 4321;
+    return 0x3001;
+}
+
+// UCRT String / Math / Utility Stubs
+static size_t MS sh_strlen(const char *s) { return strlen(s); }
+static size_t MS sh_wcslen(const u16 *s) {
+    size_t l = 0; if (s) while (s[l]) l++; return l;
+}
+static int    MS sh_strcmp(const char *s1, const char *s2) { return strcmp(s1, s2); }
+static int    MS sh_strncmp(const char *s1, const char *s2, size_t n) { return strncmp(s1, s2, n); }
+static int    MS sh_stricmp(const char *s1, const char *s2) { return strcasecmp(s1, s2); }
+static int    MS sh_wcsicmp(const u16 *s1, const u16 *s2) {
+    while (*s1 && *s2 && (*s1 == *s2 || (*s1 | 0x20) == (*s2 | 0x20))) { s1++; s2++; }
+    return (*s1 | 0x20) - (*s2 | 0x20);
+}
+static void*  MS sh_memset(void *d, int c, size_t n) { return memset(d, c, n); }
+static int    MS sh_strcpy_s(char *d, size_t dz, const char *s) {
+    if (!d || !s || strlen(s) >= dz) return 1;
+    strcpy(d, s); return 0;
+}
+static int MS sh_wcscpy_s(u16 *d, size_t dz, const u16 *s) {
+    if (!d || !s) return 1;
+    size_t l = 0; while (s[l]) l++;
+    if (l >= dz) return 1;
+    for (size_t i = 0; i <= l; i++) d[i] = s[i];
+    return 0;
+}
+static u16* MS sh_wcscpy(u16 *d, const u16 *s) {
+    u16 *p = d; while ((*p++ = *s++)); return d;
+}
+static char* MS sh_strtok_s(char *s, const char *del, char **ctx) {
+    return strtok_r(s, del, ctx);
+}
+static long MS sh_atol(const char *s) { return atol(s); }
+static int  MS sh_abs(int j) { return abs(j); }
+static void MS sh_qsort(void *b, size_t n, size_t s, int (MS *cmp)(const void*, const void*)) {
+    // Basic bubble sort for small arrays, or fallback
+    u8 *p = (u8*)b;
+    for (size_t i = 0; i < n; i++) {
+        for (size_t j = i + 1; j < n; j++) {
+            if (cmp(p + i * s, p + j * s) > 0) {
+                for (size_t k = 0; k < s; k++) {
+                    u8 tmp = p[i * s + k];
+                    p[i * s + k] = p[j * s + k];
+                    p[j * s + k] = tmp;
+                }
+            }
+        }
+    }
+}
+static double MS sh_sqrt(double x) { return sqrt(x); }
+static double MS sh_fabs(double x) { return fabs(x); }
+static int    MS sh_isnan(double x) { return isnan(x); }
+static int    MS sh_finite(double x) { return isfinite(x); }
+
+// UCRT Filesystem & Time
+static int MS sh_wremove(const u16 *p) { return 0; }
+static int MS sh_waccess_s(const u16 *p, int m) { return -1; }
+static int MS sh_access_s(const char *p, int m) { return -1; }
+static int MS sh_wmkdir(const u16 *p) { return 0; }
+static u64 MS sh_time64(u64 *t) { time_t n = time(NULL); if (t) *t = n; return n; }
+static int MS sh_localtime64_s(void *tm_out, const u64 *t) {
+    if (!tm_out || !t) return 1;
+    time_t now = *t;
+    struct tm *r = localtime(&now);
+    if (!r) return 1;
+    memcpy(tm_out, r, sizeof(struct tm));
+    return 0;
+}
+static size_t MS sh_strftime(char *s, size_t max, const char *fmt, const void *tm) {
+    return strftime(s, max, fmt, (const struct tm*)tm);
+}
+static u64 MS sh_clock(void) { return (u64)clock(); }
+
+// UCRT Stdio Stubs
+static void* MS sh_acrt_iob_func(u32 idx) {
+    if (idx == 0) return stdin;
+    if (idx == 1) return stdout;
+    return stderr;
+}
+static void* MS sh_fopen(const char *f, const char *m) { return NULL; }
+static int   MS sh_fopen_s(void **fp, const char *f, const char *m) { if (fp) *fp = NULL; return 1; }
+static void* MS sh_wfopen(const u16 *f, const u16 *m) { return NULL; }
+static int   MS sh_wfopen_s(void **fp, const u16 *f, const u16 *m) { if (fp) *fp = NULL; return 1; }
+static void* MS sh_fsopen(const char *f, const char *m, int sh) { return NULL; }
+static void* MS sh_wfsopen(const u16 *f, const u16 *m, int sh) { return NULL; }
+static int   MS sh_fclose(void *f) { return 0; }
+static size_t MS sh_fread(void *b, size_t s, size_t c, void *f) { return 0; }
+static size_t MS sh_fwrite(const void *b, size_t s, size_t c, void *f) { return c; }
+static int   MS sh_fputs(const char *s, void *f) { return 0; }
+static char* MS sh_fgets(char *s, int n, void *f) { return NULL; }
+static int   MS sh_fseek(void *f, long o, int w) { return 0; }
+static long  MS sh_ftell(void *f) { return 0; }
+static u64   MS sh_ftelli64(void *f) { return 0; }
+static int   MS sh_fflush(void *f) { return 0; }
+static int   MS sh_ferror(void *f) { return 0; }
+static int   MS sh_putchar(int c) { return putchar(c); }
+static int   MS sh_getchar(void) { return -1; }
+
+// vsprintf common stubs (handles simple format or safe empty string)
+static int MS sh_stdio_common_vsprintf(u64 opt, char *buf, size_t max, const char *fmt, void *loc, __builtin_ms_va_list ap) {
+    if (!buf || max == 0) return 0;
+    // On Windows x64, ap is a pointer to the arg list.
+    // For logging safety, do a basic snprintf:
+    buf[0] = '\0';
+    return 0;
+}
+static int MS sh_stdio_common_vsprintf_s(u64 opt, char *buf, size_t max, const char *fmt, void *loc, __builtin_ms_va_list ap) {
+    return sh_stdio_common_vsprintf(opt, buf, max, fmt, loc, ap);
+}
+static int MS sh_stdio_common_vsnprintf_s(u64 opt, char *buf, size_t max, size_t cnt, const char *fmt, void *loc, __builtin_ms_va_list ap) {
+    return sh_stdio_common_vsprintf(opt, buf, max, fmt, loc, ap);
+}
+static int MS sh_stdio_common_vswprintf(u64 opt, u16 *buf, size_t max, const u16 *fmt, void *loc, __builtin_ms_va_list ap) {
+    if (buf && max > 0) buf[0] = 0;
+    return 0;
+}
+static int MS sh_stdio_common_vswprintf_s(u64 opt, u16 *buf, size_t max, const u16 *fmt, void *loc, __builtin_ms_va_list ap) {
+    return sh_stdio_common_vswprintf(opt, buf, max, fmt, loc, ap);
+}
+static int MS sh_stdio_common_vfprintf(u64 opt, void *f, const char *fmt, void *loc, __builtin_ms_va_list ap) {
+    return 0;
+}
+static int MS sh_stdio_common_vfwprintf(u64 opt, void *f, const u16 *fmt, void *loc, __builtin_ms_va_list ap) {
+    return 0;
+}
+
+// ================= SHIM REGISTRATION =================
+
+static void register_all_shims(void) {
+    // WINMM
+    reg_name("timeGetTime", sh_timeGetTime);
+
+    // KERNEL32
+    reg_name("SetLastError", sh_SetLastError);
+    reg_name("GetLastError", sh_GetLastError);
+    reg_name("GetProcessHeap", sh_GetProcessHeap);
+    reg_name("HeapAlloc", sh_HeapAlloc);
+    reg_name("HeapFree", sh_HeapFree);
+    reg_name("LocalFree", sh_LocalFree);
+
+    reg_name("InitializeCriticalSection", sh_InitCS);
+    reg_name("InitializeCriticalSectionEx", sh_InitCS);
+    reg_name("EnterCriticalSection", sh_EnterCS);
+    reg_name("LeaveCriticalSection", sh_LeaveCS);
+    reg_name("DeleteCriticalSection", sh_DeleteCS);
+
+    reg_name("InitializeConditionVariable", sh_InitConditionVariable);
+    reg_name("WakeAllConditionVariable", sh_WakeAllConditionVariable);
+    reg_name("SleepConditionVariableCS", sh_SleepConditionVariableCS);
+
+    reg_name("InitializeSListHead", sh_InitSList);
+    reg_name("InterlockedFlushSList", sh_FlushSList);
+    reg_name("InterlockedPushEntrySList", sh_PushEntrySList);
+
+    reg_name("TlsAlloc", sh_TlsAlloc);
+    reg_name("TlsFree", sh_TlsFree);
+    reg_name("TlsGetValue", sh_TlsGetValue);
+    reg_name("TlsSetValue", sh_TlsSetValue);
+
+    reg_name("FlsAlloc", sh_FlsAlloc);
+    reg_name("FlsFree", sh_FlsFree);
+    reg_name("FlsGetValue", sh_FlsGetValue);
+    reg_name("FlsSetValue", sh_FlsSetValue);
+
+    reg_name("GetCurrentProcess", sh_GetCurrentProcess);
+    reg_name("GetCurrentProcessId", sh_GetCurrentProcessId);
+    reg_name("GetCurrentThreadId", sh_GetCurrentThreadId);
+    reg_name("CreateThread", sh_CreateThread);
+    reg_name("TerminateProcess", sh_TerminateProcess);
+    reg_name("TerminateThread", sh_TerminateThread);
+
+    reg_name("CreateEventW", sh_CreateEventW);
+    reg_name("SetEvent", sh_SetEvent);
+    reg_name("ResetEvent", sh_ResetEvent);
+    reg_name("WaitForSingleObject", sh_WaitForSingleObject);
+    reg_name("WaitForMultipleObjects", sh_WaitForMultipleObjects);
+    reg_name("Sleep", sh_Sleep);
+
+    reg_name("GetSystemTimeAsFileTime", sh_GetSystemTimeAsFileTime);
+    reg_name("GetLocalTime", sh_GetLocalTime);
+    reg_name("QueryPerformanceCounter", sh_QueryPerformanceCounter);
+    reg_name("QueryPerformanceFrequency", sh_QueryPerformanceFrequency);
+
+    reg_name("IsDebuggerPresent", sh_IsDebuggerPresent);
+    reg_name("IsProcessorFeaturePresent", sh_IsProcessorFeaturePresent);
+    reg_name("EncodePointer", sh_EncodePointer);
+    reg_name("GetStartupInfoW", sh_GetStartupInfoW);
+    reg_name("GetModuleHandleW", sh_GetModuleHandleW);
+    reg_name("GetSystemDirectoryW", sh_GetSystemDirectoryW);
+    reg_name("GetDiskFreeSpaceExW", sh_GetDiskFreeSpaceExW);
+
+    reg_name("OutputDebugStringW", sh_OutputDebugStringW);
+    reg_name("MultiByteToWideChar", sh_MultiByteToWideChar);
+    reg_name("WideCharToMultiByte", sh_WideCharToMultiByte);
+
+    reg_name("CreateFileW", sh_CreateFileW);
+    reg_name("WriteFile", sh_WriteFile);
+    reg_name("CloseHandle", sh_CloseHandle);
+    reg_name("DeleteFileW", sh_DeleteFileW);
+    reg_name("CopyFileW", sh_CopyFileW);
+    reg_name("FindFirstFileW", sh_FindFirstFileW);
+    reg_name("DeviceIoControl", sh_DeviceIoControl);
+    reg_name("GetOverlappedResult", sh_GetOverlappedResult);
+
+    reg_name("SetUnhandledExceptionFilter", sh_SetUnhandledExceptionFilter);
+    reg_name("UnhandledExceptionFilter", sh_UnhandledExceptionFilter);
+    reg_name("RtlLookupFunctionEntry", sh_RtlLookupFunctionEntry);
+    reg_name("RtlVirtualUnwind", sh_RtlVirtualUnwind);
+    reg_name("RtlCaptureContext", sh_RtlCaptureContext);
+    reg_name("RtlUnwindEx", sh_RtlUnwindEx);
+    reg_name("RtlPcToFileHeader", sh_RtlPcToFileHeader);
+    reg_name("RaiseException", sh_RaiseException);
+    reg_name("__C_specific_handler", sh_C_specific_handler);
+
+    // ADVAPI32
+    reg_name("CryptAcquireContextW", sh_CryptAcquireContextW);
+    reg_name("CryptReleaseContext", sh_CryptReleaseContext);
+    reg_name("CryptGenRandom", sh_CryptGenRandom);
+    reg_name("EventUnregister", sh_EventUnregister);
+    reg_name("RegOpenCurrentUser", sh_RegOpenCurrentUser);
+    reg_name("RegOpenKeyExW", sh_RegOpenKeyExW);
+    reg_name("RegCreateKeyExW", sh_RegCreateKeyExW);
+    reg_name("RegQueryValueExW", sh_RegQueryValueExW);
+    reg_name("RegSetValueExW", sh_RegSetValueExW);
+    reg_name("RegCloseKey", sh_RegCloseKey);
+    reg_name("LookupAccountNameW", sh_LookupAccountNameW);
+
+    // OLE32
+    reg_name("CoInitializeEx", sh_CoInitializeEx);
+    reg_name("CoUninitialize", sh_CoUninitialize);
+    reg_name("CoCreateInstance", sh_CoCreateInstance);
+    reg_name("CoCreateGuid", sh_CoCreateGuid);
+    reg_name("CoSetProxyBlanket", sh_CoSetProxyBlanket);
+    reg_name("CoInitializeSecurity", sh_CoInitializeSecurity);
+
+    // OLEAUT32 Ordinals
+    reg_ord("OLEAUT32.dll", 2, sh_SysAllocString);
+    reg_ord("OLEAUT32.dll", 6, sh_SysFreeString);
+    reg_ord("OLEAUT32.dll", 8, sh_VariantInit);
+    reg_ord("OLEAUT32.dll", 9, sh_VariantClear);
+    reg_ord("OLEAUT32.dll", 12, sh_VariantCopy);
+    reg_ord("OLEAUT32.dll", 200, sh_SysAllocStringLen);
+    reg_ord("OLEAUT32.dll", 201, sh_SysStringLen);
+    reg_ord("OLEAUT32.dll", 202, sh_SysStringByteLen);
+
+    // Power Setting
+    reg_name("PowerSettingRegisterNotification", sh_PowerSettingRegisterNotification);
+    reg_name("PowerSettingUnregisterNotification", sh_PowerSettingUnregisterNotification);
+
+    // DbgHelp
+    reg_name("MiniDumpWriteDump", sh_MiniDumpWriteDump);
+
+    // WS2_32 Ordinals
+    reg_ord("WS2_32.dll", 1, sh_accept);
+    reg_ord("WS2_32.dll", 2, sh_bind);
+    reg_ord("WS2_32.dll", 3, sh_closesocket);
+    reg_ord("WS2_32.dll", 4, sh_connect);
+    reg_ord("WS2_32.dll", 6, sh_getsockname);
+    reg_ord("WS2_32.dll", 8, sh_htons);
+    reg_ord("WS2_32.dll", 9, sh_inet_addr);
+    reg_ord("WS2_32.dll", 11, sh_inet_ntoa);
+    reg_ord("WS2_32.dll", 13, sh_listen);
+    reg_ord("WS2_32.dll", 15, sh_recv);
+    reg_ord("WS2_32.dll", 16, sh_recvfrom);
+    reg_ord("WS2_32.dll", 19, sh_send);
+    reg_ord("WS2_32.dll", 21, sh_setsockopt);
+    reg_ord("WS2_32.dll", 23, sh_socket);
+    reg_ord("WS2_32.dll", 111, sh_WSAGetLastError);
+    reg_ord("WS2_32.dll", 115, sh_WSAStartup);
+    reg_ord("WS2_32.dll", 116, sh_WSACleanup);
+
+    // UCRT Heap
+    reg_name("malloc", sh_malloc);
+    reg_name("_malloc_base", sh_malloc);
+    reg_name("calloc", sh_calloc);
+    reg_name("_calloc_base", sh_calloc);
+    reg_name("realloc", sh_realloc);
+    reg_name("free", sh_free);
+    reg_name("_free_base", sh_free);
+
+    // UCRT String
+    reg_name("strlen", sh_strlen);
+    reg_name("wcslen", sh_wcslen);
+    reg_name("strcmp", sh_strcmp);
+    reg_name("strncmp", sh_strncmp);
+    reg_name("_stricmp", sh_stricmp);
+    reg_name("_wcsicmp", sh_wcsicmp);
+    reg_name("memset", sh_memset);
+    reg_name("strcpy_s", sh_strcpy_s);
+    reg_name("wcscpy_s", sh_wcscpy_s);
+    reg_name("wcscpy", sh_wcscpy);
+    reg_name("strtok_s", sh_strtok_s);
+
+    // UCRT Runtime
+    reg_name("_initterm", sh_initterm);
+    reg_name("_initterm_e", sh_initterm_e);
+    reg_name("_initialize_narrow_environment", sh_initialize_narrow_environment);
+    reg_name("_configure_narrow_argv", sh_configure_narrow_argv);
+    reg_name("_initialize_onexit_table", sh_initialize_onexit_table);
+    reg_name("_register_onexit_function", sh_register_onexit_function);
+    reg_name("_execute_onexit_table", sh_execute_onexit_table);
+    reg_name("_crt_atexit", sh_crt_atexit);
+    reg_name("_crt_at_quick_exit", sh_crt_at_quick_exit);
+    reg_name("_cexit", sh_cexit);
+    reg_name("_seh_filter_dll", sh_seh_filter_dll);
+    reg_name("terminate", sh_terminate);
+    reg_name("abort", abort);
+    reg_name("_wassert", sh_wassert);
+    reg_name("_errno", sh_errno);
+    reg_name("_invalid_parameter_noinfo", sh_invalid_parameter_noinfo);
+    reg_name("_invalid_parameter_noinfo_noreturn", sh_invalid_parameter_noinfo_noreturn);
+    reg_name("_beginthreadex", sh_beginthreadex);
+
+    // UCRT Utility / Math / Convert
+    reg_name("qsort", sh_qsort);
+    reg_name("abs", sh_abs);
+    reg_name("sqrt", sh_sqrt);
+    reg_name("fabs", sh_fabs);
+    reg_name("_isnan", sh_isnan);
+    reg_name("_finite", sh_finite);
+    reg_name("atol", sh_atol);
+
+    // UCRT Filesystem & Time
+    reg_name("_wremove", sh_wremove);
+    reg_name("_waccess_s", sh_waccess_s);
+    reg_name("_access_s", sh_access_s);
+    reg_name("_wmkdir", sh_wmkdir);
+    reg_name("_time64", sh_time64);
+    reg_name("_localtime64_s", sh_localtime64_s);
+    reg_name("strftime", sh_strftime);
+    reg_name("clock", sh_clock);
+
+    // UCRT Stdio
+    reg_name("__acrt_iob_func", sh_acrt_iob_func);
+    reg_name("fopen", sh_fopen);
+    reg_name("fopen_s", sh_fopen_s);
+    reg_name("_wfopen", sh_wfopen);
+    reg_name("_wfopen_s", sh_wfopen_s);
+    reg_name("_fsopen", sh_fsopen);
+    reg_name("_wfsopen", sh_wfsopen);
+    reg_name("fclose", sh_fclose);
+    reg_name("fread", sh_fread);
+    reg_name("fwrite", sh_fwrite);
+    reg_name("fputs", sh_fputs);
+    reg_name("fgets", sh_fgets);
+    reg_name("fseek", sh_fseek);
+    reg_name("ftell", sh_ftell);
+    reg_name("_ftelli64", sh_ftelli64);
+    reg_name("fflush", sh_fflush);
+    reg_name("ferror", sh_ferror);
+    reg_name("putchar", sh_putchar);
+    reg_name("getchar", sh_getchar);
+
+    reg_name("__stdio_common_vsprintf", sh_stdio_common_vsprintf);
+    reg_name("__stdio_common_vsprintf_s", sh_stdio_common_vsprintf_s);
+    reg_name("__stdio_common_vsnprintf_s", sh_stdio_common_vsnprintf_s);
+    reg_name("__stdio_common_vswprintf", sh_stdio_common_vswprintf);
+    reg_name("__stdio_common_vswprintf_s", sh_stdio_common_vswprintf_s);
+    reg_name("__stdio_common_vfprintf", sh_stdio_common_vfprintf);
+    reg_name("__stdio_common_vfwprintf", sh_stdio_common_vfwprintf);
+}
+
+// ================= PE LOADER =================
+
+static int load_pe(void) {
+    int fd = open(g_dllpath, O_RDONLY);
+    if (fd < 0) { perror("[loader] open DLL"); return -1; }
+    g_filelen = lseek(fd, 0, SEEK_END);
+    lseek(fd, 0, SEEK_SET);
+    g_file = malloc(g_filelen);
+    if (!g_file || read(fd, g_file, g_filelen) != g_filelen) {
+        perror("[loader] read DLL"); close(fd); return -1;
+    }
+    close(fd);
+
+    u32 e = f32(0x3c);
+    g_imagebase = f64(e + 24 + 24);
+    u32 sizeofimage = f32(e + 24 + 56);
+    u32 entry = f32(e + 24 + 16);
+    u16 nsec = f16(e + 6);
+    u16 optsize = f16(e + 20);
+    u64 sectbl = e + 24 + optsize;
+    u32 hdrsize = f32(e + 24 + 60);
+
+    fprintf(stderr, "[loader] PE parsed: ImageBase=%#lx, SizeOfImage=%#x, Entry RVA=%#x, Sections=%u\n",
+            g_imagebase, sizeofimage, entry, nsec);
+
+    u8 *img = calloc(1, sizeofimage);
+    if (!img) { perror("[loader] calloc scratch"); return -1; }
+    memcpy(img, g_file, hdrsize);
+
+    for (int i = 0; i < nsec; i++) {
+        u64 s = sectbl + i * 40;
+        u32 vaddr = f32(s + 12), rawsize = f32(s + 16), rawptr = f32(s + 20);
+        if (rawsize && rawptr + rawsize <= (u32)g_filelen) {
+            memcpy(img + vaddr, g_file + rawptr, rawsize);
+        }
+    }
+
+    // Resolve IAT
+    u32 imprva = f32(e + 24 + 112 + 8 * 1);
+    for (u64 d = imprva; ; d += 20) {
+        u32 orig = *(u32*)(img + d), namer = *(u32*)(img + d + 12), fthunk = *(u32*)(img + d + 16);
+        if (namer == 0) break;
+        const char *dllname = (char*)(img + namer);
+        u64 rt = orig ? orig : fthunk;
+        for (int j = 0; ; j++) {
+            u64 ent = *(u64*)(img + rt + j * 8);
+            if (!ent) break;
+            u64 *slot = (u64*)(img + fthunk + j * 8);
+            void *sh = NULL;
+            if (ent >> 63) {
+                // By ordinal
+                u32 ord = (u32)(ent & 0xffff);
+                sh = find_shim_ordinal(dllname, ord);
+                if (!sh) fprintf(stderr, "[loader] MISSING ordinal shim: %s #%u\n", dllname, ord);
+            } else {
+                // By name
+                const char *fn = (char*)(img + (ent & 0x7fffffff) + 2);
+                sh = find_shim(fn);
+                if (!sh) fprintf(stderr, "[loader] MISSING shim: %s -> %s\n", dllname, fn);
+            }
+            *slot = (u64)sh;
+        }
+    }
+
+    // Anonymous file for W^X mapping
+    int mfd = memfd_create("goodix_engine", MFD_CLOEXEC);
+    if (mfd < 0) { perror("[loader] memfd_create"); free(img); return -1; }
+    if (write(mfd, img, sizeofimage) != (ssize_t)sizeofimage) {
+        perror("[loader] write memfd"); close(mfd); free(img); return -1;
+    }
+    free(img);
+
+    // Reserve preferred base
+    void *m = mmap((void*)g_imagebase, sizeofimage, PROT_NONE,
+                   MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+    if (m == MAP_FAILED || m != (void*)g_imagebase) {
+        fprintf(stderr, "[loader] reserve @%#lx failed (%p)\n", g_imagebase, m);
+        close(mfd);
+        return -1;
+    }
+    g_image = m;
+
+    u32 hdrmap = (hdrsize + 0xfff) & ~0xfffu;
+    if (mmap(g_image, hdrmap, PROT_READ, MAP_PRIVATE | MAP_FIXED, mfd, 0) == MAP_FAILED) {
+        perror("[loader] map headers"); close(mfd); return -1;
+    }
+
+    for (int i = 0; i < nsec; i++) {
+        u64 s = sectbl + i * 40;
+        u32 vaddr = f32(s + 12), vsize = f32(s + 8), rawsize = f32(s + 16), chars = f32(s + 36);
+        u32 seglen = (vsize > rawsize ? vsize : rawsize);
+        seglen = (seglen + 0xfff) & ~0xfffu;
+        if (vaddr + seglen > sizeofimage) seglen = sizeofimage - vaddr;
+        if (!seglen) continue;
+
+        int prot = PROT_READ;
+        if (chars & 0x20000000) prot |= PROT_EXEC;
+        if (chars & 0x80000000) prot |= PROT_WRITE;
+        if (mmap(g_image + vaddr, seglen, prot, MAP_PRIVATE | MAP_FIXED, mfd, vaddr) == MAP_FAILED) {
+            perror("[loader] map section"); close(mfd); return -1;
+        }
+    }
+    close(mfd);
+    fprintf(stderr, "[loader] file-backed image mapped @ %#lx (W^X satisfied)\n", g_imagebase);
+
+    // TLS setup (dir 9)
+    u32 tlsrva = f32(e + 24 + 112 + 8 * 9);
+    if (tlsrva) {
+        u64 start = *(u64*)(g_image + tlsrva);
+        u64 end = *(u64*)(g_image + tlsrva + 8);
+        u64 idxaddr = *(u64*)(g_image + tlsrva + 16);
+        u64 cbaddr = *(u64*)(g_image + tlsrva + 24);
+        u64 tlen = end - start;
+        memset(g_tls_block, 0, sizeof(g_tls_block));
+        if (tlen && tlen <= sizeof(g_tls_block)) memcpy(g_tls_block, (void*)start, tlen);
+        g_tls_array[0] = g_tls_block;
+        if (idxaddr) *(u32*)idxaddr = 0;
+        fprintf(stderr, "[loader] TLS template %lu bytes wired\n", tlen);
+        if (cbaddr) {
+            for (u64 *cb = (u64*)cbaddr; *cb; cb++) {
+                void(MS *f)(void*, u32, void*) = (void*)*cb;
+                f((void*)g_imagebase, DLL_PROCESS_ATTACH, 0);
+            }
+        }
+    }
+
+    // Fake Windows TEB setup
+    memset(g_teb, 0, sizeof(g_teb));
+    memset(g_peb, 0, sizeof(g_peb));
+    *(u64*)(g_teb + 0x30) = (u64)g_teb;
+    *(u64*)(g_teb + 0x08) = (u64)(g_teb + sizeof(g_teb));
+    *(u64*)(g_teb + 0x10) = (u64)g_teb;
+    *(u64*)(g_teb + 0x58) = (u64)g_tls_array;
+    *(u64*)(g_teb + 0x60) = (u64)g_peb;
+
+    if (set_gs(g_teb) != 0) {
+        perror("[loader] arch_prctl SET_GS failed");
+        return -1;
+    }
+    fprintf(stderr, "[loader] TEB installed in %%gs\n");
+
+    // Execute DllMain
+    int(MS *DllMain)(void*, u32, void*) = (void*)(g_image + entry);
+    fprintf(stderr, "[loader] calling entry (DllMain) @ %#lx ...\n", (u64)DllMain);
+    int r = DllMain((void*)g_imagebase, DLL_PROCESS_ATTACH, 0);
+    fprintf(stderr, "[loader] DllMain returned %d\n", r);
+    return r ? 0 : -2;
+}
+
+static void* get_export(const char *want) {
+    u32 e = f32(0x3c);
+    u32 exprva = f32(e + 24 + 112 + 8 * 0);
+    u32 nnames = *(u32*)(g_image + exprva + 24);
+    u32 fns = *(u32*)(g_image + exprva + 28);
+    u32 names = *(u32*)(g_image + exprva + 32);
+    u32 ords = *(u32*)(g_image + exprva + 36);
+
+    for (u32 i = 0; i < nnames; i++) {
+        u32 nrva = *(u32*)(g_image + names + i * 4);
+        if (strcmp((char*)(g_image + nrva), want) == 0) {
+            u16 ord = *(u16*)(g_image + ords + i * 2);
+            u32 frva = *(u32*)(g_image + fns + ord * 4);
+            return g_image + frva;
+        }
+    }
+    return NULL;
+}
+
+// ================= MAIN TEST HARNESS =================
+
+int main(int argc, char **argv) {
+    g_dllpath = (argc > 1) ? argv[1] : "/home/sastauser/goodix-27c6-5e0a-re/drivers/GoodixEngineAdapter.dll";
+    fprintf(stderr, "=== Ticket 71: Goodix In-Process Loader Test ===\n");
+    fprintf(stderr, "Target DLL: %s\n", g_dllpath);
+
+    register_all_shims();
+    fprintf(stderr, "[loader] Registered %d shims\n", g_nshims);
+
+    if (load_pe() != 0) {
+        fprintf(stderr, "[!] Failed to load PE\n");
+        return 1;
+    }
+
+    fprintf(stderr, "\n=== Testing Goodix Algorithm Version Export ===\n");
+    void *fn_get_version = get_export("getAlgorithmVersion");
+    if (!fn_get_version) {
+        fprintf(stderr, "[!] getAlgorithmVersion export not found!\n");
+        return 1;
+    }
+    fprintf(stderr, "[loader] Found getAlgorithmVersion @ %p\n", fn_get_version);
+
+    // Call getAlgorithmVersion(char *buf)
+    int (MS *get_version)(char *buf) = fn_get_version;
+    char version_buf[256] = {0};
+    int r = get_version(version_buf);
+    fprintf(stderr, "[loader] getAlgorithmVersion() returned %d\n", r);
+    fprintf(stderr, "[loader] Milan Version String: \"%s\"\n", version_buf);
+
+    fprintf(stderr, "\n=== Testing WinBio Engine Interface Export ===\n");
+    void *fn_query = get_export("WbioQueryEngineInterface");
+    if (!fn_query) {
+        fprintf(stderr, "[!] WbioQueryEngineInterface export not found!\n");
+        return 1;
+    }
+    fprintf(stderr, "[loader] Found WbioQueryEngineInterface @ %p\n", fn_query);
+    u32 (MS *query_iface)(void**) = fn_query;
+    void *iface = NULL;
+    u32 qres = query_iface(&iface);
+    fprintf(stderr, "[loader] WbioQueryEngineInterface returned %#x, iface=%p\n", qres, iface);
+    if (iface) {
+        u32 ver = *(u32*)iface;
+        fprintf(stderr, "[loader] WinBio Engine Interface Version: %#x\n", ver);
+    }
+
+    if (r == 0 && strlen(version_buf) > 0 && qres == 0 && iface != NULL) {
+        fprintf(stderr, "\n[SUCCESS] Ticket 71 VERIFIED: GoodixEngineAdapter.dll loaded and executed natively on Linux!\n");
+        return 0;
+    } else {
+        fprintf(stderr, "\n[!] Verification checks failed\n");
+        return 1;
+    }
+}

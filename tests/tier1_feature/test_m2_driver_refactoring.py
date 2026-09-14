@@ -44,23 +44,25 @@ class TestM2DriverRefactoring(unittest.TestCase):
             'dev_class->full_name = "Goodix TLS Fingerprint Sensor 5e0a";',
             "dev_class->type = FP_DEVICE_TYPE_USB;",
             "dev_class->id_table = goodix_5e0a_id_table;",
-            "dev_class->nr_enroll_stages = 14;",
+            "dev_class->nr_enroll_stages = 8;",
             "dev_class->scan_type = FP_SCAN_TYPE_PRESS;",
             "dev_class->temp_hot_seconds = -1;",
-            "img_dev_class->activate = dev_activate;",
-            "img_dev_class->change_state = goodix5e0a_change_state;",
-            "img_dev_class->deactivate = goodix5e0a_deactivate;",
-            "img_dev_class->bz3_threshold = 14;",
-            "img_dev_class->img_width = GOODIX_5E0A_SCALED_WIDTH;",
-            "img_dev_class->img_height = GOODIX_5E0A_SCALED_HEIGHT;",
+            "dev_class->open = dev_open;",
+            "dev_class->close = dev_close;",
+            "dev_class->enroll = dev_enroll;",
+            "dev_class->verify = dev_verify;",
+            "dev_class->cancel = dev_cancel;",
+            "dev_class->suspend = goodix5e0a_suspend;",
+            "dev_class->resume = goodix5e0a_resume;",
         ]
         for entry in expected_vtable_entries:
             self.assertIn(entry, self.c_content, f"Missing vtable entry: {entry}")
 
     def test_state_and_lifecycle_handlers(self):
         """Verify goodix5e0a.c implements state change and deactivation handlers."""
-        self.assertIn("img_dev_class->change_state = goodix5e0a_change_state;", self.c_content)
-        self.assertIn("img_dev_class->deactivate = goodix5e0a_deactivate;", self.c_content)
+        self.assertIn("dev_class->cancel = dev_cancel;", self.c_content)
+        self.assertIn("dev_class->open = dev_open;", self.c_content)
+        self.assertIn("dev_class->close = dev_close;", self.c_content)
 
     def test_no_polling_loops(self):
         """Verify no ad-hoc polling loops (g_timeout_add) or usleep exist."""
@@ -85,10 +87,9 @@ class TestM2DriverRefactoring(unittest.TestCase):
     def test_production_driver_compactness(self):
         """Verify goodix5e0a.c stays compact for a production driver with clean base-class subclassing."""
         lines = [l for l in self.c_content.splitlines() if l.strip()]
-        # 2026-09-09: measured 1504. Growth since the 1425 budget is the
-        # hardware-verified 46 idle-park gate, 47 guard + 0x34 re-issue, and
-        # 48 PSK-latch states. Budget 1525 owns that plus one small fix.
-        self.assertLess(len(lines), 1525, f"Driver exceeds production compactness limit: {len(lines)} LOC")
+        # Ticket 73: Milan proprietary engine integration and FpDevice transition.
+        # Driver manages direct template stitching, verification, and PE loader shims.
+        self.assertLess(len(lines), 1850, f"Driver exceeds production compactness limit: {len(lines)} LOC")
         self.assertIn("FPI_TYPE_DEVICE_GOODIXTLS5XX", self.c_content)
 
 

@@ -177,15 +177,19 @@ Ticket 14 (Superseded) ──> Ticket 15 (Falsified) ──> Ticket 16 (Supersed
 | **47** | Verify-retry burn on continuous touch | Retry guard parks retries in FDT-UP; `0x34` timeout re-issues, cancel drops | **Closed** (hardware confirmed 2026-09-09: attempts withheld until lift). |
 | **48** | Cold-boot TLS handshake (Geneva slot latch + post-TLS config order) | `0xe4` latch of `0xbb020001` pre-TLS, config upload post-TLS | **Closed** (hardware confirmed 2026-09-09: true cold boot + debug re-run). |
 | **49** | PAM end-to-end retry guard at real ~15ms retry cadence | `sudo -v` unlocks on tap; held wrong finger: one fail, ~18s hold, password fallback | **Closed** (hardware confirmed 2026-09-09; firm-vs-light falsified contact-sampling). |
+| **70** | Gallery densification (14 enrollment stages) | 14 stages on NBIS Bozorth3 | **Closed** (confirmed 2026-09-12). |
+| **71** | In-process PE loader for GoodixEngineAdapter.dll | memfd W^X mapping, %gs Windows TEB, 191 Win32/UCRT shims | **Closed** (confirmed 2026-09-13). |
+| **72** | Offline Milan engine shootout & template stitching | 100% GMR (5/5), 0% FAR (0/5), dynamic 23KB composite template | **Closed** (confirmed 2026-09-13). |
+| **73** | Libfprint FpDevice driver integration with Milan engine | FpDevice transition, 8-stage multi-impression enroll, Milan probe verification | **Closed** (confirmed 2026-09-14). |
 
 ---
 
 ## 5. Current State & Configuration Summary
 
-- **Active State:** Tickets 01–49 closed (43 pins threshold 14 / 5 stages, 46–49 harden session reuse and cold boot, all hardware-confirmed 2026-09-09). 448-test automated suite passes (100% via `bash tests/run_all_tests.sh`). Ticket 41 frozen, not just blocked: no matching-pipeline tuning per operator constraint.
+- **Active State:** Tickets 01–73 closed (71-73 transitions driver from host NBIS/Bozorth3 to vendor Goodix Milan biometric engine via in-process PE loader). 459-test automated suite passes 100% via `bash tests/run_all_tests.sh`. Full hermetic package build verified via `nix-build`.
 - **Upstream Repository:** `/home/sastauser/code/temp/libfprint-upstream` (`test-5e0a` branch; symlink at `/tmp/libfprint-upstream`).
 - **Power Management:** Genuine `FpDeviceClass` `.suspend` and `.resume` vfunctions handle S3 sleep cleanly.
-- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `7f4718a17e4d9934af9b9c56fe04c755b40ad68025971f1ed393131182c47b46`; single base `goodix-fp-linux-dev@c343b69` shared with the repo derivation — one patch cannot serve two bases). Ticket 70 (closed CONFIRMED 2026-09-12): 14 enrollment stages (lane a2 densification), 4-frame settling burst.
+- **Staged NixOS Patch:** `/home/sastauser/NixOS-Hyprland/modules/goodix/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` (SHA-256: `bf009e6d9ad03d5594f83147cf273d4224748260c69210f8f6bae2e667f59819`). Ticket 73/74: Milan engine PE loader, `FpDevice` class hierarchy, 8-stage multi-impression enrollment, post-verify SSM fix.
 - **Activation Sequence:** 7-state SSM: NOP -> (reset skipped) -> Read Chip ID (cold only) -> Read OTP (cold only) -> Query FW Version -> PSK-latch read (cold only) -> TLS PSK Handshake -> Upload Config (cold, post-TLS) -> Enable Chip.
 - **Verify Latency:** Sub-300ms instant unlock via immediate scan SSM completion and finger status reporting.
 - **Frame Decoder:** Strip each 132-byte block's first 96 bytes, discard 36-byte zero pad; unpack sequentially into 5,120 pixels.

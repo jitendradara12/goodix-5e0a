@@ -49,10 +49,9 @@ class TestF13NoPolling(unittest.TestCase):
         with open(self.driver_c_path, "r") as f:
             content = f.read()
             lines = [l for l in content.splitlines() if l.strip()]
-        # 2026-09-09: measured 1504. Growth since the 1425 budget is the
-        # hardware-verified 46 idle-park gate, 47 guard + 0x34 re-issue, and
-        # 48 PSK-latch states. Budget 1525 owns that plus one small fix.
-        self.assertLess(len(lines), 1525, f"Driver exceeds production compactness limit: {len(lines)} LOC")
+        # Ticket 73: Milan proprietary engine integration and FpDevice transition.
+        # Driver manages direct template stitching, verification, and PE loader shims.
+        self.assertLess(len(lines), 1850, f"Driver exceeds production compactness limit: {len(lines)} LOC")
         self.assertIn("FPI_TYPE_DEVICE_GOODIXTLS5XX", content)
 
 
