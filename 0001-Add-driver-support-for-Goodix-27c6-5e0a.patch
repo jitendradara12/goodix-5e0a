@@ -1668,10 +1668,10 @@ index a19379c..9fee8a9 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..1a26f30
+index 0000000..9b81739
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,2124 @@
+@@ -0,0 +1,2227 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -1803,8 +1803,13 @@ index 0000000..1a26f30
 +  gboolean            retry_guard;
 +  gint64              retry_guard_mono;
 +
-+  /* Ticket 73: Milan engine enrollment and verification state */
++  /* Ticket 73: Milan engine enrollment and verification state.
++   * Ticket 77: is_identify marks a gallery (1:N) claim; it shares the
++   * verify single-touch flow (one burst, then report+complete, never the
++   * enroll multi-touch loop). Both flags are per-claim, set only in
++   * dev_enroll/dev_verify/dev_identify entries. */
 +  gboolean            is_verify;
++  gboolean            is_identify;
 +  guint               enroll_stage;
 +  void               *milan_enrol_ctx;
 +  int                 max_images;
@@ -2694,6 +2699,80 @@ index 0000000..1a26f30
 +       * cleanly via fpi_ssm_mark_completed in on_read_img, and fprintd will
 +       * close/park the device via dev_close. */
 +    }
++  else if (action == FPI_DEVICE_ACTION_IDENTIFY || self->is_identify)
++    {
++      /* Ticket 77: gallery (1:N) identify. Same single-touch burst flow as
++       * verify; CANCELLED never re-issues (report+complete only). NULL print
++       * is accepted upstream (synaptics/elanmoc NO_MATCH precedent). */
++      if (self->best_active < 64)
++        {
++          fp_dbg ("5e0a no usable frame, reporting identify no-match");
++          fpi_device_identify_report (dev, NULL, NULL, NULL);
++          fpi_device_identify_complete (dev, NULL);
++        }
++      else
++        {
++          GPtrArray *prints = NULL;
++          fpi_device_get_identify_data (dev, &prints);
++          if (!prints || prints->len == 0)
++            {
++              fp_dbg ("5e0a identify: empty gallery, reporting no-match");
++              fpi_device_identify_report (dev, NULL, NULL, NULL);
++              fpi_device_identify_complete (dev, NULL);
++            }
++          else
++            {
++              guint n = prints->len;
++              const uint8_t **blobs = g_new0 (const uint8_t *, n);
++              size_t *lens = g_new0 (size_t, n);
++              GVariant **held = g_new0 (GVariant *, n);
++              FpPrint **owners = g_new0 (FpPrint *, n);
++              guint m = 0;
++              for (guint i = 0; i < n; i++)
++                {
++                  FpPrint *p = g_ptr_array_index (prints, i);
++                  GVariant *v = NULL;
++                  g_object_get (p, "fpi-data", &v, NULL);
++                  if (!v)
++                    continue;
++                  gsize dl = 0;
++                  gconstpointer d = g_variant_get_fixed_array (v, &dl, 1);
++                  if (!d || dl == 0)
++                    {
++                      g_variant_unref (v);
++                      continue;
++                    }
++                  held[m] = v;
++                  blobs[m] = d;
++                  lens[m] = dl;
++                  owners[m] = p;
++                  m++;
++                }
++              int match_idx = -1, match_pts = 0, is_match = 0;
++              if (m > 0)
++                is_match = goodix_milan_identify_image (self->best_pixels,
++                                                        GOODIX_5E0A_WIDTH,
++                                                        GOODIX_5E0A_HEIGHT,
++                                                        blobs, lens, m,
++                                                        &match_idx, &match_pts);
++              fp_dbg ("5e0a Milan identify: match=%d idx=%d pts=%d (gallery=%u usable=%u)",
++                      is_match, match_idx, match_pts, n, m);
++              if (is_match && match_idx >= 0 && (guint) match_idx < m)
++                fpi_device_identify_report (dev, owners[match_idx], NULL, NULL);
++              else
++                fpi_device_identify_report (dev, NULL, NULL, NULL);
++              fpi_device_identify_complete (dev, NULL);
++              for (guint i = 0; i < m; i++)
++                g_variant_unref (held[i]);
++              g_free (owners);
++              g_free (held);
++              g_free (blobs);
++              g_free (lens);
++            }
++        }
++      /* Same no-deactivate rule as verify: scan SSM completes in
++       * on_read_img; fprintd closes/parks via dev_close. */
++    }
 +  else if (action == FPI_DEVICE_ACTION_ENROLL)
 +    {
 +      if (!self->milan_enrol_ctx)
@@ -3104,7 +3183,9 @@ index 0000000..1a26f30
 +      return;
 +    }
 +
-+  if (!self->is_verify && self->enroll_stage < FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
++  /* Verify AND identify are single-touch: one burst, then report+complete.
++   * Only enrollment loops for the next touch. */
++  if (!self->is_verify && !self->is_identify && self->enroll_stage < FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
 +    {
 +      fp_dbg ("5e0a enrollment stage %u waiting for next touch, arming FDT DOWN", self->enroll_stage);
 +      fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
@@ -3670,6 +3751,7 @@ index 0000000..1a26f30
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 +
 +  self->is_verify = FALSE;
++  self->is_identify = FALSE;
 +  self->enroll_stage = 0;
 +  if (self->milan_enrol_ctx)
 +    {
@@ -3698,6 +3780,7 @@ index 0000000..1a26f30
 +  GVariant *fp_data = NULL;
 +
 +  self->is_verify = TRUE;
++  self->is_identify = FALSE;
 +  g_clear_pointer (&self->tmpl_blob, g_free);
 +  self->tmpl_len = 0;
 +
@@ -3733,11 +3816,30 @@ index 0000000..1a26f30
 +}
 +
 +static void
++dev_identify (FpDevice *dev)
++{
++  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
++
++  /* Ticket 77: gallery claim. The gallery itself lives in libfprint core
++   * for the action duration; fetch it at deliver time, so nothing is
++   * cached here. Drop any stale single-template blob (unused on this
++   * path) and clear the verify flag so the deliver branch is unambiguous. */
++  self->is_verify = FALSE;
++  self->is_identify = TRUE;
++  g_clear_pointer (&self->tmpl_blob, g_free);
++  self->tmpl_len = 0;
++
++  goodix5e0a_reset_touch_frames (self);
++  dev_activate ((FpImageDevice *) dev);
++}
++
++static void
 +dev_cancel (FpDevice *dev)
 +{
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 +
 +  fp_dbg ("5e0a dev_cancel requested");
++  self->is_identify = FALSE;
 +  if (self->milan_enrol_ctx)
 +    {
 +      goodix_milan_enroll_finish (self->milan_enrol_ctx);
@@ -3781,6 +3883,7 @@ index 0000000..1a26f30
 +  dev_class->close = dev_close;
 +  dev_class->enroll = dev_enroll;
 +  dev_class->verify = dev_verify;
++  dev_class->identify = dev_identify;
 +  dev_class->cancel = dev_cancel;
 +  dev_class->suspend = goodix5e0a_suspend;
 +  dev_class->resume = goodix5e0a_resume;
@@ -4590,10 +4693,10 @@ index 855996e..3297349 100644
 \ No newline at end of file
 diff --git a/libfprint/drivers/goodixtls/goodix_milan.c b/libfprint/drivers/goodixtls/goodix_milan.c
 new file mode 100644
-index 0000000..2231a07
+index 0000000..451d618
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix_milan.c
-@@ -0,0 +1,1092 @@
+@@ -0,0 +1,1143 @@
 +/*
 + * Goodix Milan Engine In-Process Loader and Bridge
 + *
@@ -5683,15 +5786,66 @@ index 0000000..2231a07
 +    return is_match;
 +}
 +
++/* Ticket 77: single-call N-gallery identify. Same >0 gate as verify; the
++ * engine ranks internally, so the winner index is authoritative. */
++int goodix_milan_identify_image (const uint8_t *pixels,
++                                 int width,
++                                 int height,
++                                 const uint8_t **template_blobs,
++                                 const size_t *template_lens,
++                                 int n_templates,
++                                 int *out_idx,
++                                 int *out_score) {
++    if (out_idx) *out_idx = -1;
++    if (out_score) *out_score = 0;
++    if (!pixels || !template_blobs || !template_lens || n_templates <= 0)
++        return 0;
++    if (width != 64 || height != 80)
++        return 0;
++    if (!g_milan_available && !goodix_milan_init(NULL)) return 0;
++    ensure_gs();
++
++    void **unpacked = g_new0 (void *, n_templates);
++    for (int i = 0; i < n_templates; i++) {
++        if (!template_blobs[i] || template_lens[i] == 0) goto fail_closed;
++        if (m_templateUnPack (template_blobs[i], (int) template_lens[i],
++                              NULL, &unpacked[i]) != 0 || !unpacked[i])
++            goto fail_closed;
++    }
++
++    GoodixImage probe;
++    make_goodix_image(&probe, pixels, width, height, 10);
++    int matched_idx = -999, match_score = -999;
++    u32 details[2] = {0};
++    m_identifyImage (&probe, NULL, unpacked, n_templates,
++                     &matched_idx, &match_score, details, 0, 0, NULL, 0);
++
++    for (int i = 0; i < n_templates; i++)
++        if (unpacked[i]) m_templateDelete (unpacked[i]);
++    g_free (unpacked);
++
++    int is_match = (matched_idx >= 0 && matched_idx < n_templates && match_score > 0);
++    if (out_idx) *out_idx = is_match ? matched_idx : -1;
++    if (out_score) *out_score = (match_score >= 0) ? match_score : 0;
++    return is_match;
++
++fail_closed:
++    g_warning ("5e0a: gallery templateUnPack failed; rejecting without match");
++    for (int i = 0; i < n_templates; i++)
++        if (unpacked[i]) m_templateDelete (unpacked[i]);
++    g_free (unpacked);
++    return 0;
++}
++
 +void goodix_milan_close (void) {
 +    /* Process lifetime mappings intentionally preserved */
 +}
 diff --git a/libfprint/drivers/goodixtls/goodix_milan.h b/libfprint/drivers/goodixtls/goodix_milan.h
 new file mode 100644
-index 0000000..5bad2ad
+index 0000000..bf0920c
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix_milan.h
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,100 @@
 +/*
 + * Goodix Milan Engine In-Process Loader and Bridge
 + *
@@ -5758,6 +5912,21 @@ index 0000000..5bad2ad
 +                               const uint8_t *template_blob,
 +                               size_t template_len,
 +                               int *out_score);
++
++/* Ticket 77: identify a 64x80 probe against an N-template gallery with ONE
++ * identifyImage call (count=N), preserving the engine's native gallery
++ * decision (same >0 score gate as verify). Returns 1 on MATCH with
++ * *out_idx = gallery index and *out_score = engine score, 0 on NO MATCH
++ * (*out_idx=-1) or error. Fail-closed: any unpack failure rejects without
++ * matching, so a corrupt template can never false-accept. */
++int goodix_milan_identify_image (const uint8_t *pixels,
++                                 int width,
++                                 int height,
++                                 const uint8_t **template_blobs,
++                                 const size_t *template_lens,
++                                 int n_templates,
++                                 int *out_idx,
++                                 int *out_score);
 +
 +/* Ticket 76: query Milan native frame quality for one 64x80 8-bit normalized
 + * frame (the exact buffer verify consumes). Wraps the getQuality export,

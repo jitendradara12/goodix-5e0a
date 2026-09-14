@@ -53,7 +53,9 @@ class TestF13NoPolling(unittest.TestCase):
         # Driver manages direct template stitching, verification, and PE loader shims.
         # Ticket 76: Milan native quality proxy judging (+~40 lines: native pair
         # state, lexicographic rank, extended journal lines).
-        self.assertLess(len(lines), 1900, f"Driver exceeds production compactness limit: {len(lines)} LOC")
+        # Ticket 77: gallery identify (+~100 lines: is_identify flag,
+        # dev_identify entry, deliver N-gallery branch, enroll-loop guard).
+        self.assertLess(len(lines), 2000, f"Driver exceeds production compactness limit: {len(lines)} LOC")
         self.assertIn("FPI_TYPE_DEVICE_GOODIXTLS5XX", content)
 
 

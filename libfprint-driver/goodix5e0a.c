@@ -129,8 +129,13 @@ struct _FpiDeviceGoodixTls5e0a
   gboolean            retry_guard;
   gint64              retry_guard_mono;
 
-  /* Ticket 73: Milan engine enrollment and verification state */
+  /* Ticket 73: Milan engine enrollment and verification state.
+   * Ticket 77: is_identify marks a gallery (1:N) claim; it shares the
+   * verify single-touch flow (one burst, then report+complete, never the
+   * enroll multi-touch loop). Both flags are per-claim, set only in
+   * dev_enroll/dev_verify/dev_identify entries. */
   gboolean            is_verify;
+  gboolean            is_identify;
   guint               enroll_stage;
   void               *milan_enrol_ctx;
   int                 max_images;
@@ -1020,6 +1025,80 @@ goodix5e0a_deliver_frame (FpDevice *dev, FpImage *img)
        * cleanly via fpi_ssm_mark_completed in on_read_img, and fprintd will
        * close/park the device via dev_close. */
     }
+  else if (action == FPI_DEVICE_ACTION_IDENTIFY || self->is_identify)
+    {
+      /* Ticket 77: gallery (1:N) identify. Same single-touch burst flow as
+       * verify; CANCELLED never re-issues (report+complete only). NULL print
+       * is accepted upstream (synaptics/elanmoc NO_MATCH precedent). */
+      if (self->best_active < 64)
+        {
+          fp_dbg ("5e0a no usable frame, reporting identify no-match");
+          fpi_device_identify_report (dev, NULL, NULL, NULL);
+          fpi_device_identify_complete (dev, NULL);
+        }
+      else
+        {
+          GPtrArray *prints = NULL;
+          fpi_device_get_identify_data (dev, &prints);
+          if (!prints || prints->len == 0)
+            {
+              fp_dbg ("5e0a identify: empty gallery, reporting no-match");
+              fpi_device_identify_report (dev, NULL, NULL, NULL);
+              fpi_device_identify_complete (dev, NULL);
+            }
+          else
+            {
+              guint n = prints->len;
+              const uint8_t **blobs = g_new0 (const uint8_t *, n);
+              size_t *lens = g_new0 (size_t, n);
+              GVariant **held = g_new0 (GVariant *, n);
+              FpPrint **owners = g_new0 (FpPrint *, n);
+              guint m = 0;
+              for (guint i = 0; i < n; i++)
+                {
+                  FpPrint *p = g_ptr_array_index (prints, i);
+                  GVariant *v = NULL;
+                  g_object_get (p, "fpi-data", &v, NULL);
+                  if (!v)
+                    continue;
+                  gsize dl = 0;
+                  gconstpointer d = g_variant_get_fixed_array (v, &dl, 1);
+                  if (!d || dl == 0)
+                    {
+                      g_variant_unref (v);
+                      continue;
+                    }
+                  held[m] = v;
+                  blobs[m] = d;
+                  lens[m] = dl;
+                  owners[m] = p;
+                  m++;
+                }
+              int match_idx = -1, match_pts = 0, is_match = 0;
+              if (m > 0)
+                is_match = goodix_milan_identify_image (self->best_pixels,
+                                                        GOODIX_5E0A_WIDTH,
+                                                        GOODIX_5E0A_HEIGHT,
+                                                        blobs, lens, m,
+                                                        &match_idx, &match_pts);
+              fp_dbg ("5e0a Milan identify: match=%d idx=%d pts=%d (gallery=%u usable=%u)",
+                      is_match, match_idx, match_pts, n, m);
+              if (is_match && match_idx >= 0 && (guint) match_idx < m)
+                fpi_device_identify_report (dev, owners[match_idx], NULL, NULL);
+              else
+                fpi_device_identify_report (dev, NULL, NULL, NULL);
+              fpi_device_identify_complete (dev, NULL);
+              for (guint i = 0; i < m; i++)
+                g_variant_unref (held[i]);
+              g_free (owners);
+              g_free (held);
+              g_free (blobs);
+              g_free (lens);
+            }
+        }
+      /* Same no-deactivate rule as verify: scan SSM completes in
+       * on_read_img; fprintd closes/parks via dev_close. */
+    }
   else if (action == FPI_DEVICE_ACTION_ENROLL)
     {
       if (!self->milan_enrol_ctx)
@@ -1430,7 +1509,9 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
       return;
     }
 
-  if (!self->is_verify && self->enroll_stage < FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
+  /* Verify AND identify are single-touch: one burst, then report+complete.
+   * Only enrollment loops for the next touch. */
+  if (!self->is_verify && !self->is_identify && self->enroll_stage < FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
     {
       fp_dbg ("5e0a enrollment stage %u waiting for next touch, arming FDT DOWN", self->enroll_stage);
       fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
@@ -1996,6 +2077,7 @@ dev_enroll (FpDevice *dev)
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 
   self->is_verify = FALSE;
+  self->is_identify = FALSE;
   self->enroll_stage = 0;
   if (self->milan_enrol_ctx)
     {
@@ -2024,6 +2106,7 @@ dev_verify (FpDevice *dev)
   GVariant *fp_data = NULL;
 
   self->is_verify = TRUE;
+  self->is_identify = FALSE;
   g_clear_pointer (&self->tmpl_blob, g_free);
   self->tmpl_len = 0;
 
@@ -2059,11 +2142,30 @@ dev_verify (FpDevice *dev)
 }
 
 static void
+dev_identify (FpDevice *dev)
+{
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
+  /* Ticket 77: gallery claim. The gallery itself lives in libfprint core
+   * for the action duration; fetch it at deliver time, so nothing is
+   * cached here. Drop any stale single-template blob (unused on this
+   * path) and clear the verify flag so the deliver branch is unambiguous. */
+  self->is_verify = FALSE;
+  self->is_identify = TRUE;
+  g_clear_pointer (&self->tmpl_blob, g_free);
+  self->tmpl_len = 0;
+
+  goodix5e0a_reset_touch_frames (self);
+  dev_activate ((FpImageDevice *) dev);
+}
+
+static void
 dev_cancel (FpDevice *dev)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 
   fp_dbg ("5e0a dev_cancel requested");
+  self->is_identify = FALSE;
   if (self->milan_enrol_ctx)
     {
       goodix_milan_enroll_finish (self->milan_enrol_ctx);
@@ -2107,6 +2209,7 @@ fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
   dev_class->close = dev_close;
   dev_class->enroll = dev_enroll;
   dev_class->verify = dev_verify;
+  dev_class->identify = dev_identify;
   dev_class->cancel = dev_cancel;
   dev_class->suspend = goodix5e0a_suspend;
   dev_class->resume = goodix5e0a_resume;

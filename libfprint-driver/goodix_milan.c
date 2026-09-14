@@ -1087,6 +1087,57 @@ int goodix_milan_verify_image (const uint8_t *pixels,
     return is_match;
 }
 
+/* Ticket 77: single-call N-gallery identify. Same >0 gate as verify; the
+ * engine ranks internally, so the winner index is authoritative. */
+int goodix_milan_identify_image (const uint8_t *pixels,
+                                 int width,
+                                 int height,
+                                 const uint8_t **template_blobs,
+                                 const size_t *template_lens,
+                                 int n_templates,
+                                 int *out_idx,
+                                 int *out_score) {
+    if (out_idx) *out_idx = -1;
+    if (out_score) *out_score = 0;
+    if (!pixels || !template_blobs || !template_lens || n_templates <= 0)
+        return 0;
+    if (width != 64 || height != 80)
+        return 0;
+    if (!g_milan_available && !goodix_milan_init(NULL)) return 0;
+    ensure_gs();
+
+    void **unpacked = g_new0 (void *, n_templates);
+    for (int i = 0; i < n_templates; i++) {
+        if (!template_blobs[i] || template_lens[i] == 0) goto fail_closed;
+        if (m_templateUnPack (template_blobs[i], (int) template_lens[i],
+                              NULL, &unpacked[i]) != 0 || !unpacked[i])
+            goto fail_closed;
+    }
+
+    GoodixImage probe;
+    make_goodix_image(&probe, pixels, width, height, 10);
+    int matched_idx = -999, match_score = -999;
+    u32 details[2] = {0};
+    m_identifyImage (&probe, NULL, unpacked, n_templates,
+                     &matched_idx, &match_score, details, 0, 0, NULL, 0);
+
+    for (int i = 0; i < n_templates; i++)
+        if (unpacked[i]) m_templateDelete (unpacked[i]);
+    g_free (unpacked);
+
+    int is_match = (matched_idx >= 0 && matched_idx < n_templates && match_score > 0);
+    if (out_idx) *out_idx = is_match ? matched_idx : -1;
+    if (out_score) *out_score = (match_score >= 0) ? match_score : 0;
+    return is_match;
+
+fail_closed:
+    g_warning ("5e0a: gallery templateUnPack failed; rejecting without match");
+    for (int i = 0; i < n_templates; i++)
+        if (unpacked[i]) m_templateDelete (unpacked[i]);
+    g_free (unpacked);
+    return 0;
+}
+
 void goodix_milan_close (void) {
     /* Process lifetime mappings intentionally preserved */
 }

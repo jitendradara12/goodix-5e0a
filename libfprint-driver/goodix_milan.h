@@ -65,6 +65,21 @@ int goodix_milan_verify_image (const uint8_t *pixels,
                                size_t template_len,
                                int *out_score);
 
+/* Ticket 77: identify a 64x80 probe against an N-template gallery with ONE
+ * identifyImage call (count=N), preserving the engine's native gallery
+ * decision (same >0 score gate as verify). Returns 1 on MATCH with
+ * *out_idx = gallery index and *out_score = engine score, 0 on NO MATCH
+ * (*out_idx=-1) or error. Fail-closed: any unpack failure rejects without
+ * matching, so a corrupt template can never false-accept. */
+int goodix_milan_identify_image (const uint8_t *pixels,
+                                 int width,
+                                 int height,
+                                 const uint8_t **template_blobs,
+                                 const size_t *template_lens,
+                                 int n_templates,
+                                 int *out_idx,
+                                 int *out_score);
+
 /* Ticket 76: query Milan native frame quality for one 64x80 8-bit normalized
  * frame (the exact buffer verify consumes). Wraps the getQuality export,
  * which populates img quality/overlap plus a qout side-channel.
