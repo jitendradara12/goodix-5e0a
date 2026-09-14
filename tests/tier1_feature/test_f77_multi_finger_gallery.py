@@ -23,7 +23,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fi
 GOODIX5E0A_C = os.path.join(REPO_ROOT, "libfprint-driver", "goodix5e0a.c")
 MILAN_C = os.path.join(REPO_ROOT, "libfprint-driver", "goodix_milan.c")
 MILAN_H = os.path.join(REPO_ROOT, "libfprint-driver", "goodix_milan.h")
-GALLERY_C = os.path.join(REPO_ROOT, "experiments", "test_milan_gallery.c")
+GALLERY_C = os.path.join(REPO_ROOT, "legacy-experiments", "test_milan_gallery.c")
 
 
 def _read(path):
@@ -100,9 +100,6 @@ class TestF77MultiFingerGallery(unittest.TestCase):
         self.assertIn("goodix_milan_verify_image (self->best_pixels,", src)
         self.assertIn("fpi_device_verify_report (dev, FPI_MATCH_SUCCESS, NULL, NULL);", src)
         self.assertIn("fpi_device_verify_report (dev, FPI_MATCH_FAIL, NULL, NULL);", src)
-        # enroll floor still minutiae-based
-        self.assertIn("GOODIX_5E0A_ENROLL_MIN_MINUTIAE (16)", _read(
-            os.path.join(REPO_ROOT, "libfprint-driver", "goodix5e0a.h")))
         # FDT timeouts: DOWN blocking (0), UP finite guard/normal
         self.assertIn("GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN", src)
         self.assertIn("GOODIX_5E0A_FDT_UP_GUARD_TIMEOUT_MS", src)

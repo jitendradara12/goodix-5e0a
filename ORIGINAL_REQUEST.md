@@ -238,3 +238,54 @@ Analyze and evaluate architectural solutions to resolve the enrollment coverage 
 ### Ponytail Review Quality
 - [ ] Specific list of safe code deletions and simplifications across `libfprint-driver/`.
 - [ ] Shortest working diffs provided with zero unrequested abstractions or scaffolding.
+
+## Follow-up — 2026-09-14T14:32:52Z
+
+Requested team: Full team (comprehensive multi-agent swarm for root-cause reverse engineering, architecture refactoring, and daemon integration)
+
+Execute a comprehensive full-stack refactoring and cleanup of the Goodix 27c6:5e0a Linux fingerprint driver repository, stripping obsolete legacy NBIS minutiae code in favor of the vendor Milan matching engine, streamlining the test suite, reorganizing experimental clutter into legacy-experiments/, and regenerating the unified NixOS driver patch.
+
+Working directory: /home/sastauser/code/temp/goodix
+Integrity mode: development
+
+## Verification Resources
+- Working driver build tree: `/tmp/libfprint-goodix/build`
+- Ninja compiler binary: `/nix/store/6ji6bq0si2j8ibdrxqgcmh1cw0wmdiyk-ninja-1.13.2/bin/ninja -C /tmp/libfprint-goodix/build libfprint/libfprint-drivers.a libfprint/libfprint-2.so.2.0.0`
+- Hermetic Nix package build: `nix-build -E 'with import <nixpkgs> {}; callPackage ./libfprint-goodix.nix {}'`
+- Hardware invariants & rules: `AGENTS.md` (0x32 FDT_DOWN timeout 0, 0x34 FDT_UP finite timeout with retry guard, CANCELLED never re-issues, cross-claim TTLs preserved)
+- Active ticket and history: `.scratch/goodix-5e0a/issues/` (retained intact)
+- Vendor matching DLL: `windows_driver/GoodixEngineAdapter.dll` (already positioned)
+
+## Requirements
+
+### R1. Commit Fully to Milan Biometric Engine & Strip Minutiae Slop
+Refactor `libfprint-driver/goodix5e0a.c` and `libfprint-driver/goodix5e0a.h` to rely exclusively on the Milan engine (`goodix_milan.c` + `GoodixEngineAdapter.dll`). Strip out all legacy NBIS minutiae extraction (`goodix5e0a_count_minutiae`), `#include "nbis/include/lfs.h"`, minutiae quality floors (`GOODIX_5E0A_ENROLL_MIN_MINUTIAE`), and minutiae tiebreakers. Simplify burst banking so frames are judged directly by Milan quality and contrast range without intermediate 128x160 `FpImage` allocations. Maintain all AGENTS.md hardware invariants (0x32 timeout 0, 0x34 guard/timeout, cross-claim TTLs).
+
+### R2. Reorganize Repository Clutter & Archive Non-Essential Binaries
+Consolidate peripheral clutter:
+- Move `experiments/` to `legacy-experiments/` and ensure all scripts and dumps remain tracked in git.
+- Keep `windows_driver/GoodixEngineAdapter.dll` for driver packaging; archive all other unused Windows binaries/EXEs/INFs (6.5 MB) into `legacy-experiments/windows_driver/`.
+- Preserve `.scratch/goodix-5e0a/issues/` intact for historical and hardware verification context.
+
+### R3. Streamline Automated Test Suite
+Clean up `tests/` by removing obsolete Bozorth tests (e.g. `test_f24_biometric_bozorth.py`), rigid ticket filename assertions (`test_f26_ticket_filename_status.py`), and redundant synthetic boundary permutation tiers. Consolidate and maintain high-signal tests covering protocol packet encoding/decoding (`CMD_NOP`, `0x32`, `0x34`), TLS handshake, Milan template management, and state machine lifecycle. Ensure `bash tests/run_all_tests.sh` runs cleanly.
+
+### R4. Patch Synchronization & Driver Compilation
+Sync all refactored C source files from `libfprint-driver/` into the `/tmp/libfprint-goodix` build tree, compile cleanly via Ninja with 0 errors, and regenerate `0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` to match the cleaned driver source. Verify that `nix-build -E 'with import <nixpkgs> {}; callPackage ./libfprint-goodix.nix {}'` succeeds.
+
+## Acceptance Criteria
+
+### Build & Driver Cleanliness
+- [ ] Ninja build succeeds cleanly: `/nix/store/6ji6bq0si2j8ibdrxqgcmh1cw0wmdiyk-ninja-1.13.2/bin/ninja -C /tmp/libfprint-goodix/build libfprint/libfprint-drivers.a libfprint/libfprint-2.so.2.0.0` exits 0 with no compiler warnings.
+- [ ] Zero references to `nbis/include/lfs.h` or `goodix5e0a_count_minutiae` in `libfprint-driver/goodix5e0a.c`.
+- [ ] Unified patch `0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` accurately reflects the refactored code and applies cleanly.
+- [ ] Nix package builds successfully: `nix-build -E 'with import <nixpkgs> {}; callPackage ./libfprint-goodix.nix {}'`.
+
+### Repository Structure
+- [ ] `legacy-experiments/` contains the moved experiments and archives; git status shows clean renames with no untracked dumps.
+- [ ] `windows_driver/` contains only `GoodixEngineAdapter.dll`.
+- [ ] `.scratch/goodix-5e0a/issues/` is preserved.
+
+### Test Suite Execution
+- [ ] Streamlined test suite passes via `bash tests/run_all_tests.sh` with 0 failures and 0 errors.
+

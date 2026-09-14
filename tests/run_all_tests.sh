@@ -8,7 +8,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-export PYTHONPATH="${ROOT_DIR}:${PYTHONPATH:-}"
+export PYTHONPATH="${ROOT_DIR}:${ROOT_DIR}/legacy-experiments:${PYTHONPATH:-}"
 cd "${ROOT_DIR}"
 
 GREEN='\033[0;32m'
@@ -101,13 +101,11 @@ fi
 echo ""
 
 # ------------------------------------------------------------------------------
-# Execute All Test Tiers
+# Execute Active Streamlined Test Tiers
 # ------------------------------------------------------------------------------
-run_tier "Tier 1 (Feature Coverage)" "${SCRIPT_DIR}/tier1_feature" "Features F01-F25 plus Milestone Payloads in Isolation"
-run_tier "Tier 2 (Boundary & Corner Cases)" "${SCRIPT_DIR}/tier2_boundary" "Boundary Value & Limit Analysis"
-run_tier "Tier 3 (Pairwise Integration)" "${SCRIPT_DIR}/tier3_combination" "Cross-Feature Combinations & State Transitions"
-run_tier "Tier 4 (Real-World Application Scenarios)" "${SCRIPT_DIR}/tier4_realworld" "PAM Auth, Enrollment & System Scenarios"
-run_tier "Tier 5 (Adversarial & Stress Testing)" "${SCRIPT_DIR}/tier5_adversarial" "Fuzzing, Fault Injection & Memory Stability"
+run_tier "Tier 1 (Feature Coverage)" "${SCRIPT_DIR}/tier1_feature" "Features F01-F77, Protocols & Boundary Checks"
+run_tier "Tier 4 (Real-World Application Scenarios)" "${SCRIPT_DIR}/tier4_realworld" "PAM Auth, Enrollment & System Integration"
+run_tier "Tier 5 (Adversarial & Stress Testing)" "${SCRIPT_DIR}/tier5_adversarial" "Hardware Contracts, Fault Injection & Wire Decoding Equivalence"
 
 END_TIME=$(date +%s)
 TOTAL_DURATION=$((END_TIME - START_TIME))

@@ -61,15 +61,14 @@ class MockDBusDeviceManager:
         self.driver_usb_loop_running = True
         self.driver_scan_ssm_active = True
 
-    def driver_on_read_img_verify(self, minutiae_count: int, is_verify_mode: bool = True) -> str:
+    def driver_on_read_img_verify(self, quality: int = 100, is_verify_mode: bool = True) -> str:
         """
         Simulates goodix5e0a_on_read_img.
         In verify mode: unconditionally passes image to image_captured without retry_scan.
         """
         if not is_verify_mode:
-            # Enrollment action checks minutiae floor
-            # (GOODIX_5E0A_ENROLL_MIN_MINUTIAE = 16, libfprint-driver/goodix5e0a.h)
-            if minutiae_count < 16:
+            # Enrollment action checks quality/active floor
+            if quality < 50:
                 return "retry_scan"
 
         # Verify action (Ticket 19): unconditionally forwards to image_captured
@@ -101,26 +100,26 @@ class TestF25DBusLifecycle(unittest.TestCase):
     def test_verify_single_shot_forwards_to_image_captured_without_retry(self):
         """Verify that goodix5e0a_on_read_img in verify mode passes image directly to image_captured."""
         # Code-level verification in goodix5e0a.c
-        # 1. retry_scan is guarded by action == FPI_DEVICE_ACTION_ENROLL
+        # 1. retry is guarded by action == FPI_DEVICE_ACTION_ENROLL
         enroll_guard_pattern = (
-            r"if\s*\(\s*action\s*==\s*FPI_DEVICE_ACTION_ENROLL\s*\)\s*\{[^}]*fpi_image_device_retry_scan"
+            r"if\s*\(\s*action\s*==\s*FPI_DEVICE_ACTION_ENROLL\s*\)\s*\{[^}]*(?:fpi_image_device_retry_scan|goodix5e0a_retry_enroll)"
         )
         self.assertRegex(
             self.c_content, enroll_guard_pattern,
-            "fpi_image_device_retry_scan must be guarded strictly by FPI_DEVICE_ACTION_ENROLL"
+            "retry scan/enroll must be guarded strictly by FPI_DEVICE_ACTION_ENROLL"
         )
 
         # 2. Verify mode unconditionally forwards to image_captured
-        self.assertIn("fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);", self.c_content)
+        self.assertIn("fpi_image_device_image_captured (dev);", self.c_content)
 
         # Functional simulation:
-        # Low minutiae touch during verify still forwards to image_captured
-        result_low_minutiae = self.manager.driver_on_read_img_verify(minutiae_count=8, is_verify_mode=True)
-        self.assertEqual(result_low_minutiae, "image_captured")
+        # Low quality touch during verify still forwards to image_captured
+        result_low = self.manager.driver_on_read_img_verify(quality=10, is_verify_mode=True)
+        self.assertEqual(result_low, "image_captured")
 
-        # High minutiae touch during verify forwards to image_captured
-        result_high_minutiae = self.manager.driver_on_read_img_verify(minutiae_count=24, is_verify_mode=True)
-        self.assertEqual(result_high_minutiae, "image_captured")
+        # High quality touch during verify forwards to image_captured
+        result_high = self.manager.driver_on_read_img_verify(quality=90, is_verify_mode=True)
+        self.assertEqual(result_high, "image_captured")
 
     def test_clean_deactivation_and_ssm_free(self):
         """Verify goodix5e0a_deactivate frees scan_ssm, cancels down_timeout, and resets state."""
@@ -166,7 +165,7 @@ class TestF25DBusLifecycle(unittest.TestCase):
             self.manager.start_verify_session(sender)
 
             # Verification capture forwards to image_captured
-            step = self.manager.driver_on_read_img_verify(minutiae_count=18, is_verify_mode=True)
+            step = self.manager.driver_on_read_img_verify(quality=80, is_verify_mode=True)
             self.assertEqual(step, "image_captured")
 
             # Normal teardown on completion

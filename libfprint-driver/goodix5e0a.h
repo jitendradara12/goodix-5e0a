@@ -39,29 +39,17 @@
 #define GOODIX_5E0A_FRAME_WIRE_BYTES (GOODIX_5E0A_FRAME_BLOCKS * GOODIX_5E0A_BLOCK_BYTES + 4) /* 10564 */
 
 #define GOODIX_5E0A_CONTRAST_GAIN (1.0f)
-/* Ticket 68 quality floor: 16 minutiae so every saved template can clear
- * bz3_threshold=14 (match count <= min(P,G): a 12-13 template is dead
- * weight that can never verify) with ~75% genuine pairing headroom. */
-#define GOODIX_5E0A_ENROLL_MIN_MINUTIAE (16)
 
-/* Ticket 56 slop purge: symbolic constants for former magic numbers.
- * Values unchanged (hardware-verified): FDT_UP guard 2000ms / normal
- * 5000ms (ticket 47: a 0x34 timeout means the finger is still down, so
- * the guard path re-issues; success means genuine release); 500dpi ppmm;
- * 128 mid-gray for residual re-centering. */
+/* FDT_UP guard 2000ms / normal 5000ms (ticket 47: a 0x34 timeout means the
+ * finger is still down, so the guard path re-issues; success means genuine
+ * release); 500dpi ppmm; 128 mid-gray for residual re-centering. */
 #define GOODIX_5E0A_FDT_UP_GUARD_TIMEOUT_MS (2000)
 #define GOODIX_5E0A_FDT_UP_TIMEOUT_MS (5000)
 #define GOODIX_5E0A_PPMM (500.0 / 25.4)
 #define GOODIX_5E0A_NORMALIZE_MIDPOINT (128.0f)
 
-/* Ticket 39 best-of-N per-touch capture: non-enroll touches bank this many
- * back-to-back GET_IMAGE frames inside SCAN_5E0A_GET_IMAGE and submit only
- * the winner. Ticket 76 ranks by Milan native quality first (quality primary,
- * overlap next, minutiae only breaks residual ties and still gates
- * enrollment); with the engine or export unavailable every proxy reads 0 and
- * judging reproduces the exact ticket-39 minutiae order.
- * Ticket 65 settling burst: 4 frames (~132ms) reach the settled capacitive
- * contact; 3 frames truncated the touchdown ramp into runt probes. */
+/* Best-of-N per-touch capture: bank 4 frames (~132ms settling burst)
+ * inside SCAN_5E0A_GET_IMAGE and submit the highest Milan quality / contrast frame. */
 #define GOODIX_5E0A_FRAMES_PER_TOUCH (4)
 
 

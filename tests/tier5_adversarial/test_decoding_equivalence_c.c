@@ -198,10 +198,12 @@ int main (void)
   assert (ret_new == GOODIX_5E0A_FRAME_SIZE);
   printf ("    PASS: Sequential ramp bitwise identical across all 5,120 pixels.\n");
 
-  /* --- Test 6: Real capture experiments/fingerprint.pgm --- */
-  printf ("[6] Testing real sensor capture (experiments/fingerprint.pgm)...\n");
-  FILE *f = fopen ("experiments/fingerprint.pgm", "r");
-  assert (f != NULL && "experiments/fingerprint.pgm must exist");
+  /* --- Test 6: Real capture legacy-experiments/fingerprint.pgm --- */
+  printf ("[6] Testing real sensor capture (legacy-experiments/fingerprint.pgm)...\n");
+  FILE *f = fopen ("legacy-experiments/fingerprint.pgm", "r");
+  if (!f)
+    f = fopen ("experiments/fingerprint.pgm", "r");
+  assert (f != NULL && "legacy-experiments/fingerprint.pgm must exist");
   char magic[8];
   int pw, ph, maxv;
   assert (fscanf (f, "%7s %d %d %d", magic, &pw, &ph, &maxv) == 4);

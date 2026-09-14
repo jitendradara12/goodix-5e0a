@@ -73,9 +73,10 @@ class TestF40WarmActivation(unittest.TestCase):
                       "gint64                tls_parked_at;",
                       "guint                 tls_parked_gen;",
                       "guint               frame_count;",
-                      "FpImage            *best_img;",
-                      "guint               best_minutiae;",
-                      "guint               best_frame_no;"):
+                      "guint               best_frame_no;",
+                      "guint               best_quality;",
+                      "guint               best_overlap;",
+                      "guint               best_range;"):
             self.assertIn(field, struct)
         init = _slice(src, "fpi_device_goodixtls5e0a_init",
                       "goodix5e0a_axis_correlation")

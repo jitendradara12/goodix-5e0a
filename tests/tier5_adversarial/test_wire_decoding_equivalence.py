@@ -8,6 +8,7 @@ and real hardware captures.
 import unittest
 import random
 import struct
+from tests.repo_paths import REPO_ROOT
 from tests.test_utils import (
     FRAME_PIXELS,
     FRAME_BLOCKS,
@@ -18,6 +19,13 @@ from tests.test_utils import (
     decode_12bit_frame,
     decode_chicagoh_frame,
 )
+
+FINGERPRINT_PGM = (REPO_ROOT / "legacy-experiments" / "fingerprint.pgm"
+                   if (REPO_ROOT / "legacy-experiments" / "fingerprint.pgm").exists()
+                   else REPO_ROOT / "experiments" / "fingerprint.pgm")
+CLEAR0_PGM = (REPO_ROOT / "legacy-experiments" / "clear-0.pgm"
+              if (REPO_ROOT / "legacy-experiments" / "clear-0.pgm").exists()
+              else REPO_ROOT / "experiments" / "clear-0.pgm")
 
 def decode_frame_old(data: bytes, length: int) -> list:
     """Old 2-step decoding: memcpy active bytes into packed buffer, then unpack 6-byte chunks."""
@@ -116,9 +124,10 @@ class TestWireDecodingEquivalence(unittest.TestCase):
             self.assertEqual(len(new_px), FRAME_PIXELS)
             self.assertEqual(old_px, new_px)
 
+    @unittest.skipUnless(FINGERPRINT_PGM.exists(), "fingerprint.pgm fixture missing")
     def test_real_capture_fingerprint_pgm(self):
-        """Real sensor capture experiments/fingerprint.pgm round-trip bitwise equality."""
-        with open("experiments/fingerprint.pgm", "r") as f:
+        """Real sensor capture legacy-experiments/fingerprint.pgm round-trip bitwise equality."""
+        with open(FINGERPRINT_PGM, "r") as f:
             tokens = f.read().split()
         magic, w, h, maxv = tokens[0], int(tokens[1]), int(tokens[2]), int(tokens[3])
         self.assertEqual(magic, "P2")
@@ -137,9 +146,10 @@ class TestWireDecodingEquivalence(unittest.TestCase):
         self.assertEqual(old_px, new_px)
         self.assertEqual(new_px, ground_truth_pixels)
 
+    @unittest.skipUnless(CLEAR0_PGM.exists(), "clear-0.pgm fixture missing")
     def test_real_capture_clear0_pgm(self):
         """Baseline clear-0.pgm round-trip bitwise equality."""
-        with open("experiments/clear-0.pgm", "r") as f:
+        with open(CLEAR0_PGM, "r") as f:
             tokens = f.read().split()
         ground_truth_pixels = [int(x) for x in tokens[4:]]
         self.assertEqual(len(ground_truth_pixels), FRAME_PIXELS)

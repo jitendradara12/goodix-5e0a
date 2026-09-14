@@ -38,10 +38,6 @@
 #include <string.h>
 
 #include "drivers_api.h"
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wredundant-decls"
-#include "nbis/include/lfs.h"
-#pragma GCC diagnostic pop
 #include "goodix.h"
 #include "goodix_proto.h"
 #include "goodix5e0a.h"
@@ -112,18 +108,15 @@ struct _FpiDeviceGoodixTls5e0a
   gboolean              warm_attempted;
   gboolean              warm_retried;
 
-  /* Ticket 39 best-of-N per-touch state: collect up to
+  /* Best-of-N per-touch state: collect up to
    * GOODIX_5E0A_FRAMES_PER_TOUCH frames in SCAN_5E0A_GET_IMAGE, retain the
-   * winner in best_img, and submit only that winner. Ticket 76 ranks by
-   * Milan native quality first (see keep helper): best_quality/best_overlap
-   * hold the winner's native pair, best_minutiae breaks residual ties and
-   * still gates enrollment. */
+   * winner in best_pixels, and submit that winner. Ranks by Milan native
+   * quality first, tie-breaking on contrast range and active touch area. */
   guint               frame_count;
-  FpImage            *best_img;
-  guint               best_minutiae;
   guint               best_frame_no;
   guint               best_quality;
   guint               best_overlap;
+  guint               best_range;
 
   /* Ticket 47: verify retry guard against rapid retry burn on continuous touch */
   gboolean            retry_guard;
@@ -872,7 +865,6 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
 }
 
 static FpImage * process_raw_frame (GoodixTls5xxPix * pix);
-static guint goodix5e0a_count_minutiae (FpImage *img);
 
 static guint32
 goodix5e0a_decode_frame (GoodixTls5xxPix *out_row_major, const guint8 *data, guint16 len)
@@ -956,22 +948,16 @@ goodix5e0a_normalize_raw_frame (const GoodixTls5xxPix *pix, guint8 *out_norm)
   return TRUE;
 }
 
-/* Ticket 39: drop any half-collected burst (unref the retained winner
- * candidate) and zero the per-touch counters. Called at touch start, claim
- * entry, and every teardown path so a stale winner never leaks. */
+/* Ticket 39: drop any half-collected burst and zero the per-touch counters.
+ * Called at touch start, claim entry, and every teardown path so a stale winner never leaks. */
 static void
 goodix5e0a_reset_touch_frames (FpiDeviceGoodixTls5e0a *self)
 {
-  if (self->best_img != NULL)
-    {
-      g_object_unref (self->best_img);
-      self->best_img = NULL;
-    }
   self->frame_count = 0;
-  self->best_minutiae = 0;
   self->best_frame_no = 0;
   self->best_quality = 0;
   self->best_overlap = 0;
+  self->best_range = 0;
   self->best_active = 0;
   memset (self->best_pixels, 0, sizeof (self->best_pixels));
   memset (self->latest_norm_pixels, 0, sizeof (self->latest_norm_pixels));
@@ -987,7 +973,7 @@ goodix5e0a_retry_enroll (FpDevice *dev, FpDeviceRetry retry)
 }
 
 static void
-goodix5e0a_deliver_frame (FpDevice *dev, FpImage *img)
+goodix5e0a_deliver_frame (FpDevice *dev)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
   FpiDeviceAction action = fpi_device_get_current_action (dev);
@@ -1166,56 +1152,31 @@ goodix5e0a_deliver_frame (FpDevice *dev, FpImage *img)
         }
     }
 
-  if (img)
-    g_object_unref (img);
 }
 
 #define fpi_image_device_retry_scan(idev, retry) \
   goodix5e0a_retry_enroll (FP_DEVICE (idev), (retry))
 
-#define fpi_image_device_image_captured(idev, img) \
-  goodix5e0a_deliver_frame (FP_DEVICE (idev), (img))
+#define fpi_image_device_image_captured(idev) \
+  goodix5e0a_deliver_frame (FP_DEVICE (idev))
 
-/* Ticket 39: hand the burst winner to the deliver tail (logs the single
+/* Hand the burst winner to the deliver tail (logs the single
  * best-frame journal line). Callers guarantee at least one banked frame. */
-static FpImage *
+static void
 goodix5e0a_claim_best_frame (FpiDeviceGoodixTls5e0a *self)
 {
-  FpImage *best;
-
-  g_return_val_if_fail (self->best_img != NULL, NULL);
-  best = self->best_img;
-  /* Ticket 76: winner line carries the native pair alongside minutiae; the
-   * trailing proxy token stays the single grep-able rank (quality << 8 |
-   * overlap), with minutiae kept so old journal greps still match. */
-  g_message ("5e0a best frame %u/%u: minutiae=%u quality=%u overlap=%u score-proxy=%u (submitting)",
+  g_message ("5e0a best frame %u/%u: quality=%u overlap=%u range=%u score-proxy=%u (submitting)",
              self->best_frame_no, (guint) GOODIX_5E0A_FRAMES_PER_TOUCH,
-             self->best_minutiae, self->best_quality, self->best_overlap,
+             self->best_quality, self->best_overlap, self->best_range,
              (self->best_quality << 8) | self->best_overlap);
-  self->best_img = NULL;
-  self->best_minutiae = 0;
-  self->best_frame_no = 0;
-  self->best_quality = 0;
-  self->best_overlap = 0;
-  return best;
 }
 
-/* Ticket 39 + 76: best-of-N judging for one burst frame. Takes ownership of
- * img in every case: the winner is retained in best_img and losers are
- * unrefed immediately. Re-issues GET_IMAGE on the same SSM while fewer than
- * GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked (TRUE means another frame
- * was already requested and the caller must return without touching the SSM;
- * FALSE means the burst is complete and the caller claims the winner for the
- * single deliver call). Ticket 76 ranks by Milan native quality first
- * (quality primary, overlap next) measured on the 64x80 normalized buffer
- * verify consumes; minutiae (same get_minutiae parameters as before)
- * breaks residual ties and still gates enrollment, because the driver never
- * sees the core verdict. With the engine or export unavailable every native
- * pair reads 0/0 and judging reproduces the exact ticket-39 minutiae order.
- * Prototyped here and defined after the read callback below, so no forward
- * declaration shadows the callback definition for plain-text lookup. */
+/* Best-of-N judging for one burst frame directly on 64x80 normalized pixels.
+ * Ranks by Milan native quality first, tie-breaking on dynamic contrast range
+ * and active touch area. Re-issues GET_IMAGE on the same SSM while fewer than
+ * GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked. */
 static gboolean
-goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm, FpImage *img,
+goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm,
                             guint16 declen, guint active, guint range);
 
 static void
@@ -1234,7 +1195,6 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 
   FpiDeviceAction action = fpi_device_get_current_action (dev);
   g_autofree GoodixTls5xxPix *raw_frame = NULL;
-  FpImage *img;
 
   /* Ticket 39: a mid-burst read error (finger lifted between frames) falls
    * back to the best frame collected so far. With zero frames the failure
@@ -1247,7 +1207,7 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
           fpi_ssm_mark_failed (ssm, err);
           return;
         }
-      if (self->best_img != NULL)
+      if (self->best_frame_no > 0)
         {
           g_error_free (err);
           goto choose_best;
@@ -1258,7 +1218,7 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 
   /* Ticket 39: a short mid-burst read (lift between frames) submits the
    * best frame so far instead of decoding a runt. */
-  if (self->best_img != NULL
+  if (self->best_frame_no > 0
       && (data == NULL || len < GOODIX_5E0A_FRAME_WIRE_BYTES))
     {
       g_message ("5e0a frame %u/%u: short declen=%u, submitting best-so-far %u/%u",
@@ -1318,57 +1278,48 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
               decoded_pixels, total_nonzero, raw_min == 65535 ? 0 : raw_min, raw_max,
               GOODIX_5E0A_WIDTH, GOODIX_5E0A_HEIGHT);
 
-  img = process_raw_frame (raw_frame);
-
   /* Best-of-N frame banking: all touches (including enrollment) bank
    * GOODIX_5E0A_FRAMES_PER_TOUCH frames and select the winner; the
    * SSM does not advance between frames and only the winner reaches the
-   * deliver tail below. */
-  if (goodix5e0a_keep_best_frame (dev, ssm, img, len, frame_active, frame_range))
+   * deliver tail below. Evaluates 64x80 normalized pixels directly without
+   * intermediate FpImage allocations. */
+  if (goodix5e0a_keep_best_frame (dev, ssm, len, frame_active, frame_range))
     return;
 
 choose_best:
   if (action == FPI_DEVICE_ACTION_ENROLL)
     {
-      guint minutiae_count = self->best_minutiae;
-      if (self->best_img == NULL || minutiae_count < GOODIX_5E0A_ENROLL_MIN_MINUTIAE)
+      if (self->best_active < 64 || self->best_frame_no == 0)
         {
-          g_message ("5e0a enrollment touch rejected: minutiae_count=%u < %d (press firmer)",
-                     minutiae_count, GOODIX_5E0A_ENROLL_MIN_MINUTIAE);
+          g_message ("5e0a enrollment touch rejected: active=%u (press firmer)",
+                     self->best_active);
           goodix5e0a_reset_touch_frames (self);
-          fpi_image_device_retry_scan (FP_IMAGE_DEVICE (dev), FP_DEVICE_RETRY_TOO_SHORT);
+          goodix5e0a_retry_enroll (dev, FP_DEVICE_RETRY_TOO_SHORT);
           fpi_ssm_next_state (ssm);
           return;
         }
-      g_message ("5e0a enrollment quality check: minutiae_count=%u (floor=%d)",
-                 minutiae_count, GOODIX_5E0A_ENROLL_MIN_MINUTIAE);
-      img = goodix5e0a_claim_best_frame (self);
+      g_message ("5e0a enrollment quality check: active=%u range=%u quality=%u overlap=%u",
+                 self->best_active, self->best_range, self->best_quality, self->best_overlap);
+      goodix5e0a_claim_best_frame (self);
     }
   else
     {
-      if (self->best_img == NULL)
+      if (self->best_frame_no > 0)
+        goodix5e0a_claim_best_frame (self);
+      else
         {
-          /* Ticket 53: all frames rejected. Never retry_scan (PAM deadlock,
-           * ticket 19) nor mark_failed (voids warm/parked TLS): submit a
-           * blank (fp_image_new zero-fills); core no-matches, scan
-           * completes clean with warm/park intact. */
-          fp_dbg ("5e0a no usable frame, submitting blank");
-          img = fp_image_new (GOODIX_5E0A_SCALED_WIDTH, GOODIX_5E0A_SCALED_HEIGHT);
-          img->flags = FPI_IMAGE_COLORS_INVERTED;
-          img->ppmm = GOODIX_5E0A_PPMM;
+          fp_dbg ("5e0a no usable frame captured");
           goto deliver;
         }
-      img = goodix5e0a_claim_best_frame (self);
     }
 
-  /* In verify mode (and all non-enroll actions), unconditionally pass the captured image
-   * to fpi_image_device_image_captured without calling retry_scan. Complete the scan SSM
-   * and report finger release immediately so that libfprint can finish authentication and
-   * deactivate without waiting 2-5 seconds for finger lift polls (Ticket 20 latency fix
-   * for the first claim; a retry claim within the guard window instead parks in
-   * FDT_UP until genuine release, ticket 47). */
+  /* In verify mode (and all non-enroll actions), deliver the winner directly.
+   * Complete the scan SSM and report finger release immediately so that libfprint can
+   * finish authentication and deactivate without waiting 2-5 seconds for finger lift
+   * polls (Ticket 20 latency fix for the first claim; a retry claim within the guard
+   * window instead parks in FDT_UP until genuine release, ticket 47). */
 deliver:
-  fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);
+  fpi_image_device_image_captured (dev);
 
   if (action != FPI_DEVICE_ACTION_ENROLL || self->enroll_stage >= FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
     {
@@ -1384,66 +1335,50 @@ deliver:
     }
 }
 
-/* Ticket 39 + 76: best-of-N judging for one burst frame. Takes ownership of
- * img in every case: the winner is retained in best_img and losers are
- * unrefed immediately. Re-issues GET_IMAGE on the same SSM while fewer than
- * GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked (TRUE means another frame
- * was already requested and the caller must return without touching the SSM;
- * FALSE means the burst is complete and the caller claims the winner for the
- * single deliver call). Ticket 76 ranks by Milan native quality first
- * (quality primary, overlap next) measured on the 64x80 normalized buffer
- * verify consumes; minutiae (same get_minutiae parameters as before)
- * breaks residual ties and still gates enrollment, because the driver never
- * sees the core verdict. With the engine or export unavailable every native
- * pair reads 0/0 and judging reproduces the exact ticket-39 minutiae order. */
+/* Ticket 39 + 76: best-of-N judging for one burst frame. Evaluates the candidate directly from
+ * the 64x80 normalized raster using Milan frame quality scoring with contrast
+ * dynamic range and active touch area tiebreakers, eliminating intermediate
+ * FpImage allocations. Re-issues GET_IMAGE on the same SSM while fewer than
+ * GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked. */
 static gboolean
-goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm, FpImage *img,
+goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm,
                             guint16 declen, guint active, guint range)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
-  guint minutiae = img ? goodix5e0a_count_minutiae (img) : 0;
-  /* Ticket 76: native pair from the exact 64x80 bytes verify feeds Milan,
-   * never from the 128x160 scaled FpImage minutiae runs on. Engine or
-   * export down -> 0/0, and the rank below collapses to minutiae order. */
-  guint quality = 0, overlap = 0, quality_proxy = 0;
-  if (img != NULL)
-    {
-      quality_proxy = goodix_milan_frame_quality (self->latest_norm_pixels,
-                                                  GOODIX_5E0A_WIDTH,
-                                                  GOODIX_5E0A_HEIGHT,
-                                                  &quality, &overlap);
-    }
+  guint quality = 0, overlap = 0;
+  guint quality_proxy = goodix_milan_frame_quality (self->latest_norm_pixels,
+                                                    GOODIX_5E0A_WIDTH,
+                                                    GOODIX_5E0A_HEIGHT,
+                                                    &quality, &overlap);
 
   self->frame_count++;
-  g_message ("5e0a frame %u/%u: declen=%u active=%u range=%u minutiae=%u quality=%u overlap=%u score-proxy=%u",
+  g_message ("5e0a frame %u/%u: declen=%u active=%u range=%u quality=%u overlap=%u score-proxy=%u",
              self->frame_count, (guint) GOODIX_5E0A_FRAMES_PER_TOUCH,
-             declen, active, range, minutiae, quality, overlap, quality_proxy);
+             declen, active, range, quality, overlap, quality_proxy);
 
-  if (img != NULL)
+  guint best_proxy = (self->best_quality << 8) | self->best_overlap;
+  gboolean better = FALSE;
+
+  if (self->best_frame_no == 0)
+    better = TRUE;
+  else if (quality_proxy > best_proxy)
+    better = TRUE;
+  else if (quality_proxy == best_proxy)
     {
-      /* Lexicographic rank: native quality, then overlap, then minutiae.
-       * CANCELLED never reaches here (on_read_img fails the SSM first), so
-       * no cancel guard is needed inside this helper. */
-      guint best_proxy = (self->best_quality << 8) | self->best_overlap;
-      gboolean better = (self->best_img == NULL
-                         || quality_proxy > best_proxy
-                         || (quality_proxy == best_proxy && minutiae > self->best_minutiae));
-      if (better)
-        {
-          if (self->best_img != NULL)
-            g_object_unref (self->best_img);
-          self->best_img = img;
-          self->best_minutiae = minutiae;
-          self->best_frame_no = self->frame_count;
-          self->best_quality = quality;
-          self->best_overlap = overlap;
-          self->best_active = active;
-          memcpy (self->best_pixels, self->latest_norm_pixels, GOODIX_5E0A_FRAME_SIZE);
-        }
-      else
-        {
-          g_object_unref (img);
-        }
+      if (range > self->best_range)
+        better = TRUE;
+      else if (range == self->best_range && active > self->best_active)
+        better = TRUE;
+    }
+
+  if (better)
+    {
+      self->best_frame_no = self->frame_count;
+      self->best_quality = quality;
+      self->best_overlap = overlap;
+      self->best_range = range;
+      self->best_active = active;
+      memcpy (self->best_pixels, self->latest_norm_pixels, GOODIX_5E0A_FRAME_SIZE);
     }
 
   if (self->frame_count < GOODIX_5E0A_FRAMES_PER_TOUCH)
@@ -1732,11 +1667,11 @@ fpi_device_goodixtls5e0a_init (FpiDeviceGoodixTls5e0a *self)
   self->warm_attempted = FALSE;
   self->warm_retried = FALSE;
   self->frame_count = 0;
-  self->best_img = NULL;
-  self->best_minutiae = 0;
   self->best_frame_no = 0;
   self->best_quality = 0;
   self->best_overlap = 0;
+  self->best_range = 0;
+  self->best_active = 0;
   self->retry_guard = FALSE;
   self->retry_guard_mono = 0;
 }
@@ -1913,53 +1848,6 @@ process_raw_frame (GoodixTls5xxPix * pix)
   g_message ("5e0a scaled image: %dx%d (WxH) flags=0x%02x active=%u range=%u ppmm=%.3f",
              img->width, img->height, img->flags, active, range, img->ppmm);
   return img;
-}
-
-static guint
-goodix5e0a_count_minutiae (FpImage *img)
-{
-  if (!img || !img->data)
-    return 0;
-
-  int w = img->width;
-  int h = img->height;
-  unsigned char *buf = g_memdup2 (img->data, w * h);
-
-  if (img->flags & FPI_IMAGE_COLORS_INVERTED)
-    for (int i = 0; i < w * h; i++)
-      buf[i] = 255 - buf[i];
-
-  LFSPARMS parms = g_lfsparms_V2;
-  parms.remove_perimeter_pts = 0;
-  double ppmm = img->ppmm > 0 ? img->ppmm : GOODIX_5E0A_PPMM;
-
-  MINUTIAE *minutiae = NULL;
-  int *qmap = NULL, *dmap = NULL, *lcmap = NULL, *lfmap = NULL, *hcmap = NULL;
-  int mw, mh, bw, bh, bd;
-  unsigned char *bdata = NULL;
-
-  int ret = get_minutiae (&minutiae, &qmap, &dmap, &lcmap, &lfmap, &hcmap,
-                          &mw, &mh, &bdata, &bw, &bh, &bd,
-                          buf, w, h, 8, ppmm, &parms);
-  guint count = (ret == 0 && minutiae) ? minutiae->num : 0;
-
-  g_free (buf);
-  if (minutiae)
-    free_minutiae (minutiae);
-  if (qmap)
-    g_free (qmap);
-  if (dmap)
-    g_free (dmap);
-  if (lcmap)
-    g_free (lcmap);
-  if (lfmap)
-    g_free (lfmap);
-  if (hcmap)
-    g_free (hcmap);
-  if (bdata)
-    g_free (bdata);
-
-  return count;
 }
 
 void

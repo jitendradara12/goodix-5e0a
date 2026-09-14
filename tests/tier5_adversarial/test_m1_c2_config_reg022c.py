@@ -38,16 +38,22 @@ if not TMP_LIBFPRINT_HEADER.exists():
     # Hermetic fallback: deployed build tree absent, test the repo header itself.
     TMP_LIBFPRINT_HEADER = REPO_ROOT / "libfprint-driver" / "goodix5e0a.h"
 REPO_HEADER = REPO_ROOT / "libfprint-driver" / "goodix5e0a.h"
-TEST_PRESS_CAPTURE_PY = (REPO_ROOT / "experiments" / "test_press_and_capture.py"
-                         if (REPO_ROOT / "experiments" / "test_press_and_capture.py").exists()
-                         else REPO_ROOT / "test_press_and_capture.py")
+TEST_PRESS_CAPTURE_PY = (REPO_ROOT / "legacy-experiments" / "test_press_and_capture.py"
+                         if (REPO_ROOT / "legacy-experiments" / "test_press_and_capture.py").exists()
+                         else (REPO_ROOT / "experiments" / "test_press_and_capture.py"
+                               if (REPO_ROOT / "experiments" / "test_press_and_capture.py").exists()
+                               else REPO_ROOT / "test_press_and_capture.py"))
 DRIVER_52XD_PY = Path("/tmp/goodix-fp-dump/driver_52xd.py")
-TEST_TOUCH_SENSOR_PY = (REPO_ROOT / "experiments" / "test_touch_sensor.py"
-                        if (REPO_ROOT / "experiments" / "test_touch_sensor.py").exists()
-                        else REPO_ROOT / "test_touch_sensor.py")
-SCAN_FINGER_PY = (REPO_ROOT / "experiments" / "scan_finger.py"
-                  if (REPO_ROOT / "experiments" / "scan_finger.py").exists()
-                  else REPO_ROOT / "scan_finger.py")
+TEST_TOUCH_SENSOR_PY = (REPO_ROOT / "legacy-experiments" / "test_touch_sensor.py"
+                        if (REPO_ROOT / "legacy-experiments" / "test_touch_sensor.py").exists()
+                        else (REPO_ROOT / "experiments" / "test_touch_sensor.py"
+                              if (REPO_ROOT / "experiments" / "test_touch_sensor.py").exists()
+                              else REPO_ROOT / "test_touch_sensor.py"))
+SCAN_FINGER_PY = (REPO_ROOT / "legacy-experiments" / "scan_finger.py"
+                  if (REPO_ROOT / "legacy-experiments" / "scan_finger.py").exists()
+                  else (REPO_ROOT / "experiments" / "scan_finger.py"
+                        if (REPO_ROOT / "experiments" / "scan_finger.py").exists()
+                        else REPO_ROOT / "scan_finger.py"))
 
 
 def parse_c_array(header_content: str, array_name: str) -> bytes:

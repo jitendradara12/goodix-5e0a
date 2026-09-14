@@ -16,8 +16,9 @@ import hashlib
 import struct
 import unittest
 
+import tests.repo_paths
 from tests.test_utils import CANONICAL_PSK
-from experiments.goodix_whitebox import (
+from goodix_whitebox import (
     sec_white_encrypt,
     sec_white_decrypt,
     build_psk_write_payload,

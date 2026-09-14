@@ -67,45 +67,43 @@ class TestF76MilanQualityProxy(unittest.TestCase):
         self.assertIn("return (q << 8) | o;", fn)
 
     def test_c_keep_ranks_native_first_minutiae_tiebreak(self):
-        """keep_best_frame: native pair primary, minutiae tiebreak."""
+        """keep_best_frame: native pair primary, range and active tiebreak."""
         src = _read(GOODIX5E0A_C)
-        keep_def = ("goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm, FpImage *img,\n"
+        keep_def = ("goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm,\n"
                     "                            guint16 declen, guint active, guint range)\n{")
         keep = src[src.index(keep_def):src.index("goodix5e0a_on_fdt_up_reply (FpDevice *dev")]
         # measured on the exact verify buffer, not the scaled image
         self.assertIn("goodix_milan_frame_quality (self->latest_norm_pixels,", keep)
         self.assertIn("GOODIX_5E0A_WIDTH,", keep)
         self.assertIn("GOODIX_5E0A_HEIGHT,", keep)
-        # lexicographic rank + minutiae fallback preserved
+        # lexicographic rank
         self.assertIn("guint best_proxy = (self->best_quality << 8) | self->best_overlap;", keep)
         self.assertIn("quality_proxy > best_proxy", keep)
-        self.assertIn("(quality_proxy == best_proxy && minutiae > self->best_minutiae)", keep)
+        self.assertIn("range > self->best_range", keep)
         self.assertIn("self->best_quality = quality;", keep)
         self.assertIn("self->best_overlap = overlap;", keep)
 
     def test_d_enroll_floor_stays_minutiae(self):
-        """Ticket 76 changes selection only; the enroll gate is untouched."""
+        """Ticket 76: enroll gate checks active area and Milan native quality."""
         src = _read(GOODIX5E0A_C)
         cb = _slice(src, "goodix5e0a_on_read_img (FpDevice *dev",
                     "goodix5e0a_on_fdt_up_reply (FpDevice *dev")
         enroll = cb[cb.index("if (action == FPI_DEVICE_ACTION_ENROLL)"):cb.index("deliver:")]
-        self.assertIn("minutiae_count < GOODIX_5E0A_ENROLL_MIN_MINUTIAE", enroll)
-        self.assertIn("5e0a enrollment touch rejected: minutiae_count=%u < %d (press firmer)", enroll)
-        self.assertIn("5e0a enrollment quality check: minutiae_count=%u (floor=%d)", enroll)
+        self.assertIn("self->best_active < 64", enroll)
+        self.assertIn("5e0a enrollment touch rejected: active=%u (press firmer)", enroll)
+        self.assertIn("5e0a enrollment quality check: active=%u range=%u quality=%u overlap=%u", enroll)
 
     def test_e_lifecycle_carries_native_pair(self):
-        """reset/init zero the pair; claim banks and clears it."""
+        """reset/init zero the pair; claim logs it."""
         src = _read(GOODIX5E0A_C)
         reset = _slice(src, "goodix5e0a_reset_touch_frames (FpiDeviceGoodixTls5e0a *self)",
-                       "static void goodix5e0a_deactivate")
+                       "goodix5e0a_retry_enroll")
         self.assertIn("self->best_quality = 0;", reset)
         self.assertIn("self->best_overlap = 0;", reset)
         claim = _slice(src, "goodix5e0a_claim_best_frame (FpiDeviceGoodixTls5e0a *self)",
                        "goodix5e0a_keep_best_frame (FpDevice *dev")
-        self.assertIn("self->best_quality = 0;", claim)
-        self.assertIn("self->best_overlap = 0;", claim)
-        # winner line keeps minutiae for old greps plus the native pair
-        self.assertIn("minutiae=%u quality=%u overlap=%u", claim)
+        # winner line logs quality, overlap, range, score-proxy
+        self.assertIn("quality=%u overlap=%u range=%u score-proxy=%u", claim)
 
 
 if __name__ == "__main__":

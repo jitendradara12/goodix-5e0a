@@ -45,7 +45,6 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
         """Burst length N=4 lives in the header next to the enroll floor."""
         hdr = _read(GOODIX5E0A_H)
         self.assertIn("#define GOODIX_5E0A_FRAMES_PER_TOUCH (4)", hdr)
-        self.assertIn("#define GOODIX_5E0A_ENROLL_MIN_MINUTIAE (16)", hdr)
 
     def test_b_struct_counter_and_best_fields(self):
         """Per-touch burst state lives on the device struct; park fields stay."""
@@ -53,12 +52,12 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
         struct = _slice(src, "struct _FpiDeviceGoodixTls5e0a",
                         "G_DECLARE_FINAL_TYPE")
         for field in ("guint               frame_count;",
-                      "FpImage            *best_img;",
-                      "guint               best_minutiae;",
                       "guint               best_frame_no;",
-                      # ticket-76 Milan native pair beside the minutiae tiebreak
                       "guint               best_quality;",
-                      "guint               best_overlap;"):
+                      "guint               best_overlap;",
+                      "guint               best_range;",
+                      "guint8              best_pixels[GOODIX_5E0A_FRAME_SIZE];",
+                      "guint               best_active;"):
             self.assertIn(field, struct)
         # ticket-38 park footprint untouched
         for field in ("gboolean              tls_parked;",
@@ -69,11 +68,11 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
         init = _slice(src, "fpi_device_goodixtls5e0a_init",
                       "goodix5e0a_axis_correlation")
         for field in ("self->frame_count = 0;",
-                      "self->best_img = NULL;",
-                      "self->best_minutiae = 0;",
                       "self->best_frame_no = 0;",
                       "self->best_quality = 0;",
-                      "self->best_overlap = 0;"):
+                      "self->best_overlap = 0;",
+                      "self->best_range = 0;",
+                      "self->best_active = 0;"):
             self.assertIn(field, init)
 
     def test_c_burst_reissue_without_ssm_advance(self):
@@ -82,7 +81,7 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
         self.assertEqual(src.count("goodix_tls_read_image ("), 2)
         self.assertIn("case SCAN_5E0A_GET_IMAGE:", src)
         # anchor on the definition (brace), not the prototype above on_read_img
-        keep_def = ("goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm, FpImage *img,\n"
+        keep_def = ("goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm,\n"
                     "                            guint16 declen, guint active, guint range)\n{")
         keep = src[src.index(keep_def):src.index("goodix5e0a_on_fdt_up_reply (FpDevice *dev")]
         self.assertIn("if (self->frame_count < GOODIX_5E0A_FRAMES_PER_TOUCH)", keep)
@@ -93,25 +92,17 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
         for absent in ("fpi_ssm_next_state", "fpi_ssm_jump_to_state",
                        "fpi_ssm_mark_completed", "fpi_ssm_mark_failed"):
             self.assertNotIn(absent, keep)
-        # Ticket 76 judging: Milan native pair is primary, minutiae breaks
-        # residual ties (engine down -> 0/0 reproduces ticket-39 order);
-        # winner retained, loser unrefed
+        # Judging: Milan native pair is primary, contrast range and active area tiebreak
         self.assertIn("goodix_milan_frame_quality (self->latest_norm_pixels,", keep)
-        self.assertIn("goodix5e0a_count_minutiae (img)", keep)
         self.assertIn("quality_proxy > best_proxy", keep)
-        self.assertIn("minutiae > self->best_minutiae", keep)
-        self.assertIn("self->best_img = img;", keep)
-        self.assertIn("g_object_unref (img);", keep)
+        self.assertIn("range > self->best_range", keep)
+        self.assertIn("memcpy (self->best_pixels, self->latest_norm_pixels, GOODIX_5E0A_FRAME_SIZE);", keep)
 
     def test_d_journal_lines_and_score_proxy_wording(self):
         """Per-frame / best / short-fallback lines; never a bare `score`."""
         src = _read(GOODIX5E0A_C)
-        # Ticket 76: per-frame and winner lines carry the Milan native pair
-        # alongside minutiae; the trailing proxy token stays grep-able.
-        self.assertIn("5e0a frame %u/%u: declen=%u active=%u range=%u "
-                      "minutiae=%u quality=%u overlap=%u score-proxy=%u", src)
-        self.assertIn("5e0a best frame %u/%u: minutiae=%u quality=%u overlap=%u "
-                      "score-proxy=%u (submitting)", src)
+        self.assertIn("5e0a frame %u/%u: declen=%u active=%u range=%u quality=%u overlap=%u score-proxy=%u", src)
+        self.assertIn("5e0a best frame %u/%u: quality=%u overlap=%u range=%u score-proxy=%u (submitting)", src)
         self.assertIn("short declen=%u, submitting best-so-far %u/%u", src)
         # rendered output matches the hardware-verify grep `frame [0-9]/4|score`
         self.assertIn("GOODIX_5E0A_FRAMES_PER_TOUCH (4)", _read(GOODIX5E0A_H))
@@ -127,38 +118,34 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
         cb = _slice(src, "goodix5e0a_on_read_img (FpDevice *dev",
                     "goodix5e0a_on_fdt_up_reply (FpDevice *dev")
         # floor gate wording and retry behavior intact
-        for line in ("5e0a enrollment quality check: minutiae_count=%u (floor=%d)",
-                     "5e0a enrollment touch rejected: minutiae_count=%u < %d (press firmer)",
-                     "GOODIX_5E0A_ENROLL_MIN_MINUTIAE",
-                     "fpi_image_device_retry_scan (FP_IMAGE_DEVICE (dev), "
-                     "FP_DEVICE_RETRY_TOO_SHORT);"):
+        for line in ("5e0a enrollment quality check: active=%u range=%u quality=%u overlap=%u",
+                     "5e0a enrollment touch rejected: active=%u (press firmer)",
+                     "goodix5e0a_retry_enroll (dev, FP_DEVICE_RETRY_TOO_SHORT);"):
             self.assertIn(line, cb)
         # All actions (including enroll) bank frames via keep_best_frame
-        self.assertIn("goodix5e0a_keep_best_frame (dev, ssm, img, len, "
+        self.assertIn("goodix5e0a_keep_best_frame (dev, ssm, len, "
                       "frame_active, frame_range)", cb)
         # Enrollment gate evaluates the best banked frame
         enroll = cb[cb.index("if (action == FPI_DEVICE_ACTION_ENROLL)"):cb.index("deliver:")]
-        self.assertIn("img = goodix5e0a_claim_best_frame (self);", enroll)
-        self.assertIn("minutiae_count < GOODIX_5E0A_ENROLL_MIN_MINUTIAE", enroll)
+        self.assertIn("goodix5e0a_claim_best_frame (self);", enroll)
+        self.assertIn("self->best_active < 64", enroll)
 
     def test_f_single_submit_and_error_fallback(self):
         """One image_captured site, one mark_completed; zero-frame errors fail as today."""
         src = _read(GOODIX5E0A_C)
         self.assertEqual(src.count("fpi_image_device_image_captured ("), 1)
-        self.assertIn("fpi_image_device_image_captured (FP_IMAGE_DEVICE (dev), img);", src)
+        self.assertIn("fpi_image_device_image_captured (dev);", src)
         self.assertEqual(src.count("fpi_ssm_mark_completed ("), 1)
         cb = _slice(src, "goodix5e0a_on_read_img (FpDevice *dev",
                     "goodix5e0a_on_fdt_up_reply (FpDevice *dev")
         # error with a banked winner submits best-so-far; without, marks failed
-        self.assertIn("if (self->best_img != NULL)", cb)
+        self.assertIn("if (self->best_frame_no > 0)", cb)
         self.assertIn("g_error_free (err);", cb)
         self.assertIn("fpi_ssm_mark_failed (ssm, err);", cb)
         # claim helper logs the best line and releases ownership exactly once
         claim = _slice(src, "goodix5e0a_claim_best_frame (FpiDeviceGoodixTls5e0a *self)",
                        "goodix5e0a_keep_best_frame (FpDevice *dev")
-        self.assertIn("5e0a best frame %u/%u: minutiae=%u quality=%u overlap=%u "
-                      "score-proxy=%u (submitting)", claim)
-        self.assertIn("self->best_img = NULL;", claim)
+        self.assertIn("5e0a best frame %u/%u: quality=%u overlap=%u range=%u score-proxy=%u (submitting)", claim)
 
     def test_g_resets_on_touch_claim_and_teardown(self):
         """Burst state resets at touch start, claim entry, and every teardown."""
