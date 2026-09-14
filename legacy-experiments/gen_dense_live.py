@@ -109,7 +109,7 @@ def ridge_endings_mask(seed: int) -> list[float]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, default=SEED)
-    ap.add_argument("--out", default="experiments/live_dense_pad.pgm")
+    ap.add_argument("--out", default="legacy-experiments/live_dense_pad.pgm")
     args = ap.parse_args()
     seed = args.seed
     rng = random.Random(seed + 2)

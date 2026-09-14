@@ -38,7 +38,7 @@ claims, or USB captures yourself — write the exact commands for the user.
   repo root (`discover -s` has loader failures; don't "fix" the runner).
 - Build drivers only: `/nix/store/6ji6bq0si2j8ibdrxqgcmh1cw0wmdiyk-ninja-1.13.2/bin/ninja -C /tmp/libfprint-goodix/build libfprint/libfprint-drivers.a libfprint/libfprint-2.so.2.0.0` (`ninja` isn't on PATH; full build dies at the unrelated `FPrint-2.0.gir` step).
 - Full package: `nix-build -E 'with import <nixpkgs> {}; callPackage ./libfprint-goodix.nix {}'` (needs the refreshed unified patch; check `git status` — a no-diff rebuild means untested identical code).
-- Python USB scripts need fprintd stopped (else `Resource busy`) and repo-root imports: `PYTHONPATH=/home/sastauser/code/temp/goodix nix-shell -p python3Packages.pyusb openssl --run "python3 experiments/<script>.py"`.
+- Python USB scripts need fprintd stopped (else `Resource busy`) and repo-root imports: `PYTHONPATH=/home/sastauser/code/temp/goodix nix-shell -p python3Packages.pyusb openssl --run "python3 legacy-experiments/<script>.py"`.
 - Never `pkill -f` a pattern containing your own command text (self-match hangs); list with `pgrep -af` and kill PIDs. Never rely on `timeout`-killed scripts having cleaned up their `s_server` children — verify ports (`ss -tlnp`) or use a fresh port per run.
 - Deploy (user only): `cd ~/NixOS-Hyprland && sudo nixos-rebuild switch --flake .# && sudo systemctl restart fprintd && fprintd-enroll`.
 - Debug via the service (`sudo systemctl set-environment G_MESSAGES_DEBUG=all`, unset after). Never a foreground daemon (loses the D-Bus race). `/etc/systemd` is read-only here.

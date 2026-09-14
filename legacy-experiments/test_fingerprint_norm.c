@@ -111,8 +111,8 @@ static void test_pipeline(const unsigned char *norm_img, const char *name) {
 }
 
 int main() {
-    FILE *f = fopen("experiments/fingerprint.pgm", "r");
-    if (!f) f = fopen("experiments/live_touch.pgm", "r");
+    FILE *f = fopen("legacy-experiments/fingerprint.pgm", "r");
+    if (!f) f = fopen("legacy-experiments/live_touch.pgm", "r");
     if (!f) { printf("Cannot open live_touch.pgm\n"); return 1; }
     char line[128];
     while (fgets(line, sizeof(line), f)) {

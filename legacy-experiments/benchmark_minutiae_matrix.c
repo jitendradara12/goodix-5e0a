@@ -264,8 +264,8 @@ static int load_raw_5120(const char *path, unsigned char *out_raw) {
 
 int main(int argc, char **argv) {
     const char *images[] = {
-        "/home/sastauser/code/temp/goodix/experiments/windows_unpacked.pgm",
-        "/home/sastauser/code/temp/goodix/experiments/fingerprint.pgm",
+        "/home/sastauser/code/temp/goodix/legacy-experiments/windows_unpacked.pgm",
+        "/home/sastauser/code/temp/goodix/legacy-experiments/fingerprint.pgm",
         "/tmp/live_touch.pgm"
     };
     int num_images = sizeof(images) / sizeof(images[0]);

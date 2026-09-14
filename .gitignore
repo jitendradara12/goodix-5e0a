@@ -18,31 +18,35 @@ result
 result-*
 clear-*.pgm
 
-# Build artifacts & executables (extensionless ELF binaries built from experiments/*.c)
+# Build artifacts & executables (extensionless ELF binaries built from legacy-experiments/*.c)
 debug_minutiae
 test_current_algo
 test_match
 test_minutiae
-experiments/benchmark_minutiae_matrix
-experiments/challenge_gain
-experiments/test_bozorth_verify
-experiments/test_contrast_tuning
-experiments/test_filters
-experiments/test_fingerprint_norm
-experiments/test_geometry_unpack
-experiments/test_geometry_unpack2
-experiments/test_live_normalization
-experiments/test_norm_bozorth
-experiments/test_roundtrip
-experiments/test_stride165
-experiments/test_true_wbdi_unpack
-experiments/test_wbdi_unpack
-experiments/test_bozorth
+legacy-experiments/benchmark_minutiae_matrix
+legacy-experiments/challenge_gain
+legacy-experiments/test_bozorth_verify
+legacy-experiments/test_contrast_tuning
+legacy-experiments/test_filters
+legacy-experiments/test_fingerprint_norm
+legacy-experiments/test_geometry_unpack
+legacy-experiments/test_geometry_unpack2
+legacy-experiments/test_live_normalization
+legacy-experiments/test_norm_bozorth
+legacy-experiments/test_roundtrip
+legacy-experiments/test_stride165
+legacy-experiments/test_true_wbdi_unpack
+legacy-experiments/test_wbdi_unpack
+legacy-experiments/test_bozorth
+legacy-experiments/test_getquality_contrast
+legacy-experiments/test_milan_gallery
+legacy-experiments/benchmark_sharpen_dose
+legacy-experiments/test_best_of_n_adversarial
 *.o
 *.raw
 
 # Internal AI agent workdir
 .agents/
 session-*.md
-experiments/test_goodix_loader
-experiments/test_goodix_shootout
+legacy-experiments/test_goodix_loader
+legacy-experiments/test_goodix_shootout

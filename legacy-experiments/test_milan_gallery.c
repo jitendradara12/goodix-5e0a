@@ -113,10 +113,10 @@ int main (void) {
 
     static uint16_t rawA[N], rawB[N], rawI[N], rawC[N];
     int w, h;
-    if (read_p2_pgm ("experiments/live_dense_pad.pgm", rawA, &w, &h)
-        || read_p2_pgm ("experiments/live_dense_pad_seed68.pgm", rawB, &w, &h)
-        || read_p2_pgm ("experiments/fingerprint.pgm", rawI, &w, &h)
-        || read_p2_pgm ("experiments/clear-0.pgm", rawC, &w, &h)) {
+    if (read_p2_pgm ("legacy-experiments/live_dense_pad.pgm", rawA, &w, &h)
+        || read_p2_pgm ("legacy-experiments/live_dense_pad_seed68.pgm", rawB, &w, &h)
+        || read_p2_pgm ("legacy-experiments/fingerprint.pgm", rawI, &w, &h)
+        || read_p2_pgm ("legacy-experiments/clear-0.pgm", rawC, &w, &h)) {
         fprintf (stderr, "[!] pgm load failed\n");
         return 2;
     }

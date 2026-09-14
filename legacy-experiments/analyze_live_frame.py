@@ -106,7 +106,7 @@ def main() -> None:
     parser.add_argument(
         "--nbis-binary",
         type=Path,
-        default=Path("experiments/test_geometry_unpack2"),
+        default=Path("legacy-experiments/test_geometry_unpack2"),
     )
     args = parser.parse_args()
 

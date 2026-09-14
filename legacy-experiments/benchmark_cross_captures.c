@@ -131,11 +131,11 @@ static int match_captures(Capture *c1, Capture *c2) {
 
 int main() {
     Capture caps[] = {
-        { "Finger A (Cap 1)", "/home/sastauser/code/temp/goodix/experiments/fingerprint.pgm", 0, NULL, {0} },
+        { "Finger A (Cap 1)", "/home/sastauser/code/temp/goodix/legacy-experiments/fingerprint.pgm", 0, NULL, {0} },
         { "Finger A (Cap 2)", "/tmp/touch_test_raw.pgm", 0, NULL, {0} },
-        { "Finger B (WinWBDI)", "/home/sastauser/code/temp/goodix/experiments/windows_unpacked.pgm", 0, NULL, {0} },
+        { "Finger B (WinWBDI)", "/home/sastauser/code/temp/goodix/legacy-experiments/windows_unpacked.pgm", 0, NULL, {0} },
         { "Finger C (Off1)", "/tmp/frame_off1.pgm", 0, NULL, {0} },
-        { "Air Baseline", "/home/sastauser/code/temp/goodix/experiments/clear-0.pgm", 0, NULL, {0} }
+        { "Air Baseline", "/home/sastauser/code/temp/goodix/legacy-experiments/clear-0.pgm", 0, NULL, {0} }
     };
     int n_caps = sizeof(caps) / sizeof(caps[0]);
 

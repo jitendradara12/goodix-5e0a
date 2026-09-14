@@ -1009,27 +1009,27 @@ int main(int argc, char **argv) {
     int ppp_res = ppp_param_init(sensor_type);
     fprintf(stderr, "[milan] ppp_param_init(%d) returned %d\n", sensor_type, ppp_res);
 
-    // Load test images from experiments/*.pgm
+    // Load test images from legacy-experiments/*.pgm
     u16 raw_fingerprint[GOODIX_FRAME_SIZE];
     u16 raw_dense[GOODIX_FRAME_SIZE];
     u16 raw_dense68[GOODIX_FRAME_SIZE];
     u16 raw_clear[GOODIX_FRAME_SIZE];
     int pw = 0, ph = 0;
 
-    if (read_p2_pgm("experiments/fingerprint.pgm", raw_fingerprint, &pw, &ph) != 0) {
-        fprintf(stderr, "[!] Failed to read experiments/fingerprint.pgm\n");
+    if (read_p2_pgm("legacy-experiments/fingerprint.pgm", raw_fingerprint, &pw, &ph) != 0) {
+        fprintf(stderr, "[!] Failed to read legacy-experiments/fingerprint.pgm\n");
         return 1;
     }
-    if (read_p2_pgm("experiments/live_dense_pad.pgm", raw_dense, &pw, &ph) != 0) {
-        fprintf(stderr, "[!] Failed to read experiments/live_dense_pad.pgm\n");
+    if (read_p2_pgm("legacy-experiments/live_dense_pad.pgm", raw_dense, &pw, &ph) != 0) {
+        fprintf(stderr, "[!] Failed to read legacy-experiments/live_dense_pad.pgm\n");
         return 1;
     }
-    if (read_p2_pgm("experiments/live_dense_pad_seed68.pgm", raw_dense68, &pw, &ph) != 0) {
-        fprintf(stderr, "[!] Failed to read experiments/live_dense_pad_seed68.pgm\n");
+    if (read_p2_pgm("legacy-experiments/live_dense_pad_seed68.pgm", raw_dense68, &pw, &ph) != 0) {
+        fprintf(stderr, "[!] Failed to read legacy-experiments/live_dense_pad_seed68.pgm\n");
         return 1;
     }
-    if (read_p2_pgm("experiments/clear-0.pgm", raw_clear, &pw, &ph) != 0) {
-        fprintf(stderr, "[!] Failed to read experiments/clear-0.pgm\n");
+    if (read_p2_pgm("legacy-experiments/clear-0.pgm", raw_clear, &pw, &ph) != 0) {
+        fprintf(stderr, "[!] Failed to read legacy-experiments/clear-0.pgm\n");
         return 1;
     }
 
@@ -1129,11 +1129,11 @@ int main(int argc, char **argv) {
     fprintf(stderr, "[enrol] templatePack returned %d (packed %d bytes to buffer)\n", pack_res, packed_size);
 
     // Save packed template to disk
-    FILE *tpl_f = fopen("experiments/milan_dense_pad.tpl", "wb");
+    FILE *tpl_f = fopen("legacy-experiments/milan_dense_pad.tpl", "wb");
     if (tpl_f) {
         fwrite(packed_buf, 1, packed_size, tpl_f);
         fclose(tpl_f);
-        fprintf(stderr, "[enrol] Saved master template to experiments/milan_dense_pad.tpl (%d bytes)\n", packed_size);
+        fprintf(stderr, "[enrol] Saved master template to legacy-experiments/milan_dense_pad.tpl (%d bytes)\n", packed_size);
     }
 
     // Test templateUnPack roundtrip

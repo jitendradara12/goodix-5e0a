@@ -13,10 +13,10 @@ Based on reverse engineering of wbdi.dll (Geneva module GFUSB_GM168SEC_APP_10036
 
 Usage:
   # Diagnostic read (safe, read-only):
-  PYTHONPATH=/home/sastauser/code/temp/goodix:experiments nix-shell -p python3Packages.pyusb python3Packages.cryptography openssl --run "python3 experiments/probe_psk_provision_wbdi.py"
+  PYTHONPATH=/home/sastauser/code/temp/goodix:legacy-experiments nix-shell -p python3Packages.pyusb python3Packages.cryptography openssl --run "python3 legacy-experiments/probe_psk_provision_wbdi.py"
 
   # Provision write (only if needed):
-  PYTHONPATH=/home/sastauser/code/temp/goodix:experiments nix-shell -p python3Packages.pyusb python3Packages.cryptography openssl --run "python3 experiments/probe_psk_provision_wbdi.py --provision"
+  PYTHONPATH=/home/sastauser/code/temp/goodix:legacy-experiments nix-shell -p python3Packages.pyusb python3Packages.cryptography openssl --run "python3 legacy-experiments/probe_psk_provision_wbdi.py --provision"
 """
 
 import argparse
