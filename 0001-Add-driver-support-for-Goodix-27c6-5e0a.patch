@@ -1671,7 +1671,7 @@ new file mode 100644
 index 0000000..1a26f30
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,2083 @@
+@@ -0,0 +1,2124 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -1788,11 +1788,16 @@ index 0000000..1a26f30
 +
 +  /* Ticket 39 best-of-N per-touch state: collect up to
 +   * GOODIX_5E0A_FRAMES_PER_TOUCH frames in SCAN_5E0A_GET_IMAGE, retain the
-+   * highest-minutiae frame in best_img, and submit only that winner. */
++   * winner in best_img, and submit only that winner. Ticket 76 ranks by
++   * Milan native quality first (see keep helper): best_quality/best_overlap
++   * hold the winner's native pair, best_minutiae breaks residual ties and
++   * still gates enrollment. */
 +  guint               frame_count;
 +  FpImage            *best_img;
 +  guint               best_minutiae;
 +  guint               best_frame_no;
++  guint               best_quality;
++  guint               best_overlap;
 +
 +  /* Ticket 47: verify retry guard against rapid retry burn on continuous touch */
 +  gboolean            retry_guard;
@@ -2634,6 +2639,8 @@ index 0000000..1a26f30
 +  self->frame_count = 0;
 +  self->best_minutiae = 0;
 +  self->best_frame_no = 0;
++  self->best_quality = 0;
++  self->best_overlap = 0;
 +  self->best_active = 0;
 +  memset (self->best_pixels, 0, sizeof (self->best_pixels));
 +  memset (self->latest_norm_pixels, 0, sizeof (self->latest_norm_pixels));
@@ -2773,26 +2780,35 @@ index 0000000..1a26f30
 +
 +  g_return_val_if_fail (self->best_img != NULL, NULL);
 +  best = self->best_img;
-+  g_message ("5e0a best frame %u/%u: minutiae=%u score-proxy=%u (submitting)",
++  /* Ticket 76: winner line carries the native pair alongside minutiae; the
++   * trailing proxy token stays the single grep-able rank (quality << 8 |
++   * overlap), with minutiae kept so old journal greps still match. */
++  g_message ("5e0a best frame %u/%u: minutiae=%u quality=%u overlap=%u score-proxy=%u (submitting)",
 +             self->best_frame_no, (guint) GOODIX_5E0A_FRAMES_PER_TOUCH,
-+             self->best_minutiae, self->best_minutiae);
++             self->best_minutiae, self->best_quality, self->best_overlap,
++             (self->best_quality << 8) | self->best_overlap);
 +  self->best_img = NULL;
 +  self->best_minutiae = 0;
 +  self->best_frame_no = 0;
++  self->best_quality = 0;
++  self->best_overlap = 0;
 +  return best;
 +}
 +
-+/* Ticket 39: minutiae-count proxy judging for one non-enroll frame. Takes
-+ * ownership of img in every case: the winner is retained in best_img and
-+ * losers are unrefed immediately. Re-issues GET_IMAGE on the same SSM while
-+ * fewer than GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked (TRUE means
-+ * another frame was already requested and the caller must return without
-+ * touching the SSM; FALSE means the burst is complete and the caller claims
-+ * the winner for the single deliver call). The proxy reuses
-+ * goodix5e0a_count_minutiae, the same get_minutiae parameters core matching
-+ * runs, because the driver never sees the core verdict. Prototyped here and
-+ * defined after the read callback below, so no forward declaration shadows
-+ * the callback definition for plain-text lookup. */
++/* Ticket 39 + 76: best-of-N judging for one burst frame. Takes ownership of
++ * img in every case: the winner is retained in best_img and losers are
++ * unrefed immediately. Re-issues GET_IMAGE on the same SSM while fewer than
++ * GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked (TRUE means another frame
++ * was already requested and the caller must return without touching the SSM;
++ * FALSE means the burst is complete and the caller claims the winner for the
++ * single deliver call). Ticket 76 ranks by Milan native quality first
++ * (quality primary, overlap next) measured on the 64x80 normalized buffer
++ * verify consumes; minutiae (same get_minutiae parameters as before)
++ * breaks residual ties and still gates enrollment, because the driver never
++ * sees the core verdict. With the engine or export unavailable every native
++ * pair reads 0/0 and judging reproduces the exact ticket-39 minutiae order.
++ * Prototyped here and defined after the read callback below, so no forward
++ * declaration shadows the callback definition for plain-text lookup. */
 +static gboolean
 +goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm, FpImage *img,
 +                            guint16 declen, guint active, guint range);
@@ -2963,36 +2979,59 @@ index 0000000..1a26f30
 +    }
 +}
 +
-+/* Ticket 39: minutiae-count proxy judging for one non-enroll frame. Takes
-+ * ownership of img in every case: the winner is retained in best_img and
-+ * losers are unrefed immediately. Re-issues GET_IMAGE on the same SSM while
-+ * fewer than GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked (TRUE means
-+ * another frame was already requested and the caller must return without
-+ * touching the SSM; FALSE means the burst is complete and the caller claims
-+ * the winner for the single deliver call). The proxy reuses
-+ * goodix5e0a_count_minutiae, the same get_minutiae parameters core matching
-+ * runs, because the driver never sees the core verdict. */
++/* Ticket 39 + 76: best-of-N judging for one burst frame. Takes ownership of
++ * img in every case: the winner is retained in best_img and losers are
++ * unrefed immediately. Re-issues GET_IMAGE on the same SSM while fewer than
++ * GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked (TRUE means another frame
++ * was already requested and the caller must return without touching the SSM;
++ * FALSE means the burst is complete and the caller claims the winner for the
++ * single deliver call). Ticket 76 ranks by Milan native quality first
++ * (quality primary, overlap next) measured on the 64x80 normalized buffer
++ * verify consumes; minutiae (same get_minutiae parameters as before)
++ * breaks residual ties and still gates enrollment, because the driver never
++ * sees the core verdict. With the engine or export unavailable every native
++ * pair reads 0/0 and judging reproduces the exact ticket-39 minutiae order. */
 +static gboolean
 +goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm, FpImage *img,
 +                            guint16 declen, guint active, guint range)
 +{
 +  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 +  guint minutiae = img ? goodix5e0a_count_minutiae (img) : 0;
++  /* Ticket 76: native pair from the exact 64x80 bytes verify feeds Milan,
++   * never from the 128x160 scaled FpImage minutiae runs on. Engine or
++   * export down -> 0/0, and the rank below collapses to minutiae order. */
++  guint quality = 0, overlap = 0, quality_proxy = 0;
++  if (img != NULL)
++    {
++      quality_proxy = goodix_milan_frame_quality (self->latest_norm_pixels,
++                                                  GOODIX_5E0A_WIDTH,
++                                                  GOODIX_5E0A_HEIGHT,
++                                                  &quality, &overlap);
++    }
 +
 +  self->frame_count++;
-+  g_message ("5e0a frame %u/%u: declen=%u active=%u range=%u minutiae=%u score-proxy=%u",
++  g_message ("5e0a frame %u/%u: declen=%u active=%u range=%u minutiae=%u quality=%u overlap=%u score-proxy=%u",
 +             self->frame_count, (guint) GOODIX_5E0A_FRAMES_PER_TOUCH,
-+             declen, active, range, minutiae, minutiae);
++             declen, active, range, minutiae, quality, overlap, quality_proxy);
 +
 +  if (img != NULL)
 +    {
-+      if (self->best_img == NULL || minutiae > self->best_minutiae)
++      /* Lexicographic rank: native quality, then overlap, then minutiae.
++       * CANCELLED never reaches here (on_read_img fails the SSM first), so
++       * no cancel guard is needed inside this helper. */
++      guint best_proxy = (self->best_quality << 8) | self->best_overlap;
++      gboolean better = (self->best_img == NULL
++                         || quality_proxy > best_proxy
++                         || (quality_proxy == best_proxy && minutiae > self->best_minutiae));
++      if (better)
 +        {
 +          if (self->best_img != NULL)
 +            g_object_unref (self->best_img);
 +          self->best_img = img;
 +          self->best_minutiae = minutiae;
 +          self->best_frame_no = self->frame_count;
++          self->best_quality = quality;
++          self->best_overlap = overlap;
 +          self->best_active = active;
 +          memcpy (self->best_pixels, self->latest_norm_pixels, GOODIX_5E0A_FRAME_SIZE);
 +        }
@@ -3289,6 +3328,8 @@ index 0000000..1a26f30
 +  self->best_img = NULL;
 +  self->best_minutiae = 0;
 +  self->best_frame_no = 0;
++  self->best_quality = 0;
++  self->best_overlap = 0;
 +  self->retry_guard = FALSE;
 +  self->retry_guard_mono = 0;
 +}
@@ -3760,7 +3801,7 @@ new file mode 100644
 index 0000000..34196c2
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.h
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,165 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS
 +
@@ -3819,8 +3860,10 @@ index 0000000..34196c2
 +
 +/* Ticket 39 best-of-N per-touch capture: non-enroll touches bank this many
 + * back-to-back GET_IMAGE frames inside SCAN_5E0A_GET_IMAGE and submit only
-+ * the highest-minutiae one (minutiae-count proxy; the driver never sees the
-+ * core verdict). Enrollment stays single-frame-per-stage.
++ * the winner. Ticket 76 ranks by Milan native quality first (quality primary,
++ * overlap next, minutiae only breaks residual ties and still gates
++ * enrollment); with the engine or export unavailable every proxy reads 0 and
++ * judging reproduces the exact ticket-39 minutiae order.
 + * Ticket 65 settling burst: 4 frames (~132ms) reach the settled capacitive
 + * contact; 3 frames truncated the touchdown ramp into runt probes. */
 +#define GOODIX_5E0A_FRAMES_PER_TOUCH (4)
@@ -4550,7 +4593,7 @@ new file mode 100644
 index 0000000..2231a07
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix_milan.c
-@@ -0,0 +1,1050 @@
+@@ -0,0 +1,1092 @@
 +/*
 + * Goodix Milan Engine In-Process Loader and Bridge
 + *
@@ -5408,6 +5451,10 @@ index 0000000..2231a07
 +static int (MS *m_templateUnPack)(const void*, int, void*, void**) = NULL;
 +static int (MS *m_templateDelete)(void*) = NULL;
 +static int (MS *m_identifyImage)(GoodixImage*, void*, void**, int, int*, int*, u32*, int, int, void*, int) = NULL;
++/* Ticket 76: native frame quality export. Optional: older DLL variants may
++ * lack it, so a missing export degrades to the legacy minutiae tiebreak
++ * instead of failing engine init. */
++static int (MS *m_getQuality)(GoodixImage*, u32*) = NULL;
 +
 +static gboolean g_milan_available = FALSE;
 +static char g_milan_version[128] = "Unknown";
@@ -5460,6 +5507,9 @@ index 0000000..2231a07
 +    m_templateUnPack = get_export("templateUnPack");
 +    m_templateDelete = get_export("templateDelete");
 +    m_identifyImage = get_export("identifyImage");
++    /* Ticket 76: optional native quality export (see declaration comment).
++     * Resolved outside the required-export gate below on purpose. */
++    m_getQuality = get_export("getQuality");
 +
 +    if (!m_getAlgorithmVersion || !m_ppp_param_init || !m_enrolStartEx ||
 +        !m_enrolAddImage || !m_enrolGetTemplate || !m_enrolFinish ||
@@ -5468,6 +5518,8 @@ index 0000000..2231a07
 +        g_warning("5e0a: required Milan engine exports missing");
 +        return FALSE;
 +    }
++    if (!m_getQuality)
++        g_debug ("5e0a: Milan getQuality export missing; frame judging falls back to minutiae proxy");
 +
 +    ensure_gs();
 +    m_getAlgorithmVersion(g_milan_version);
@@ -5497,6 +5549,39 @@ index 0000000..2231a07
 +    img->sensor_type = sensor_type;
 +    img->quality = 100;
 +    img->overlap = 100;
++}
++
++/* Ticket 76: native quality probe. Ticket-72 offline ranges: good
++ * local-contrast frames report quality 18-19 / overlap 98-100, while blank,
++ * noise, and poor-clarity frames report 0/0 — enough range to rank a burst.
++ * The caller passes the 64x80 normalized buffer (the exact bytes verify
++ * feeds identifyImage), never the 128x160 scaled FpImage minutiae runs on. */
++guint goodix_milan_frame_quality (const uint8_t *pixels,
++                                  int width,
++                                  int height,
++                                  guint *out_quality,
++                                  guint *out_overlap) {
++    if (out_quality) *out_quality = 0;
++    if (out_overlap) *out_overlap = 0;
++    /* Engine geometry is fixed 64x80 (ppp_param_init(10)); anything else
++     * falls back to the legacy proxy rather than feeding the engine a shape
++     * it never saw in the ticket-72 shootout. */
++    if (!pixels || width != 64 || height != 80)
++        return 0;
++    if (!g_milan_available || !m_getQuality)
++        return 0;
++    ensure_gs();
++
++    GoodixImage img;
++    make_goodix_image(&img, pixels, width, height, 10);
++    u32 qout[2] = {0};
++    m_getQuality(&img, qout);
++
++    guint q = img.quality;
++    guint o = img.overlap;
++    if (out_quality) *out_quality = q;
++    if (out_overlap) *out_overlap = o;
++    return (q << 8) | o;
 +}
 +
 +void *goodix_milan_enroll_start (int *max_images) {
@@ -5606,7 +5691,7 @@ new file mode 100644
 index 0000000..5bad2ad
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix_milan.h
-@@ -0,0 +1,71 @@
+@@ -0,0 +1,85 @@
 +/*
 + * Goodix Milan Engine In-Process Loader and Bridge
 + *
@@ -5673,6 +5758,20 @@ index 0000000..5bad2ad
 +                               const uint8_t *template_blob,
 +                               size_t template_len,
 +                               int *out_score);
++
++/* Ticket 76: query Milan native frame quality for one 64x80 8-bit normalized
++ * frame (the exact buffer verify consumes). Wraps the getQuality export,
++ * which populates img quality/overlap plus a qout side-channel.
++ * Outputs quality/overlap (0-255 each); returns the combined ranking proxy
++ * (quality << 8 | overlap) so quality is primary and overlap breaks ties.
++ * Returns 0 with outputs zeroed when the engine or export is unavailable or
++ * the geometry is not 64x80 — callers fall back to the legacy minutiae
++ * tiebreak and never fail the touch. */
++guint goodix_milan_frame_quality (const uint8_t *pixels,
++                                  int width,
++                                  int height,
++                                  guint *out_quality,
++                                  guint *out_overlap);
 +
 +/* Teardown and close the Milan engine. */
 +void goodix_milan_close (void);

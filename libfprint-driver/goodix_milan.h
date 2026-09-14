@@ -65,6 +65,20 @@ int goodix_milan_verify_image (const uint8_t *pixels,
                                size_t template_len,
                                int *out_score);
 
+/* Ticket 76: query Milan native frame quality for one 64x80 8-bit normalized
+ * frame (the exact buffer verify consumes). Wraps the getQuality export,
+ * which populates img quality/overlap plus a qout side-channel.
+ * Outputs quality/overlap (0-255 each); returns the combined ranking proxy
+ * (quality << 8 | overlap) so quality is primary and overlap breaks ties.
+ * Returns 0 with outputs zeroed when the engine or export is unavailable or
+ * the geometry is not 64x80 — callers fall back to the legacy minutiae
+ * tiebreak and never fail the touch. */
+guint goodix_milan_frame_quality (const uint8_t *pixels,
+                                  int width,
+                                  int height,
+                                  guint *out_quality,
+                                  guint *out_overlap);
+
 /* Teardown and close the Milan engine. */
 void goodix_milan_close (void);
 

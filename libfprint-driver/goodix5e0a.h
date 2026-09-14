@@ -56,8 +56,10 @@
 
 /* Ticket 39 best-of-N per-touch capture: non-enroll touches bank this many
  * back-to-back GET_IMAGE frames inside SCAN_5E0A_GET_IMAGE and submit only
- * the highest-minutiae one (minutiae-count proxy; the driver never sees the
- * core verdict). Enrollment stays single-frame-per-stage.
+ * the winner. Ticket 76 ranks by Milan native quality first (quality primary,
+ * overlap next, minutiae only breaks residual ties and still gates
+ * enrollment); with the engine or export unavailable every proxy reads 0 and
+ * judging reproduces the exact ticket-39 minutiae order.
  * Ticket 65 settling burst: 4 frames (~132ms) reach the settled capacitive
  * contact; 3 frames truncated the touchdown ramp into runt probes. */
 #define GOODIX_5E0A_FRAMES_PER_TOUCH (4)

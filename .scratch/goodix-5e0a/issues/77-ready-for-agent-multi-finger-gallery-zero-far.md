@@ -2,7 +2,7 @@
 
 **What to build:** Full multi-finger enrollment and authentication with zero false acceptance rate across enrolled fingers (un-enrolled fingers and different fingers are strictly rejected with 0 score, while all enrolled fingers unlock on first touch).
 
-**Blocked by:** 76 (Native Milan Frame Quality Proxy & Multi-Touch Best-of-N Gating)
+**Blocked by:** 76 (closed 2026-09-14, verdict falsified — driver behaves as ticket-39 minutiae judging; gallery isolation is independent of frame ranking, so this ticket is unblocked)
 
 **Status:** ready-for-agent
 

@@ -855,6 +855,10 @@ static int (MS *m_templatePack)(void*, void*) = NULL;
 static int (MS *m_templateUnPack)(const void*, int, void*, void**) = NULL;
 static int (MS *m_templateDelete)(void*) = NULL;
 static int (MS *m_identifyImage)(GoodixImage*, void*, void**, int, int*, int*, u32*, int, int, void*, int) = NULL;
+/* Ticket 76: native frame quality export. Optional: older DLL variants may
+ * lack it, so a missing export degrades to the legacy minutiae tiebreak
+ * instead of failing engine init. */
+static int (MS *m_getQuality)(GoodixImage*, u32*) = NULL;
 
 static gboolean g_milan_available = FALSE;
 static char g_milan_version[128] = "Unknown";
@@ -907,6 +911,9 @@ gboolean goodix_milan_init (const char *dll_path) {
     m_templateUnPack = get_export("templateUnPack");
     m_templateDelete = get_export("templateDelete");
     m_identifyImage = get_export("identifyImage");
+    /* Ticket 76: optional native quality export (see declaration comment).
+     * Resolved outside the required-export gate below on purpose. */
+    m_getQuality = get_export("getQuality");
 
     if (!m_getAlgorithmVersion || !m_ppp_param_init || !m_enrolStartEx ||
         !m_enrolAddImage || !m_enrolGetTemplate || !m_enrolFinish ||
@@ -915,6 +922,8 @@ gboolean goodix_milan_init (const char *dll_path) {
         g_warning("5e0a: required Milan engine exports missing");
         return FALSE;
     }
+    if (!m_getQuality)
+        g_debug ("5e0a: Milan getQuality export missing; frame judging falls back to minutiae proxy");
 
     ensure_gs();
     m_getAlgorithmVersion(g_milan_version);
@@ -944,6 +953,39 @@ static void make_goodix_image(GoodixImage *img, const uint8_t *pix, int width, i
     img->sensor_type = sensor_type;
     img->quality = 100;
     img->overlap = 100;
+}
+
+/* Ticket 76: native quality probe. Ticket-72 offline ranges: good
+ * local-contrast frames report quality 18-19 / overlap 98-100, while blank,
+ * noise, and poor-clarity frames report 0/0 — enough range to rank a burst.
+ * The caller passes the 64x80 normalized buffer (the exact bytes verify
+ * feeds identifyImage), never the 128x160 scaled FpImage minutiae runs on. */
+guint goodix_milan_frame_quality (const uint8_t *pixels,
+                                  int width,
+                                  int height,
+                                  guint *out_quality,
+                                  guint *out_overlap) {
+    if (out_quality) *out_quality = 0;
+    if (out_overlap) *out_overlap = 0;
+    /* Engine geometry is fixed 64x80 (ppp_param_init(10)); anything else
+     * falls back to the legacy proxy rather than feeding the engine a shape
+     * it never saw in the ticket-72 shootout. */
+    if (!pixels || width != 64 || height != 80)
+        return 0;
+    if (!g_milan_available || !m_getQuality)
+        return 0;
+    ensure_gs();
+
+    GoodixImage img;
+    make_goodix_image(&img, pixels, width, height, 10);
+    u32 qout[2] = {0};
+    m_getQuality(&img, qout);
+
+    guint q = img.quality;
+    guint o = img.overlap;
+    if (out_quality) *out_quality = q;
+    if (out_overlap) *out_overlap = o;
+    return (q << 8) | o;
 }
 
 void *goodix_milan_enroll_start (int *max_images) {

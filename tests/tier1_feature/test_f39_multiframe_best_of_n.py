@@ -55,7 +55,10 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
         for field in ("guint               frame_count;",
                       "FpImage            *best_img;",
                       "guint               best_minutiae;",
-                      "guint               best_frame_no;"):
+                      "guint               best_frame_no;",
+                      # ticket-76 Milan native pair beside the minutiae tiebreak
+                      "guint               best_quality;",
+                      "guint               best_overlap;"):
             self.assertIn(field, struct)
         # ticket-38 park footprint untouched
         for field in ("gboolean              tls_parked;",
@@ -68,7 +71,9 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
         for field in ("self->frame_count = 0;",
                       "self->best_img = NULL;",
                       "self->best_minutiae = 0;",
-                      "self->best_frame_no = 0;"):
+                      "self->best_frame_no = 0;",
+                      "self->best_quality = 0;",
+                      "self->best_overlap = 0;"):
             self.assertIn(field, init)
 
     def test_c_burst_reissue_without_ssm_advance(self):
@@ -88,17 +93,25 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
         for absent in ("fpi_ssm_next_state", "fpi_ssm_jump_to_state",
                        "fpi_ssm_mark_completed", "fpi_ssm_mark_failed"):
             self.assertNotIn(absent, keep)
-        # judging reuses the existing minutiae proxy; winner retained, loser unrefed
+        # Ticket 76 judging: Milan native pair is primary, minutiae breaks
+        # residual ties (engine down -> 0/0 reproduces ticket-39 order);
+        # winner retained, loser unrefed
+        self.assertIn("goodix_milan_frame_quality (self->latest_norm_pixels,", keep)
         self.assertIn("goodix5e0a_count_minutiae (img)", keep)
+        self.assertIn("quality_proxy > best_proxy", keep)
+        self.assertIn("minutiae > self->best_minutiae", keep)
         self.assertIn("self->best_img = img;", keep)
         self.assertIn("g_object_unref (img);", keep)
 
     def test_d_journal_lines_and_score_proxy_wording(self):
         """Per-frame / best / short-fallback lines; never a bare `score`."""
         src = _read(GOODIX5E0A_C)
+        # Ticket 76: per-frame and winner lines carry the Milan native pair
+        # alongside minutiae; the trailing proxy token stays grep-able.
         self.assertIn("5e0a frame %u/%u: declen=%u active=%u range=%u "
-                      "minutiae=%u score-proxy=%u", src)
-        self.assertIn("5e0a best frame %u/%u: minutiae=%u score-proxy=%u (submitting)", src)
+                      "minutiae=%u quality=%u overlap=%u score-proxy=%u", src)
+        self.assertIn("5e0a best frame %u/%u: minutiae=%u quality=%u overlap=%u "
+                      "score-proxy=%u (submitting)", src)
         self.assertIn("short declen=%u, submitting best-so-far %u/%u", src)
         # rendered output matches the hardware-verify grep `frame [0-9]/4|score`
         self.assertIn("GOODIX_5E0A_FRAMES_PER_TOUCH (4)", _read(GOODIX5E0A_H))
@@ -143,7 +156,8 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
         # claim helper logs the best line and releases ownership exactly once
         claim = _slice(src, "goodix5e0a_claim_best_frame (FpiDeviceGoodixTls5e0a *self)",
                        "goodix5e0a_keep_best_frame (FpDevice *dev")
-        self.assertIn("5e0a best frame %u/%u: minutiae=%u score-proxy=%u (submitting)", claim)
+        self.assertIn("5e0a best frame %u/%u: minutiae=%u quality=%u overlap=%u "
+                      "score-proxy=%u (submitting)", claim)
         self.assertIn("self->best_img = NULL;", claim)
 
     def test_g_resets_on_touch_claim_and_teardown(self):

@@ -51,7 +51,9 @@ class TestF13NoPolling(unittest.TestCase):
             lines = [l for l in content.splitlines() if l.strip()]
         # Ticket 73: Milan proprietary engine integration and FpDevice transition.
         # Driver manages direct template stitching, verification, and PE loader shims.
-        self.assertLess(len(lines), 1850, f"Driver exceeds production compactness limit: {len(lines)} LOC")
+        # Ticket 76: Milan native quality proxy judging (+~40 lines: native pair
+        # state, lexicographic rank, extended journal lines).
+        self.assertLess(len(lines), 1900, f"Driver exceeds production compactness limit: {len(lines)} LOC")
         self.assertIn("FPI_TYPE_DEVICE_GOODIXTLS5XX", content)
 
 
