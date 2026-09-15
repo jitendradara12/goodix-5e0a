@@ -226,9 +226,9 @@ class TestF42ConditionalReset(unittest.TestCase):
         self.assertIn("img_dev_class->bz3_threshold = 14;", src)
         # handshake never skipped: exactly one tls_init site
         self.assertEqual(src.count("goodix_tls_init ("), 1)
-        # journal budget: 23 g_message sites (raw dump + wire layout demoted
-        # to fp_dbg per 56; frame-stats g_message preserved always-on)
-        self.assertEqual(src.count("g_message ("), 23)
+        # journal budget: 25 g_message sites (raw dump + wire layout demoted
+        # to fp_dbg per 56; frame-stats + fast-path g_message preserved always-on)
+        self.assertEqual(src.count("g_message ("), 25)
 
 
 if __name__ == "__main__":

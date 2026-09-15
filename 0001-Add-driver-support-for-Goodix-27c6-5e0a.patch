@@ -1669,7 +1669,7 @@ new file mode 100644
 index 0000000..e3415d4
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,2066 @@
+@@ -0,0 +1,2137 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -3062,6 +3062,77 @@ index 0000000..e3415d4
 +      self->best_range = range;
 +      self->best_active = active;
 +      memcpy (self->best_pixels, self->latest_norm_pixels, GOODIX_5E0A_FRAME_SIZE);
++    }
++
++  /* Ticket 84: Optimistic Verify Fast-Path (Sub-50ms Post-Touch Unlock Latency).
++   * During non-enroll actions (verify or identify), if frame 1 has strong contact
++   * (active >= 1500 and range >= 500) and matches immediately, deliver it at once
++   * instead of waiting for the remaining 3 burst frames. */
++  FpiDeviceAction action = fpi_device_get_current_action (dev);
++  if ((action == FPI_DEVICE_ACTION_VERIFY || self->is_verify ||
++       action == FPI_DEVICE_ACTION_IDENTIFY || self->is_identify) &&
++      self->frame_count == 1 && active >= 1500 && range >= 500)
++    {
++      if (self->is_verify || action == FPI_DEVICE_ACTION_VERIFY)
++        {
++          if (self->tmpl_blob != NULL && self->tmpl_len > 0)
++            {
++              int match_pts = 0;
++              goodix_milan_verify_image (self->best_pixels,
++                                         GOODIX_5E0A_WIDTH,
++                                         GOODIX_5E0A_HEIGHT,
++                                         self->tmpl_blob,
++                                         self->tmpl_len,
++                                         &match_pts);
++              if (match_pts > 0)
++                {
++                  g_message ("5e0a optimistic fast-path match on frame 1: pts=%d, skipping remaining burst",
++                             match_pts);
++                  return FALSE;
++                }
++            }
++        }
++      else if (self->is_identify || action == FPI_DEVICE_ACTION_IDENTIFY)
++        {
++          GPtrArray *prints = NULL;
++          fpi_device_get_identify_data (dev, &prints);
++          if (prints && prints->len > 0)
++            {
++              guint n = prints->len;
++              g_autoptr(GPtrArray) held = g_ptr_array_new_with_free_func ((GDestroyNotify) g_variant_unref);
++              g_autofree const uint8_t **blobs = g_new0 (const uint8_t *, n);
++              g_autofree size_t *lens = g_new0 (size_t, n);
++              guint m = 0;
++              for (guint i = 0; i < n; i++)
++                {
++                  FpPrint *p = g_ptr_array_index (prints, i);
++                  GVariant *v = NULL;
++                  gsize dl = 0;
++                  gconstpointer d = goodix5e0a_get_print_template (p, &v, &dl);
++                  if (!d)
++                    continue;
++                  g_ptr_array_add (held, v);
++                  blobs[m] = d;
++                  lens[m] = dl;
++                  m++;
++                }
++              if (m > 0)
++                {
++                  int matched_idx = -1, match_pts = 0;
++                  goodix_milan_identify_image (self->best_pixels,
++                                               GOODIX_5E0A_WIDTH,
++                                               GOODIX_5E0A_HEIGHT,
++                                               blobs, lens, m,
++                                               &matched_idx, &match_pts);
++                  if (matched_idx >= 0 && match_pts > 0)
++                    {
++                      g_message ("5e0a optimistic fast-path identify match on frame 1: idx=%d pts=%d, skipping remaining burst",
++                                 matched_idx, match_pts);
++                      return FALSE;
++                    }
++                }
++            }
++        }
 +    }
 +
 +  if (self->frame_count < GOODIX_5E0A_FRAMES_PER_TOUCH)
