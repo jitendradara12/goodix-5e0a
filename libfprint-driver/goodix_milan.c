@@ -995,7 +995,7 @@ void *goodix_milan_enroll_start (int *max_images) {
     void *ctx = m_enrolStartEx(&max_imgs);
     if (!ctx) return NULL;
     if (max_images) *max_images = max_imgs;
-    *(u16*)((char*)ctx + 8) = 8; /* Target 8 enrollment touches */
+    *(u16*)((char*)ctx + 8) = 12; /* Target 12 enrollment touches */
     return ctx;
 }
 

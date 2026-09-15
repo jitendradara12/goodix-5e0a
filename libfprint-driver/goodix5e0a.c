@@ -21,13 +21,9 @@
 #include "fp-device.h"
 #include "fp-image-device.h"
 #include "fp-image.h"
-#include "fpi-assembling.h"
-#include "fpi-context.h"
 #include "fpi-image-device.h"
 #include "fpi-image.h"
 #include "fpi-ssm.h"
-#include "glibconfig.h"
-#include "gusb/gusb-device.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -813,11 +809,6 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
 
   if (err)
     {
-      if (g_error_matches (err, G_IO_ERROR, G_IO_ERROR_CANCELLED))
-        {
-          fpi_ssm_mark_failed (ssm, err);
-          return;
-        }
       fpi_ssm_mark_failed (ssm, err);
       return;
     }
@@ -977,6 +968,34 @@ goodix5e0a_retry_enroll (FpDevice *dev, FpDeviceRetry retry)
   fpi_device_enroll_progress (dev, self->enroll_stage, NULL, fpi_device_retry_new (retry));
 }
 
+static gconstpointer
+goodix5e0a_get_print_template (FpPrint *print, GVariant **out_var, gsize *out_len)
+{
+  if (out_len)
+    *out_len = 0;
+  g_return_val_if_fail (out_var != NULL, NULL);
+  *out_var = NULL;
+
+  if (!print)
+    return NULL;
+
+  GVariant *v = NULL;
+  g_object_get (print, "fpi-data", &v, NULL);
+  if (!v)
+    return NULL;
+  gsize len = 0;
+  gconstpointer d = g_variant_get_fixed_array (v, &len, 1);
+  if (!d || len == 0)
+    {
+      g_variant_unref (v);
+      return NULL;
+    }
+  *out_var = v;
+  if (out_len)
+    *out_len = len;
+  return d;
+}
+
 static void
 goodix5e0a_deliver_frame (FpDevice *dev)
 {
@@ -1040,26 +1059,20 @@ goodix5e0a_deliver_frame (FpDevice *dev)
           else
             {
               guint n = prints->len;
+              g_autoptr(GPtrArray) held = g_ptr_array_new_with_free_func ((GDestroyNotify) g_variant_unref);
               g_autofree const uint8_t **blobs = g_new0 (const uint8_t *, n);
               g_autofree size_t *lens = g_new0 (size_t, n);
-              g_autofree GVariant **held = g_new0 (GVariant *, n);
               g_autofree FpPrint **owners = g_new0 (FpPrint *, n);
               guint m = 0;
               for (guint i = 0; i < n; i++)
                 {
                   FpPrint *p = g_ptr_array_index (prints, i);
                   GVariant *v = NULL;
-                  g_object_get (p, "fpi-data", &v, NULL);
-                  if (!v)
-                    continue;
                   gsize dl = 0;
-                  gconstpointer d = g_variant_get_fixed_array (v, &dl, 1);
-                  if (!d || dl == 0)
-                    {
-                      g_variant_unref (v);
-                      continue;
-                    }
-                  held[m] = v;
+                  gconstpointer d = goodix5e0a_get_print_template (p, &v, &dl);
+                  if (!d)
+                    continue;
+                  g_ptr_array_add (held, v);
                   blobs[m] = d;
                   lens[m] = dl;
                   owners[m] = p;
@@ -1079,8 +1092,6 @@ goodix5e0a_deliver_frame (FpDevice *dev)
               else
                 fpi_device_identify_report (dev, NULL, NULL, NULL);
               fpi_device_identify_complete (dev, NULL);
-              for (guint i = 0; i < m; i++)
-                g_variant_unref (held[i]);
             }
         }
       /* Same no-deactivate rule as verify: scan SSM completes in
@@ -1935,8 +1946,7 @@ dev_enroll (FpDevice *dev)
   self->enroll_stage = 0;
   g_clear_pointer (&self->milan_enrol_ctx, goodix_milan_enroll_finish);
 
-  int max_images = 0;
-  self->milan_enrol_ctx = goodix_milan_enroll_start (&max_images);
+  self->milan_enrol_ctx = goodix_milan_enroll_start (NULL);
   if (!self->milan_enrol_ctx)
     {
       fpi_device_enroll_complete (dev, NULL,
@@ -1945,7 +1955,6 @@ dev_enroll (FpDevice *dev)
       return;
     }
 
-  goodix5e0a_reset_touch_frames (self);
   dev_activate ((FpImageDevice *) dev);
 }
 
@@ -1954,7 +1963,6 @@ dev_verify (FpDevice *dev)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
   FpPrint *print = NULL;
-  GVariant *fp_data = NULL;
 
   self->is_verify = TRUE;
   self->is_identify = FALSE;
@@ -1962,33 +1970,18 @@ dev_verify (FpDevice *dev)
   self->tmpl_len = 0;
 
   fpi_device_get_verify_data (dev, &print);
-  if (!print)
-    {
-      fpi_device_verify_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
-      return;
-    }
-
-  g_object_get (print, "fpi-data", &fp_data, NULL);
-  if (!fp_data)
-    {
-      fpi_device_verify_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
-      return;
-    }
-
+  g_autoptr(GVariant) fp_data = NULL;
   gsize data_len = 0;
-  gconstpointer data = g_variant_get_fixed_array (fp_data, &data_len, 1);
-  if (!data || data_len == 0)
+  gconstpointer data = goodix5e0a_get_print_template (print, &fp_data, &data_len);
+  if (!data)
     {
-      g_variant_unref (fp_data);
       fpi_device_verify_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
       return;
     }
 
   self->tmpl_blob = g_memdup2 (data, data_len);
   self->tmpl_len = data_len;
-  g_variant_unref (fp_data);
 
-  goodix5e0a_reset_touch_frames (self);
   dev_activate ((FpImageDevice *) dev);
 }
 
@@ -2006,7 +1999,6 @@ dev_identify (FpDevice *dev)
   g_clear_pointer (&self->tmpl_blob, g_free);
   self->tmpl_len = 0;
 
-  goodix5e0a_reset_touch_frames (self);
   dev_activate ((FpImageDevice *) dev);
 }
 
@@ -2048,7 +2040,7 @@ fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
   dev_class->full_name = "Goodix TLS Fingerprint Sensor 5e0a";
   dev_class->type = FP_DEVICE_TYPE_USB;
   dev_class->id_table = goodix_5e0a_id_table;
-  dev_class->nr_enroll_stages = 8;
+  dev_class->nr_enroll_stages = 12;
   dev_class->scan_type = FP_SCAN_TYPE_PRESS;
   /* Disable thermal watchdog */
   dev_class->temp_hot_seconds = -1;

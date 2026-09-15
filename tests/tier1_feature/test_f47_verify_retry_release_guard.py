@@ -117,10 +117,10 @@ class TestF47VerifyRetryReleaseGuard(unittest.TestCase):
         self.assertIn("self->retry_guard = FALSE;", scan_complete)
 
     def test_i_threshold_and_enroll_stages_pinned(self):
-        """Ticket 73 operating point: threshold 14 (legacy compat), 8 enroll stages for Milan."""
+        """Ticket 83 operating point: threshold 14 (legacy compat), 12 enroll stages for Milan."""
         src = _read(GOODIX5E0A_C)
         class_init = _slice(src, "fpi_device_goodixtls5e0a_class_init", "fpi_device_class_auto_initialize_features")
-        self.assertIn("dev_class->nr_enroll_stages = 8;", class_init)
+        self.assertIn("dev_class->nr_enroll_stages = 12;", class_init)
         self.assertIn("img_dev_class->bz3_threshold = 14;", class_init)
 
 
