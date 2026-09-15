@@ -131,7 +131,6 @@ struct _FpiDeviceGoodixTls5e0a
   gboolean            is_identify;
   guint               enroll_stage;
   void               *milan_enrol_ctx;
-  int                 max_images;
   guint8             *tmpl_blob;
   gsize               tmpl_len;
   guint8              best_pixels[GOODIX_5E0A_FRAME_SIZE];
@@ -899,7 +898,8 @@ goodix5e0a_decode_frame (GoodixTls5xxPix *out_row_major, const guint8 *data, gui
 }
 
 static gboolean
-goodix5e0a_normalize_raw_frame (const GoodixTls5xxPix *pix, guint8 *out_norm)
+goodix5e0a_normalize_raw_frame (const GoodixTls5xxPix *pix, guint8 *out_norm,
+                                float *out_min, float *out_max)
 {
   const int W = GOODIX_5E0A_WIDTH;
   const int H = GOODIX_5E0A_HEIGHT;
@@ -937,6 +937,11 @@ goodix5e0a_normalize_raw_frame (const GoodixTls5xxPix *pix, guint8 *out_norm)
     }
 
   float residual_range = residual_max - residual_min;
+  if (out_min)
+    *out_min = residual_min;
+  if (out_max)
+    *out_max = residual_max;
+
   if (residual_range < 1.0f)
     return FALSE;
 
@@ -1035,10 +1040,10 @@ goodix5e0a_deliver_frame (FpDevice *dev)
           else
             {
               guint n = prints->len;
-              const uint8_t **blobs = g_new0 (const uint8_t *, n);
-              size_t *lens = g_new0 (size_t, n);
-              GVariant **held = g_new0 (GVariant *, n);
-              FpPrint **owners = g_new0 (FpPrint *, n);
+              g_autofree const uint8_t **blobs = g_new0 (const uint8_t *, n);
+              g_autofree size_t *lens = g_new0 (size_t, n);
+              g_autofree GVariant **held = g_new0 (GVariant *, n);
+              g_autofree FpPrint **owners = g_new0 (FpPrint *, n);
               guint m = 0;
               for (guint i = 0; i < n; i++)
                 {
@@ -1076,10 +1081,6 @@ goodix5e0a_deliver_frame (FpDevice *dev)
               fpi_device_identify_complete (dev, NULL);
               for (guint i = 0; i < m; i++)
                 g_variant_unref (held[i]);
-              g_free (owners);
-              g_free (held);
-              g_free (blobs);
-              g_free (lens);
             }
         }
       /* Same no-deactivate rule as verify: scan SSM completes in
@@ -1147,8 +1148,7 @@ goodix5e0a_deliver_frame (FpDevice *dev)
                                                                     "Milan templatePack failed"));
             }
 
-          goodix_milan_enroll_finish (self->milan_enrol_ctx);
-          self->milan_enrol_ctx = NULL;
+          g_clear_pointer (&self->milan_enrol_ctx, goodix_milan_enroll_finish);
         }
     }
 
@@ -1240,7 +1240,7 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 
   raw_frame = g_new0 (GoodixTls5xxPix, GOODIX_5E0A_FRAME_SIZE);
   guint32 decoded_pixels = goodix5e0a_decode_frame (raw_frame, data, len);
-  goodix5e0a_normalize_raw_frame (raw_frame, self->latest_norm_pixels);
+  goodix5e0a_normalize_raw_frame (raw_frame, self->latest_norm_pixels, NULL, NULL);
 
   guint total_nonzero = 0;
   guint16 raw_min = 65535, raw_max = 0;
@@ -1773,44 +1773,14 @@ process_raw_frame (GoodixTls5xxPix * pix)
   if (active < 64 || range < 8)
     return NULL;
 
-  /* Remove the slowly varying pressure/offset field before global scaling.
-   * A 3x3 local mean is the smallest window that removes this field without
-   * averaging across a full ridge period. */
-  g_autofree float *residual = g_new (float, GOODIX_5E0A_FRAME_SIZE);
-  float residual_min = G_MAXFLOAT;
-  float residual_max = -G_MAXFLOAT;
-  for (int y = 0; y < H; y++)
-    {
-      for (int x = 0; x < W; x++)
-        {
-          guint32 local_sum = 0;
-          guint local_count = 0;
-          for (int yy = MAX (0, y - 1); yy <= MIN (H - 1, y + 1); yy++)
-            for (int xx = MAX (0, x - 1); xx <= MIN (W - 1, x + 1); xx++)
-              {
-                local_sum += pix[yy * W + xx];
-                local_count++;
-              }
-
-          float value = pix[y * W + x] - (float) local_sum / local_count;
-          residual[y * W + x] = value;
-          residual_min = MIN (residual_min, value);
-          residual_max = MAX (residual_max, value);
-        }
-    }
+  float residual_min = 0.0f, residual_max = 0.0f;
+  g_autofree guint8 *normalized = g_new (guint8, GOODIX_5E0A_FRAME_SIZE);
+  if (!goodix5e0a_normalize_raw_frame (pix, normalized, &residual_min, &residual_max))
+    return NULL;
 
   float residual_range = residual_max - residual_min;
   g_message ("5e0a local contrast: min=%.2f max=%.2f range=%.2f window=3x3 gain=%.2f",
              residual_min, residual_max, residual_range, GOODIX_5E0A_CONTRAST_GAIN);
-  if (residual_range < 1.0f)
-    return NULL;
-
-  g_autofree guint8 *normalized = g_new (guint8, GOODIX_5E0A_FRAME_SIZE);
-  for (guint i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
-    {
-      int value = (int) roundf (GOODIX_5E0A_NORMALIZE_MIDPOINT + residual[i] * GOODIX_5E0A_CONTRAST_GAIN);
-      normalized[i] = (guint8) CLAMP (value, 0, 255);
-    }
 
   /* Create the scaled 128x160 image directly via bilinear upscaling.
    * Use FPI_IMAGE_COLORS_INVERTED for capacitive ridges (high ADC = black).
@@ -1936,11 +1906,7 @@ dev_close (FpDevice *dev)
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
   GError *error = NULL;
 
-  if (self->milan_enrol_ctx)
-    {
-      goodix_milan_enroll_finish (self->milan_enrol_ctx);
-      self->milan_enrol_ctx = NULL;
-    }
+  g_clear_pointer (&self->milan_enrol_ctx, goodix_milan_enroll_finish);
   g_clear_pointer (&self->tmpl_blob, g_free);
   self->tmpl_len = 0;
 
@@ -1967,13 +1933,10 @@ dev_enroll (FpDevice *dev)
   self->is_verify = FALSE;
   self->is_identify = FALSE;
   self->enroll_stage = 0;
-  if (self->milan_enrol_ctx)
-    {
-      goodix_milan_enroll_finish (self->milan_enrol_ctx);
-      self->milan_enrol_ctx = NULL;
-    }
+  g_clear_pointer (&self->milan_enrol_ctx, goodix_milan_enroll_finish);
 
-  self->milan_enrol_ctx = goodix_milan_enroll_start (&self->max_images);
+  int max_images = 0;
+  self->milan_enrol_ctx = goodix_milan_enroll_start (&max_images);
   if (!self->milan_enrol_ctx)
     {
       fpi_device_enroll_complete (dev, NULL,
@@ -2054,11 +2017,7 @@ dev_cancel (FpDevice *dev)
 
   fp_dbg ("5e0a dev_cancel requested");
   self->is_identify = FALSE;
-  if (self->milan_enrol_ctx)
-    {
-      goodix_milan_enroll_finish (self->milan_enrol_ctx);
-      self->milan_enrol_ctx = NULL;
-    }
+  g_clear_pointer (&self->milan_enrol_ctx, goodix_milan_enroll_finish);
 
   goodix5e0a_deactivate ((FpImageDevice *) dev);
   fpi_device_action_error (dev, g_error_new (G_IO_ERROR, G_IO_ERROR_CANCELLED, "Operation cancelled"));

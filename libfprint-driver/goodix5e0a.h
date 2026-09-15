@@ -100,23 +100,6 @@ static const guint8 goodix_5e0a_img_payload[10] = {
   0x05, 0x00, 0xb0, 0x00, 0xb2, 0x00, 0xb0, 0x00, 0xb1, 0x00
 };
 
-/* Dynamic-FDT reference (ported from /tmp/libfprint RE_FDT_PAYLOAD_DETAIL.md,
- * SwitchToFdtMode@0x1800585c4 + CalcFdtDownBase@0x1800632a0). NOT wired into
- * the scan path yet — static S12/retry/U01 below stay authoritative until a
- * hardware run proves otherwise (see ticket 57). Kept here so the formula
- * lives next to the tables it would replace:
- *   DOWN threshold[i] = ((raw_base[i] >> 1) << 8) | 0x80   (no delta)
- *   UP   threshold[i] = (((raw_base[i] >> 1) + fdt_delta) << 8) | 0x80
- * raw_base = 6x u16LE from FDT_MANUAL (cmd 0x36) response bytes [4..15];
- * payload = [prefix, 0x01, DACx8, thresholds 6xLE, pad x4, DAC-copy x8, 0x00]
- * prefixes: DOWN 0x1c (HV) / UP 0x0e / MANUAL 0x0d; cmd = (mode<<1)|0x30.
- * Windows reads the base 3x (gf_get_fdtbase 0/1/2) before FDT_DOWN. DAC bytes
- * ([2..9]) are per-unit OTP[0x32..0x35]-derived — neither tree reads them
- * live yet; this tree's b0/b2/b0/b1 matches APP_10036 capture, the other
- * tree's a6/a7/a6/a7 matches its own unit. */
-#define GOODIX_5E0A_FDT_MANUAL_PREFIX (0x0d)
-#define GOODIX_5E0A_FDT_DOWN_PREFIX (0x1c)
-#define GOODIX_5E0A_FDT_UP_PREFIX (0x0e)
 
 /* Exact 35-byte steady-state DOWN table S12 (pkts 302/328/406/432/792):
  * 1c 01 b0 00 b2 00 b0 00 b1 00 + slots [80 b7 80 ce 80 aa 80 be 80 b1 80 c2] + 00 00 00 00 + b0 00 b2 00 b0 00 b1 00 00 */
