@@ -76,14 +76,17 @@ echo -e "${BOLD}${BLUE}▶ Pre-flight: Build System & Nix Derivation Evaluation$
 echo -e "${CYAN}------------------------------------------------------------------------------${NC}"
 
 if [ -f "/tmp/libfprint-goodix/build/build.ninja" ]; then
-    echo -n "Checking Ninja driver build status... "
-    NINJA_STORE_BIN=$(find /nix/store -maxdepth 3 -name ninja -type f -perm -111 2>/dev/null | grep -E "ninja-[0-9]" | head -n 1 || true)
-    if [ -n "${NINJA_STORE_BIN}" ] && "${NINJA_STORE_BIN}" -C /tmp/libfprint-goodix/build libfprint/libfprint-drivers.a libfprint/libfprint-2.so.2.0.0 > /dev/null 2>&1; then
-        echo -e "${GREEN}OK${NC}"
-    elif nix-shell -p ninja --run "ninja -C /tmp/libfprint-goodix/build libfprint/libfprint-drivers.a libfprint/libfprint-2.so.2.0.0" > /dev/null 2>&1; then
+    if command -v ninja > /dev/null 2>&1 && ninja -C /tmp/libfprint-goodix/build libfprint/libfprint-drivers.a libfprint/libfprint-2.so.2.0.0 > /dev/null 2>&1; then
         echo -e "${GREEN}OK${NC}"
     else
-        echo -e "${YELLOW}SKIP (non-fatal)${NC}"
+        NINJA_STORE_BIN=$(find /nix/store -maxdepth 3 -name ninja -type f -perm -111 2>/dev/null | grep -E "ninja-[0-9]" | head -n 1 || true)
+        if [ -n "${NINJA_STORE_BIN}" ] && "${NINJA_STORE_BIN}" -C /tmp/libfprint-goodix/build libfprint/libfprint-drivers.a libfprint/libfprint-2.so.2.0.0 > /dev/null 2>&1; then
+            echo -e "${GREEN}OK${NC}"
+        elif nix-shell -p ninja --run "ninja -C /tmp/libfprint-goodix/build libfprint/libfprint-drivers.a libfprint/libfprint-2.so.2.0.0" > /dev/null 2>&1; then
+            echo -e "${GREEN}OK${NC}"
+        else
+            echo -e "${YELLOW}SKIP (non-fatal)${NC}"
+        fi
     fi
 fi
 

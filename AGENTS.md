@@ -34,22 +34,35 @@ claims, or USB captures yourself — write the exact commands for the user.
 
 ## Commands that actually work here
 
+- Full test suite: `bash tests/run_all_tests.sh` from repo root (311 tests across 5 tiers).
 - Single test: `python3 -m unittest tests.tier1_feature.test_<name>` from
   repo root (`discover -s` has loader failures; don't "fix" the runner).
-- Build drivers only: `/nix/store/6ji6bq0si2j8ibdrxqgcmh1cw0wmdiyk-ninja-1.13.2/bin/ninja -C /tmp/libfprint-goodix/build libfprint/libfprint-drivers.a libfprint/libfprint-2.so.2.0.0` (`ninja` isn't on PATH; full build dies at the unrelated `FPrint-2.0.gir` step).
+- Build drivers only: `ninja -C /tmp/libfprint-goodix/build libfprint/libfprint-drivers.a libfprint/libfprint-2.so.2.0.0` (`ninja` is at `~/.local/bin/ninja`; full build dies at the unrelated `FPrint-2.0.gir` step).
 - Full package: `nix-build -E 'with import <nixpkgs> {}; callPackage ./libfprint-goodix.nix {}'` (needs the refreshed unified patch; check `git status` — a no-diff rebuild means untested identical code).
 - Python USB scripts need fprintd stopped (else `Resource busy`) and repo-root imports: `PYTHONPATH=/home/sastauser/code/temp/goodix nix-shell -p python3Packages.pyusb openssl --run "python3 legacy-experiments/<script>.py"`.
 - Never `pkill -f` a pattern containing your own command text (self-match hangs); list with `pgrep -af` and kill PIDs. Never rely on `timeout`-killed scripts having cleaned up their `s_server` children — verify ports (`ss -tlnp`) or use a fresh port per run.
 - Deploy (user only): `cd ~/NixOS-Hyprland && sudo nixos-rebuild switch --flake .# && sudo systemctl restart fprintd && fprintd-enroll`.
 - Debug via the service (`sudo systemctl set-environment G_MESSAGES_DEBUG=all`, unset after). Never a foreground daemon (loses the D-Bus race). `/etc/systemd` is read-only here.
 
+## Matching & Enrollment Engine
+
+- The driver is committed fully to the Goodix Milan matching engine (`GoodixEngineAdapter.dll` via in-process PE loader `goodix_milan.c`).
+- All legacy NBIS / Bozorth3 minutiae counting and fallback heuristics have been stripped.
+- Sensor raster is canonical 64x80 with 3x3 local-mean residual normalization (midpoint 128, gain 1.0).
+- Enrollment target is 8 touches (`*(ctx+8) = 8`).
+
 ## Journal cheat sheet
 
 - `5e0a frame stats:` (always on): active/min/max/range/declen (+corr).
   Zeros + full `declen` = MCU ships blanks.
-- `Running command: 0xNN` (debug env only): gaps distinguish waits from
-  instant replies. `Failed to detect minutiae` (always on): extraction ran,
-  found nothing. `fp_info`/`fp_dbg` need the debug env; `g_message` doesn't.
+- `5e0a frame %u/%u:` (always on): declen/active/range/quality/overlap/score-proxy.
+  Logs Milan native quality/overlap ranking per burst frame.
+- `5e0a Milan verify: match=%d pts=%d` (debug env only): 1:1 verify match and score (threshold 50).
+- `5e0a Milan identify: match=%d idx=%d pts=%d` (debug env only): 1:N gallery identification.
+- `5e0a Milan enrollAddImage: res=%d enrolled=%d progress=%d%%` (debug env only): per-stage enroll progress.
+- `5e0a Milan enrollment committed successfully! (template size: %zu bytes)` (debug env only): final template commit.
+- `Running command: 0xNN` (debug env only): gaps distinguish waits from instant replies.
+- `fp_info`/`fp_dbg` need the debug env; `g_message` doesn't.
 - `Transfer was cancelled…` at teardown is known debt, not signal.
 
 ## Rules to not face what's already solved
@@ -59,5 +72,5 @@ claims, or USB captures yourself — write the exact commands for the user.
 3. In deactivate, nothing the next claim depends on clears before the park early-return. retry_guard/mono clear on the destroy branch only (goodix5e0a.c:1187), never at function top. Generalize: any state with cross-claim TTL (guard 2s, park 30s, warm 60s) must survive an idle park. If you add new cross-claim state, put its reset on the destroy branch and say so in a comment.
 4. Keep the rationale comment at every non-obvious site. The port stripped ticket comments ("blocking wait", "timeout means still down"), leaving bare code that looked like it needed hardening — which is exactly what broke it twice (203cfc8, 12e64db). One line naming the invariant beats a ticket number, but keep at least one.
 5. CANCELLED never re-issues, always marks failed. Applies to every re-issue loop (0x32 poll, 0x34 guard, warm retry). Re-issuing on cancel resurrects orphaned SSMs against freed state.
-6. Check .scratch/goodix-5e0a/issues/ for settled facts before changing driver behavior. Both regressions were re-litigations of closed tickets (13, 43, 47, 49, 50). If a ticket says "do not re-litigate without new hardware evidence," believe it.
-7. Smoke every driver change with two journal greps. After deploy: grep -E "timed out|Invalid ACK|verify-unknown-error|failed to" must be empty on an enrolled tap, and the held-wrong-finger test must show exactly one Failed to match with attempts withheld (~18s re-issuing FDT UP loop) until lift. If either fails, revert before stacking more fixes. (Reading notes from ticket 53: scope the first grep to the serving instance's match-claim window — `0x34 timed out` tolerant lines during a held-finger test are the designed ticket-47 path, not failures; and the literal string `Failed to match` exists nowhere in this stack, so its observable equivalent is exactly one `verify-no-match` result with a single completion.)
+6. Check .scratch/goodix-5e0a/issues/ for settled facts before changing driver behavior. Both regressions were re-litigations of closed tickets (13, 43, 47, 49, 50). If a ticket says "do not re-litigate without new hardware evidence," believe it. All tickets 1–82 are closed.
+7. Smoke every driver change with two journal greps. After deploy: grep -E "timed out|Invalid ACK|verify-unknown-error|failed to" must be empty on an enrolled tap, and the held-wrong-finger test must show exactly one `verify-no-match` with attempts withheld (~18s re-issuing FDT UP loop) until lift. If either fails, revert before stacking more fixes. (Reading notes from ticket 53: scope the first grep to the serving instance's match-claim window — `0x34 timed out` tolerant lines during a held-finger test are the designed ticket-47 path, not failures.)

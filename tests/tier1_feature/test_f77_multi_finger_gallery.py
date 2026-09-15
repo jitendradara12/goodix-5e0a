@@ -12,7 +12,7 @@ Verifies without hardware (hermetic static & structural validation):
     winner reported as the exact gallery object, then complete);
 (d) one variable per build: verify single-template path, 0x32=0 / 0x34
     re-issue semantics, enroll floor (16), and burst ranking are untouched;
-(e) offline evidence lives in experiments/test_milan_gallery.c (exit 0 =
+(e) offline evidence lives in legacy-experiments/test_milan_gallery.c (exit 0 =
     4/4 genuine with correct idx, 3/3 impostor rejected, FAR 0%).
 """
 
