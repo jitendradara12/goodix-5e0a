@@ -2,7 +2,7 @@
 
 **What to build:** Extend `GOODIX_5E0A_TLS_PARK_TTL_US` from 30 seconds to 300 seconds (5 minutes). This allows subsequent authentication claims (e.g. repeated `sudo` commands, lockscreen prompts, polkit dialogs) to reuse the live, primed TLS session via the lightweight `QUERY_MCU_STATE` health check (< 10ms), eliminating the 800ms–1s activation handshake penalty.
 
-**Blocked by:** Daemon lifetime investigation: observed idle exit destroys parked state after ~30s. Tickets 84 and 87 are closed.
+**Blocked by:** User deployment of ticket 88's implemented and Nix-evaluated `--no-timeout` override, then its targeted 90s hardware probe. Ticket 88 is ready-for-hardware-verify. Daemon survival and 300s TLS reuse remain unverified. Tickets 84 and 87 are closed.
 
 **Status:** ready-for-hardware-verify
 
@@ -91,9 +91,98 @@ PID 21957 parks at 23:39:14.076166, then the service exits successfully at
 23:39:44.003460. Next claim starts PID 22494 with a cold context. Extending
 the in-memory TTL cannot preserve state across process exit.
 
-Next experiment: inspect daemon idle-exit configuration/source read-only.
-Do not ask for another 90s claim pair until its process-lifetime prerequisite
-is resolved. No keepalive or service change has been made.
+### Daemon lifetime mechanism, read-only investigation 2026-09-17
+
+The daemon calls `exit(0)` from its own 30s idle timer. It does not stay
+resident by default. systemd's successful deactivation records the result,
+not an idle-stop request. A normal client D-Bus disconnect can start the
+idle countdown; this is different from the daemon losing its system-bus
+connection.
+
+Exact installed-source provenance, command and output:
+
+```text
+nix-store --query --deriver /nix/store/8jkiyn4gjry62n92vl6h9cmvbblrklqd-fprintd-1.94.5
+/nix/store/h9j09h8wdmdc4s3qz0sx2wb2fi5qddkk-fprintd-1.94.5.drv
+
+nix derivation show /nix/store/h9j09h8wdmdc4s3qz0sx2wb2fi5qddkk-fprintd-1.94.5.drv
+# Relevant env fields from the JSON output:
+"src": "/nix/store/173497h2nmqysyp6jj0il96fy5hb72vz-source"
+"version": "1.94.5"
+```
+
+All source references below are relative to that source store path:
+
+- `src/fprintd.h:29` defines `TIMEOUT 30`.
+- `src/device.c:298-301` defines busy as clients present OR device
+  temperature above cold. `src/device.c:1000-1023` notifies busy when the
+  last client vanishes or a new client appears. Thus "30s after release"
+  is an approximation to the last client's departure, not a driver TTL.
+- `src/manager.c:176-198` removes any pending timer, returns immediately
+  if `no_timeout`, otherwise re-arms `g_timeout_add_seconds(TIMEOUT, ...)`
+  when no devices are busy. `src/manager.c:532-533` also arms it at startup.
+- `src/manager.c:158-164` implements that callback with `exit(0)` and no
+  log. It bypasses the normal `main loop completed` log in
+  `src/main.c:224-230`, so no "Exiting" line is expected.
+- `src/main.c:41,121-124,211` defaults `no_timeout` to FALSE and exposes
+  `--no-timeout` / `-t`, described as "Do not exit after unused for a while".
+  `strings -a` on the installed `libexec/fprintd` also returned that exact
+  description, `no-timeout`, and `fprint_manager_timeout_cb`.
+- The installed `etc/fprintd.conf:1-2` contains only `[storage]` and
+  `type=file`. `src/main.c:90-119` reads storage configuration, not an idle
+  duration. The supported opt-out here is a daemon argument.
+
+The exact stop sequence in
+`/home/sastauser/goodix-ticket87-20260916-233440/journal.txt` is:
+
+```text
+354 23:39:14.076166 fprintd[21957]: 5e0a parking live TLS session (gen=2)
+355 23:39:14.076187 fprintd[21957]: Device reported close completion
+356 23:39:14.076242 fprintd[21957]: transfer cancelled, aborting read loop...
+357 23:39:14.076250 fprintd[21957]: Completing action FPI_DEVICE_ACTION_CLOSE in idle!
+358 23:39:14.076253 fprintd[21957]: Not updating temperature model, device can run continuously!
+359 23:39:14.076257 fprintd[21957]: released device 0
+360 23:39:44.003460 systemd[1]: fprintd.service: Deactivated successfully.
+361 23:40:41.010915 systemd[1]: Starting Fingerprint Authentication Daemon...
+362 23:40:41.063269 fprintd[22494]: About to load configuration file '/nix/store/8jkiyn4gjry62n92vl6h9cmvbblrklqd-fprintd-1.94.5/etc/fprintd.conf'
+363 23:40:41.063290 fprintd[22494]: Launching FprintObject
+364 23:40:41.063356 fprintd[22494]: Initializing FpContext (libfprint version 1.94.9)
+365 23:40:41.070285 fprintd[22494]: Preparing devices for resume
+```
+
+Park-to-exit is 29.927294s, consistent with GLib's seconds-based timer.
+A second instance has last close activity at line 164, 23:35:41.080196,
+then successful deactivation at line 165, 23:36:10.979237, a 29.899041s gap.
+A case-insensitive grep of this journal for
+`Exiting|main loop completed|Failed to get name|Failed to open connection|SIGTERM|Stopping Fingerprint`
+returned no matches. `src/main.c:145-153` logs `Failed to get name` on
+name loss; that path is not evidenced here. Normal read-loop cancellation
+at close is not a daemon D-Bus disconnect.
+
+Read-only `systemctl cat fprintd.service` returned the installed unit with
+`Type=dbus`, `BusName=net.reactivated.Fprint`, and bare
+`ExecStart=/nix/store/8jkiyn4gjry62n92vl6h9cmvbblrklqd-fprintd-1.94.5/libexec/fprintd`.
+Its NixOS drop-in adds only Environment lines. No stop request appears in
+the supplied journal. The source and both timings identify self-exit as
+the supported explanation; this journal is not a syscall or signal trace.
+
+Verdict for the 300s TTL remains
+`inconclusive-because-daemon-self-exits-before-90s-probe`.
+Single next experiment: ticket
+`88-ready-for-hardware-verify-fprintd-no-timeout-override.md`. Its minimal
+service-only override is now implemented in both NixOS module copies and
+validated against the actual flake's generated drop-in. Driver code and TTL
+stay fixed; the custom fprintd package is unchanged. No deployment, daemon
+launch, or hardware claim was performed.
+
+After user deployment, run `bash scripts/verify-ticket88.sh` from repo root.
+It captures unfiltered journal, timestamps and daemon PID around a real
+`sleep 90`, then a second claim. This targeted protocol supersedes this
+ticket's older repeated safety-phase instructions for the next run. Use
+AGENTS.md's already-verified exception for ticket 87's prior hands-off,
+steady-hold and PAM evidence; do not repeat those phases. A same-PID claim
+pair still needs journal proof of parked reuse and measured activation
+latency before acceptance. The 300s expiry/fallback criteria remain pending.
 
 ## Predicted Journal Signatures
 

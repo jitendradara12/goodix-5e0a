@@ -16,6 +16,13 @@ in
     package = fprintd-goodix;
   };
 
+  # The daemon's 30s idle exit destroys parked TLS before the driver's 300s TTL.
+  # Reset the packaged unit's ExecStart in the NixOS drop-in, then keep it resident.
+  systemd.services.fprintd.serviceConfig.ExecStart = [
+    ""
+    "${config.services.fprintd.package}/libexec/fprintd --no-timeout"
+  ];
+
   # 2. Install udev rules for the scanner
   services.udev.packages = [ libfprint-goodix ];
   services.udev.extraRules = ''
