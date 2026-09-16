@@ -207,7 +207,7 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
     # 5. Native C Empirical Invariant Execution
     # --------------------------------------------------------------------------
 
-    @unittest.skipUnless(os.path.exists("/tmp/test_ssm_teardown"), "native C harness /tmp/test_ssm_teardown absent")
+    @unittest.skipUnless(os.path.exists("/tmp/test_ssm_teardown"), "native C harness absent; run bash scripts/build_native_harness.sh")
     def test_native_c_ssm_and_cancellation_invariants(self):
         """Execute compiled C test harness verifying 8 runtime invariants directly in libfprint."""
         self.assertTrue(os.path.exists(self.c_test_bin), f"C test binary not found: {self.c_test_bin}")
@@ -215,8 +215,8 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
         env = dict(os.environ)
         env["LD_LIBRARY_PATH"] = (
             "/tmp/libfprint-goodix/build/libfprint:"
-            "/nix/store/jfzg71balwh09axwmxm5wj2jdqk5gl4v-gusb-0.4.9/lib:"
-            "/nix/store/a3hr0l5skscvbkcr7kz3nhi4linz1p71-glib-2.88.3/lib"
+            "/nix/store/i7azb209vr4lciksbr03zbqbq6py0vgs-gusb-0.4.9/lib:"
+            "/nix/store/7mf69bavdjazjvbhflj0s40d2a6mk5wb-glib-2.88.3/lib"
         )
 
         res = subprocess.run(
