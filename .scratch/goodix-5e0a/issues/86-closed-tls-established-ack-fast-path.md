@@ -4,7 +4,9 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
+
+**Verdict:** CONFIRMED on hardware 2026-09-16 (deployed driver).
 
 ## Acceptance Criteria
 
@@ -14,9 +16,9 @@
 - [x] Full test suite (319 tests) passes cleanly across all 5 tiers.
 - [x] Unified patch `0001-Add-driver-support-for-Goodix-27c6-5e0a.patch` and NixOS module patch stay byte-identical.
 - [x] Derivation builds cleanly via `nix-build`.
-- [ ] Verified on hardware: `sudo -k; time fprintd-verify -f right-index-finger` total latency drops from ~2.85s down to ~0.65–0.85s (2.000s delay eliminated).
-- [ ] Verified on hardware: Time delta between `Running command: 0xd4` and `HANDSHAKE DONE` drops from 2001ms to ~16ms.
-- [ ] Rule-7 smoke check passes: zero `timed out|Invalid ACK|verify-unknown-error|failed to`.
+- [x] Verified on hardware: `sudo -k; time fprintd-verify -f right-index-finger` total latency drops from ~2.85s down to 0.872s (2.000s delay eliminated).
+- [x] Verified on hardware: Time delta between `Running command: 0xd4` and `HANDSHAKE DONE` drops from 2001ms to 16.2ms (21:17:32.432 -> 21:17:32.448).
+- [x] Rule-7 smoke check passes: zero `timed out|Invalid ACK|verify-unknown-error|failed to`.
 
 ## Context & Evidence
 
