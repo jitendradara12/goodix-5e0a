@@ -673,7 +673,7 @@ index 236589f..f52e513 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -1039,22 +1164,23 @@ goodix_send_tls_successfully_established (FpDevice          *dev,
+@@ -1039,22 +1164,25 @@ goodix_send_tls_successfully_established (FpDevice          *dev,
  
    if (callback)
      {
@@ -684,25 +684,27 @@ index 236589f..f52e513 100644
        cb_info->user_data = user_data;
 -      // special case: timeout needs to be at least 10ms and it will always timeout for some reason
 -      // todo: work out why it always times out for this but not the python driver
-+      // The MCU never ACKs the established notification: 0xd4 times out on
-+      // every healthy handshake, and that timeout IS the success signal
-+      // (forwarding it as failure broke every activation 2026-09-09).
++      /* Ticket 86: The Goodix MCU acknowledges CMD 0xd4 in ~16ms with standard
++       * GOODIX_CMD_ACK (0xb0) and sends no subsequent data packet (matching
++       * Python tls_successfully_established). With reply=FALSE, goodix_receive_ack
++       * completes the command immediately on ACK receipt, eliminating an artificial
++       * 2000ms timeout wait. */
  
        goodix_send_protocol (dev, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED,
                              (guint8 *) &payload, sizeof (payload), NULL, TRUE,
 -                            10, FALSE, goodix_receive_none, cb_info);
-+                            2000, TRUE, goodix_receive_none, cb_info);
++                            GOODIX_TIMEOUT, FALSE, goodix_receive_none, cb_info);
        return;
      }
  
    goodix_send_protocol (dev, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED,
                          (guint8 *) &payload, sizeof (payload), NULL, TRUE,
 -                        10, FALSE, NULL, NULL);
-+                        2000, TRUE, NULL, NULL);
++                        GOODIX_TIMEOUT, FALSE, NULL, NULL);
  }
  
  void
-@@ -1066,7 +1192,7 @@ goodix_send_read_otp (FpDevice *dev, GoodixDefaultCallback callback,
+@@ -1066,7 +1194,7 @@ goodix_send_read_otp (FpDevice *dev, GoodixDefaultCallback callback,
  
    if (callback)
      {
@@ -711,7 +713,7 @@ index 236589f..f52e513 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -1102,19 +1228,19 @@ goodix_send_preset_psk_write (FpDevice *dev, guint32 flags, guint8 *psk,
+@@ -1102,19 +1230,19 @@ goodix_send_preset_psk_write (FpDevice *dev, guint32 flags, guint8 *psk,
  
    if (callback)
      {
@@ -734,7 +736,7 @@ index 236589f..f52e513 100644
                          TRUE, NULL, NULL);
  }
  
-@@ -1129,7 +1255,49 @@ goodix_send_preset_psk_read (FpDevice *dev, guint32 flags, guint16 length,
+@@ -1129,7 +1257,49 @@ goodix_send_preset_psk_read (FpDevice *dev, guint32 flags, guint16 length,
  
    if (callback)
      {
@@ -785,7 +787,7 @@ index 236589f..f52e513 100644
  
        cb_info->callback = G_CALLBACK (callback);
        cb_info->user_data = user_data;
-@@ -1168,8 +1336,73 @@ goodix_dev_init (FpDevice *dev, GError **error)
+@@ -1168,8 +1338,73 @@ goodix_dev_init (FpDevice *dev, GError **error)
    priv->length = 0;
    priv->transfer_cancel_tkn = g_cancellable_new ();
  
@@ -861,7 +863,7 @@ index 236589f..f52e513 100644
  }
  void
  goodix_reset_state (FpDevice *dev)
-@@ -1182,8 +1415,79 @@ goodix_reset_state (FpDevice *dev)
+@@ -1182,8 +1417,79 @@ goodix_reset_state (FpDevice *dev)
      g_clear_pointer (&priv->timeout, g_source_destroy);
    priv->ack = FALSE;
    priv->reply = FALSE;
@@ -941,7 +943,7 @@ index 236589f..f52e513 100644
  }
  
  gboolean
-@@ -1193,18 +1497,43 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
+@@ -1193,18 +1499,43 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
    FpiDeviceGoodixTlsClass *class = FPI_DEVICE_GOODIXTLS_GET_CLASS (self);
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
@@ -990,7 +992,7 @@ index 236589f..f52e513 100644
  }
  
  // ---- DEV SECTION END ----
-@@ -1213,6 +1542,92 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
+@@ -1213,6 +1544,92 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
  
  // ---- TLS SECTION START ----
  
@@ -1083,7 +1085,7 @@ index 236589f..f52e513 100644
  void
  goodix_read_tls (FpDevice *dev, GoodixTlsCallback callback,
                   gpointer user_data)
-@@ -1240,8 +1655,6 @@ on_goodix_tls_read_handshake (FpDevice *dev, guint8 *data,
+@@ -1240,8 +1657,6 @@ on_goodix_tls_read_handshake (FpDevice *dev, guint8 *data,
                                guint16 length, gpointer user_data,
                                GError *error)
  {
@@ -1092,7 +1094,7 @@ index 236589f..f52e513 100644
    FpiSsm *ssm = user_data;
  
    if (error)
-@@ -1284,6 +1697,22 @@ on_tls_successfully_established (FpDevice *dev, gpointer user_data,
+@@ -1284,6 +1699,25 @@ on_tls_successfully_established (FpDevice *dev, gpointer user_data,
    FpiDeviceGoodixTls * self = FPI_DEVICE_GOODIXTLS (dev);
    FpiDeviceGoodixTlsPrivate * priv =
      fpi_device_goodixtls_get_instance_private (self);
@@ -1105,17 +1107,20 @@ index 236589f..f52e513 100644
 +        g_error_free (error);
 +      return;
 +    }
-+  /* The MCU never acknowledges the established notification — 0xd4 times
-+   * out on every healthy handshake (see the send site). A reply-less
-+   * completion is success by design (a 2026-09-09 attempt to forward the
-+   * timeout as failure broke every activation); release the error, if any,
-+   * and report success. */
++  /* Ticket 86: 0xd4 completes on genuine MCU ACK without timing out. Propagate
++   * any unexpected transfer error to the activation callback. */
 +  if (error)
-+    g_error_free (error);
++    {
++      fp_err ("failed to send TLS established: %s", error->message);
++      ((GoodixNoneCallback) priv->tls_ready_callback->callback)(
++        dev, priv->tls_ready_callback->user_data, error);
++      g_clear_pointer (&priv->tls_ready_callback, g_free);
++      return;
++    }
    ((GoodixNoneCallback) priv->tls_ready_callback->callback)(
      dev, priv->tls_ready_callback->user_data, NULL);
    g_clear_pointer (&priv->tls_ready_callback, g_free);
-@@ -1292,8 +1721,20 @@ static void
+@@ -1292,8 +1726,20 @@ static void
  tls_handshake_done (FpiSsm *ssm, FpDevice *dev, GError *error)
  {
    if (error)
@@ -1138,7 +1143,7 @@ index 236589f..f52e513 100644
    goodix_send_tls_successfully_established (
      dev, on_tls_successfully_established, NULL);
  }
-@@ -1309,15 +1750,17 @@ tls_handshake_run (FpiSsm *ssm, FpDevice *dev)
+@@ -1309,15 +1755,17 @@ tls_handshake_run (FpiSsm *ssm, FpDevice *dev)
  
    if (stage == TLS_HANDSHAKE_STAGE_HELLO_S)
      {
@@ -1159,7 +1164,7 @@ index 236589f..f52e513 100644
        GError *err = NULL;
        if (!goodix_send_pack (dev, GOODIX_FLAGS_TLS, buff, size, NULL, &err))
          {
-@@ -1335,9 +1778,10 @@ tls_handshake_run (FpiSsm *ssm, FpDevice *dev)
+@@ -1335,9 +1783,10 @@ tls_handshake_run (FpiSsm *ssm, FpDevice *dev)
    else if (stage == TLS_HANDSHAKE_STAGE_CHANGE_CIPHER_S)
      {
        fp_dbg ("Reading to proxy back");
@@ -1173,7 +1178,7 @@ index 236589f..f52e513 100644
          {
            fpi_ssm_mark_failed (ssm, g_error_new (g_io_error_quark (), size,
                                                   "failed to read server "
-@@ -1345,6 +1789,7 @@ tls_handshake_run (FpiSsm *ssm, FpDevice *dev)
+@@ -1345,6 +1794,7 @@ tls_handshake_run (FpiSsm *ssm, FpDevice *dev)
  
            return;
          }
@@ -1181,7 +1186,7 @@ index 236589f..f52e513 100644
        GError *err = NULL;
        if (!goodix_send_pack (dev, GOODIX_FLAGS_TLS, buff, size, NULL, &err))
          {
-@@ -1370,7 +1815,21 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
+@@ -1370,7 +1820,21 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
    if (error)
      {
        fp_err ("failed to get tls handshake: %s", error->message);
@@ -1204,7 +1209,7 @@ index 236589f..f52e513 100644
        return;
      }
    FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (user_data);
-@@ -1382,19 +1841,6 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
+@@ -1382,19 +1846,6 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
    do_tls_handshake (dev);
  }
  
@@ -1224,7 +1229,7 @@ index 236589f..f52e513 100644
  void
  goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
  {
-@@ -1403,10 +1849,10 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
+@@ -1403,10 +1854,10 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
    g_assert (priv->tls_hop == NULL);
@@ -1237,7 +1242,7 @@ index 236589f..f52e513 100644
    priv->tls_ready_callback->callback = G_CALLBACK (callback);
    priv->tls_ready_callback->user_data = user_data;
    GoodixTlsServer *s = priv->tls_hop;
-@@ -1416,10 +1862,26 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
+@@ -1416,10 +1867,26 @@ goodix_tls_init (FpDevice *dev, GoodixNoneCallback callback, gpointer user_data)
      {
        fp_err ("failed to init tls server, error: %s, code: %d", err->message,
                err->code);
@@ -1265,7 +1270,7 @@ index 236589f..f52e513 100644
  }
  
  gboolean
-@@ -1434,16 +1896,32 @@ goodix_shutdown_tls (FpDevice *dev, GError **error)
+@@ -1434,16 +1901,32 @@ goodix_shutdown_tls (FpDevice *dev, GError **error)
        gboolean rs = goodix_tls_server_deinit (priv->tls_hop, error);
        g_free (priv->tls_hop);
        priv->tls_hop = NULL;
@@ -1299,7 +1304,7 @@ index 236589f..f52e513 100644
    GoodixCallbackInfo *cb_info = user_data;
    GoodixImageCallback callback = (GoodixImageCallback) cb_info->callback;
  
-@@ -1457,10 +1935,31 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
+@@ -1457,10 +1940,31 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
    FpiDeviceGoodixTlsPrivate *priv =
      fpi_device_goodixtls_get_instance_private (self);
  
@@ -1334,7 +1339,7 @@ index 236589f..f52e513 100644
    GError *err = NULL;
    int read_size = goodix_tls_server_read (priv->tls_hop, buff, size, &err);
  
-@@ -1472,7 +1971,6 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
+@@ -1472,7 +1976,6 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
      }
  
    callback (dev, buff, read_size, cb_info->user_data, NULL);
@@ -1342,7 +1347,7 @@ index 236589f..f52e513 100644
    g_free (cb_info);
  }
  
-@@ -1481,7 +1979,7 @@ goodix_tls_read_image (FpDevice *dev, GoodixImageCallback callback,
+@@ -1481,7 +1984,7 @@ goodix_tls_read_image (FpDevice *dev, GoodixImageCallback callback,
                         gpointer user_data)
  {
    g_assert (callback);

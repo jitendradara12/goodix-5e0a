@@ -1168,19 +1168,21 @@ goodix_send_tls_successfully_established (FpDevice          *dev,
 
       cb_info->callback = G_CALLBACK (callback);
       cb_info->user_data = user_data;
-      // The MCU never ACKs the established notification: 0xd4 times out on
-      // every healthy handshake, and that timeout IS the success signal
-      // (forwarding it as failure broke every activation 2026-09-09).
+      /* Ticket 86: The Goodix MCU acknowledges CMD 0xd4 in ~16ms with standard
+       * GOODIX_CMD_ACK (0xb0) and sends no subsequent data packet (matching
+       * Python tls_successfully_established). With reply=FALSE, goodix_receive_ack
+       * completes the command immediately on ACK receipt, eliminating an artificial
+       * 2000ms timeout wait. */
 
       goodix_send_protocol (dev, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED,
                             (guint8 *) &payload, sizeof (payload), NULL, TRUE,
-                            2000, TRUE, goodix_receive_none, cb_info);
+                            GOODIX_TIMEOUT, FALSE, goodix_receive_none, cb_info);
       return;
     }
 
   goodix_send_protocol (dev, GOODIX_CMD_TLS_SUCCESSFULLY_ESTABLISHED,
                         (guint8 *) &payload, sizeof (payload), NULL, TRUE,
-                        2000, TRUE, NULL, NULL);
+                        GOODIX_TIMEOUT, FALSE, NULL, NULL);
 }
 
 void
@@ -1706,13 +1708,16 @@ on_tls_successfully_established (FpDevice *dev, gpointer user_data,
         g_error_free (error);
       return;
     }
-  /* The MCU never acknowledges the established notification — 0xd4 times
-   * out on every healthy handshake (see the send site). A reply-less
-   * completion is success by design (a 2026-09-09 attempt to forward the
-   * timeout as failure broke every activation); release the error, if any,
-   * and report success. */
+  /* Ticket 86: 0xd4 completes on genuine MCU ACK without timing out. Propagate
+   * any unexpected transfer error to the activation callback. */
   if (error)
-    g_error_free (error);
+    {
+      fp_err ("failed to send TLS established: %s", error->message);
+      ((GoodixNoneCallback) priv->tls_ready_callback->callback)(
+        dev, priv->tls_ready_callback->user_data, error);
+      g_clear_pointer (&priv->tls_ready_callback, g_free);
+      return;
+    }
   ((GoodixNoneCallback) priv->tls_ready_callback->callback)(
     dev, priv->tls_ready_callback->user_data, NULL);
   g_clear_pointer (&priv->tls_ready_callback, g_free);

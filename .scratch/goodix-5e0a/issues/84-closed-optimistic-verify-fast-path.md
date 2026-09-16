@@ -4,16 +4,18 @@
 
 **Blocked by:** 83 (Enrollment Coverage Expansion).
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
+
+**Verdict:** CONFIRMED on hardware 2026-09-16 (deployed driver).
 
 ## Acceptance Criteria
 
 - [x] In `goodix5e0a_keep_best_frame`: during `VERIFY` or `IDENTIFY` actions, evaluate Frame 1 immediately if contact area is high (`active >= 1500`, `range >= 500`).
 - [x] If Frame 1 matches (`match_pts > 0`), the scan SSM completes immediately and reports success without re-issuing `read_image` for frames 2–4.
 - [x] If Frame 1 does not match or has weak contact (`active < 1500`), the driver proceeds seamlessly to capture frames 2..4, selecting the best-of-N frame exactly as before (zero penalty on difficult touches).
-- [ ] Verified on hardware: Deliberate touches unlock in < 50ms post-touch (feeling instantaneous like Windows Hello).
-- [ ] Held-wrong-finger test passes: un-enrolled finger continues into the full burst, rejects, and enters the FDT-UP guard loop without leaking false accepts or prematurely aborting retry gating.
-- [ ] Rule-7 smoke check passes: zero `timed out|Invalid ACK|verify-unknown-error|failed to`.
+- [x] Verified on hardware: Deliberate touches unlock in < 50ms post-touch (25ms observed on hardware: 20:03:11.341 touch confirmed -> 20:03:11.366 frame 1 matched and submitted).
+- [x] Held-wrong-finger test passes: un-enrolled finger continues into the full burst, rejects, and enters the FDT-UP guard loop without leaking false accepts or prematurely aborting retry gating.
+- [x] Rule-7 smoke check passes: zero `timed out|Invalid ACK|verify-unknown-error|failed to`.
 
 ## Context & Evidence
 
