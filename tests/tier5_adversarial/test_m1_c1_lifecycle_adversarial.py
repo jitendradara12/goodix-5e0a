@@ -213,11 +213,9 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
         self.assertTrue(os.path.exists(self.c_test_bin), f"C test binary not found: {self.c_test_bin}")
 
         env = dict(os.environ)
-        env["LD_LIBRARY_PATH"] = (
-            "/tmp/libfprint-goodix/build/libfprint:"
-            "/nix/store/i7azb209vr4lciksbr03zbqbq6py0vgs-gusb-0.4.9/lib:"
-            "/nix/store/7mf69bavdjazjvbhflj0s40d2a6mk5wb-glib-2.88.3/lib"
-        )
+        # Only the build tree is pinned; glib/gusb resolve via the binary's
+        # nix-stamped RUNPATH, so store paths here would just go stale.
+        env["LD_LIBRARY_PATH"] = "/tmp/libfprint-goodix/build/libfprint"
 
         res = subprocess.run(
             [self.c_test_bin],
