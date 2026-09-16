@@ -1671,10 +1671,10 @@ index a19379c..9fee8a9 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..f608650
+index 0000000..f79b27b
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,2143 @@
+@@ -0,0 +1,2150 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -3674,6 +3674,13 @@ index 0000000..f608650
 +  g_clear_pointer (&self->milan_enrol_ctx, goodix_milan_enroll_finish);
 +  g_clear_pointer (&self->tmpl_blob, g_free);
 +  self->tmpl_len = 0;
++
++  /* Ticket 87: FpDevice close has no automatic image-device deactivate.
++   * Park only an already-idle, healthy session before transport deinit;
++   * never free an active scan first and accidentally make it parkable.
++   * This branch cannot report a deactivate error: it takes the idle park. */
++  if (self->scan_ssm == NULL && self->warm_ok && goodix_tls_is_alive (dev))
++    goodix5e0a_deactivate ((FpImageDevice *) dev);
 +
 +  if (self->scan_ssm != NULL)
 +    {

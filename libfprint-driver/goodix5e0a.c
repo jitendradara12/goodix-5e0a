@@ -1998,6 +1998,13 @@ dev_close (FpDevice *dev)
   g_clear_pointer (&self->tmpl_blob, g_free);
   self->tmpl_len = 0;
 
+  /* Ticket 87: FpDevice close has no automatic image-device deactivate.
+   * Park only an already-idle, healthy session before transport deinit;
+   * never free an active scan first and accidentally make it parkable.
+   * This branch cannot report a deactivate error: it takes the idle park. */
+  if (self->scan_ssm == NULL && self->warm_ok && goodix_tls_is_alive (dev))
+    goodix5e0a_deactivate ((FpImageDevice *) dev);
+
   if (self->scan_ssm != NULL)
     {
       fpi_ssm_free (self->scan_ssm);

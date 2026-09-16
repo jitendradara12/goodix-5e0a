@@ -2,7 +2,7 @@
 
 **What to build:** Extend `GOODIX_5E0A_TLS_PARK_TTL_US` from 30 seconds to 300 seconds (5 minutes). This allows subsequent authentication claims (e.g. repeated `sudo` commands, lockscreen prompts, polkit dialogs) to reuse the live, primed TLS session via the lightweight `QUERY_MCU_STATE` health check (< 10ms), eliminating the 800ms–1s activation handshake penalty.
 
-**Blocked by:** 84 (Optimistic Verify Fast-Path).
+**Blocked by:** 87 (restore idle close parking); 84 is closed.
 
 **Status:** ready-for-hardware-verify
 
@@ -64,6 +64,23 @@ One variable per build: deploy and test ONLY the 300s park TTL. No driver edits 
    sudo systemctl unset-environment G_MESSAGES_DEBUG
    ```
    Expected: zero smoke-grep hits. (Scope to the serving instance's match-claim window; tolerant `0x34 timed out` lines during a held-finger test are the designed ticket-47 path.)
+
+## Hardware finding 2026-09-16: prerequisite missing
+
+Correction: the earlier agent note claiming a 90-second gap was unsupported.
+The pasted shell comment did not sleep. Full evidence is in
+`/home/sastauser/goodix-ticket85-journal.txt`:
+
+- Line 598: 22:46:28.029607 close completion.
+- Line 607: 22:46:28.039904 USB reset taken, dirty close, boot_seq=5.
+- Line 625: 22:46:28.291130 warm expired, cold-start.
+- No parked-session reuse appears. The close path never invokes parking;
+  `goodix_dev_deinit` therefore destroys TLS and the next open resets USB.
+- Ticket 75 covered open-held orphan shutdown, not this close/reopen path.
+
+Verdict: `inconclusive-because-no-90s-gap-and-close-path-never-parks`.
+Next experiment: ticket 87's idle-close routing, keeping the 300s TTL fixed.
+No further TTL tuning or claimed latency improvement until parking is observed.
 
 ## Predicted Journal Signatures
 
