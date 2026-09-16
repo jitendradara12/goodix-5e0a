@@ -2,7 +2,7 @@
 
 **What to build:** Extend `GOODIX_5E0A_TLS_PARK_TTL_US` from 30 seconds to 300 seconds (5 minutes). This allows subsequent authentication claims (e.g. repeated `sudo` commands, lockscreen prompts, polkit dialogs) to reuse the live, primed TLS session via the lightweight `QUERY_MCU_STATE` health check (< 10ms), eliminating the 800ms–1s activation handshake penalty.
 
-**Blocked by:** 87 (restore idle close parking); 84 is closed.
+**Blocked by:** Daemon lifetime investigation: observed idle exit destroys parked state after ~30s. Tickets 84 and 87 are closed.
 
 **Status:** ready-for-hardware-verify
 
@@ -81,6 +81,19 @@ The pasted shell comment did not sleep. Full evidence is in
 Verdict: `inconclusive-because-no-90s-gap-and-close-path-never-parks`.
 Next experiment: ticket 87's idle-close routing, keeping the 300s TTL fixed.
 No further TTL tuning or claimed latency improvement until parking is observed.
+
+## Follow-up evidence 2026-09-16
+
+Ticket 87 now confirms park/reopen/reuse at 5.1s under PID 30198; see its
+closed ticket for pasted journal lines. The 300s TTL remains unverified.
+In `/home/sastauser/goodix-ticket87-20260916-233440/journal.txt:354,360`,
+PID 21957 parks at 23:39:14.076166, then the service exits successfully at
+23:39:44.003460. Next claim starts PID 22494 with a cold context. Extending
+the in-memory TTL cannot preserve state across process exit.
+
+Next experiment: inspect daemon idle-exit configuration/source read-only.
+Do not ask for another 90s claim pair until its process-lifetime prerequisite
+is resolved. No keepalive or service change has been made.
 
 ## Predicted Journal Signatures
 

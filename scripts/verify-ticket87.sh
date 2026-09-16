@@ -20,38 +20,19 @@ verify() {
   cat "$out/$label.txt"
   mark "$label exit=$rc"
 }
-printf 'Keep hands OFF the sensor for the next 60 seconds.\n'
-mark 'hands off'
-verify hands-off &
-pid=$!
-sleep 60
-wait "$pid" || true
-mark 'hands off ended; early client timeout makes active-wait coverage incomplete'
-printf 'Place and HOLD the enrolled index finger steadily for 60 seconds.\n'
-read -r -p 'Press Enter when holding: ' </dev/tty
-mark holding
-verify steady-hold &
-pid=$!
-sleep 60
-wait "$pid" || true
-mark 'holding ended'
-printf 'Lift your finger. Next check uses PAM: hold an UNENROLLED finger.\n'
-printf 'Keep holding after the first rejection, then lift after about 18s.\n'
-printf 'If PAM falls back to a password, finish with your password.\n'
-read -r -p 'Press Enter to start the wrong-finger check: ' </dev/tty
-mark 'wrong-finger PAM start'
-sudo -k
-sudo -v || true
-mark 'wrong-finger PAM end'
+# Hands-off, steady-hold and PAM phases were covered in the previous run.
+mark 'targeted close/reopen check; prior safety phases not repeated'
 printf 'Lift, then touch the enrolled index finger for the first TTL claim.\n'
 verify ttl-first
-if ! grep -q 'Verify result: verify-match' "$out/ttl-first.txt"; then
-  mark 'inconclusive-because-first-TTL-claim-did-not-match'
+if ! grep -Eq 'Verify result: verify-(match|no-match) \(done\)' "$out/ttl-first.txt"; then
+  mark 'inconclusive-because-first-claim-did-not-complete-normally'
   exit 1
 fi
-mark '90-second gap start; hands off, no other authentication or suspend'
-sleep 90
-mark '90-second gap end'
+# Ticket 87 tests close/reopen routing, not TTL. The observed daemon exits
+# after ~30s idle, so a 90s gap discards the very park we need to test.
+mark '5-second gap start; lift finger, no other authentication or suspend'
+sleep 5
+mark '5-second gap end'
 printf 'Touch the enrolled index finger again.\n'
 verify ttl-second
 printf '\nDo not infer success from matching alone; journal must show parked reuse.\n'
