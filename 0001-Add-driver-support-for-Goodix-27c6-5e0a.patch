@@ -1671,10 +1671,10 @@ index a19379c..9fee8a9 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..4b1dbe7
+index 0000000..f608650
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,2142 @@
+@@ -0,0 +1,2143 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -1826,11 +1826,12 @@ index 0000000..4b1dbe7
 + * the window sends ONE QUERY_MCU_STATE probe with a short
 + * GOODIX_5E0A_TLS_PARK_HEALTH_TIMEOUT_MS timeout and reuses the session on
 + * success instead of paying the full ladder. Suspend never parks. */
-+/* Ticket 85: 300s — desktop claims (sudo/polkit/lockscreen) recur 1-3min
-+ * apart; a 30s window paid the full ~800ms-1s ladder on nearly every such
-+ * claim. Safety is unchanged: reuse is still gated on the ONE 0xae probe
-+ * (500ms), suspend never parks, and a failed probe falls into the full
-+ * ladder (ticket-38 settled fact: the probe, not the TTL, is the guard). */
++/* Ticket 85: 300s — the ticket's design assumption (no journal trace yet)
++ * is that desktop claims recur 1-3min apart, where a 30s window paid the
++ * full ~800ms-1s ladder on nearly every such claim. Safety is unchanged:
++ * reuse is still gated on the ONE 0xae probe (500ms), suspend never parks,
++ * and a failed probe falls into the full ladder (ticket-38 settled fact:
++ * the probe, not the TTL, is the guard). */
 +#define GOODIX_5E0A_TLS_PARK_TTL_US (G_USEC_PER_SEC * 300)
 +#define GOODIX_5E0A_TLS_PARK_HEALTH_TIMEOUT_MS 500
 +

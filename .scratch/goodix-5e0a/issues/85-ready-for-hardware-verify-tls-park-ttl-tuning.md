@@ -22,15 +22,15 @@
   - Ticket 38 implemented persistent TLS session parking, but set the TTL conservatively at 30 seconds (`GOODIX_5E0A_TLS_PARK_TTL_US = 30s`).
 - In real-world desktop usage, users frequently invoke `sudo`, polkit, or unlock screens 1–3 minutes apart. With a 30s TTL, every such claim hits the full 1-second cold-start handshake.
 - Windows keeps the driver service primed continuously in D2 low-power sleep with instant resume.
-- Extending the park TTL to 5 minutes covers ordinary desktop workflows while preserving the safety mechanism: Ticket 38 already includes generation tracking (`tls_parked_gen`) and a 100ms `QUERY_MCU_STATE` probe that safely falls back to a full cold handshake if the device ever desyncs.
+- Extending the park TTL to 5 minutes covers ordinary desktop workflows while preserving the safety mechanism: Ticket 38 already includes generation tracking (`tls_parked_gen`) and a 500ms `QUERY_MCU_STATE` probe that safely falls back to the ladder if the device ever desyncs (timeouts clear warmth into the full ladder; crypto-grade misses re-enter the warm ladder while warmth is fresh, ticket 40).
 
 ## Implementation (2026-09-16, agent)
 
 One variable: `GOODIX_5E0A_TLS_PARK_TTL_US` value only.
 
-- `libfprint-driver/goodix5e0a.c:155`: `#define GOODIX_5E0A_TLS_PARK_TTL_US (G_USEC_PER_SEC * 300)` with a rationale comment naming the ticket-38 invariant (the 0xae probe, not the TTL, is the guard; suspend never parks; failed probe falls into the full ladder).
+- `libfprint-driver/goodix5e0a.c:158`: `#define GOODIX_5E0A_TLS_PARK_TTL_US (G_USEC_PER_SEC * 300)` with a rationale comment naming the ticket-38 invariant (the 0xae probe, not the TTL, is the guard; suspend never parks; failed probe falls into the full ladder).
 - `tests/tier1_feature/test_f38_tls_park.py` (`test_b_ttl_and_health_timeout_macros`): pinned literal updated 30 → 300.
-- `0001-Add-driver-support-for-Goodix-27c6-5e0a.patch`: regenerated from the synced build tree; flake copy at `/home/sastauser/NixOS-Hyprland/modules/goodix/` byte-identical (sha256 `23ff7200…`).
+- `0001-Add-driver-support-for-Goodix-27c6-5e0a.patch`: regenerated from the synced build tree; flake copy at `/home/sastauser/NixOS-Hyprland/modules/goodix/` byte-identical (sha256 `46d76da6…`).
 
 ## Build and Test Verification (agent-run, no hardware)
 
@@ -41,20 +41,29 @@ One variable: `GOODIX_5E0A_TLS_PARK_TTL_US` value only.
 
 ## Hardware Verify Protocol (user-only; agent has no fingers/sudo)
 
+One variable per build: deploy and test ONLY the 300s park TTL. No driver edits between phases.
+
 1. Deploy driver:
    ```bash
    cd ~/NixOS-Hyprland && sudo nixos-rebuild switch --flake .# && sudo systemctl restart fprintd
    sudo systemctl set-environment G_MESSAGES_DEBUG=all
    sudo systemctl restart fprintd
    ```
-2. Run `sudo -v` and touch sensor (authenticates).
-3. Wait 90 seconds (longer than old 30s TTL, well within new 300s TTL).
-4. Run `sudo -v` again and touch sensor.
-5. Inspect journal for health-check reuse:
+2. Phase 1 — hands off 60s ("hands off" + timestamp): journal must stay silent (no spontaneous activation cycles).
+3. Phase 2 — press-hold steady 60s ("holding" + timestamp): enrolled finger held on sensor; attempts withheld (~18s FDT-UP loop) until lift, exactly one `verify-no-match` per wrong-finger hold.
+4. TTL reuse probe (the ticket's own criterion):
    ```bash
-   journalctl -u fprintd --since "3 min ago" --no-pager | grep -E "parked TLS session|health-checking|Enabling chip|full re-handshake"
-   sudo systemctl set-environment G_MESSAGES_DEBUG=
+   sudo -k                       # clear cached credentials so the 2nd sudo actually claims
+   fprintd-verify -f right-index-finger   # touch, authenticates; park stamped at deactivate
    ```
+   Wait 90 seconds (past the old 30s TTL, inside the new 300s window), then run `fprintd-verify` again and touch.
+5. Inspect journal for health-check reuse and the rule-7 smoke grep:
+   ```bash
+   journalctl -u fprintd -o short-precise --since "5 min ago" --no-pager | grep -a -E "parked TLS session|health-checking|Enabling chip|full re-handshake"
+   journalctl -u fprintd --since "5 min ago" --no-pager | grep -a -E "timed out|Invalid ACK|verify-unknown-error|failed to"
+   sudo systemctl unset-environment G_MESSAGES_DEBUG
+   ```
+   Expected: zero smoke-grep hits. (Scope to the serving instance's match-claim window; tolerant `0x34 timed out` lines during a held-finger test are the designed ticket-47 path.)
 
 ## Predicted Journal Signatures
 
