@@ -3,7 +3,7 @@ Tier 1 - Feature 38: Persistent TLS session across claims (Ticket 38).
 
 Verifies without hardware (hermetic static & structural validation):
 (a) _FpiDeviceGoodixTls5e0a gains tls_parked / tls_parked_at / tls_parked_gen;
-(b) TTL macro (30s) + short health-check timeout macro (500ms) exist;
+(b) TTL macro (300s, ticket 85) + short health-check timeout macro (500ms) exist;
 (c) goodix_tls_is_alive() helper lives in goodix.c/h (5e0a never reaches
     into priv->tls_hop directly);
 (d) deactivate parks (stop read loop only + stamp) when the ctx is alive,
@@ -50,11 +50,11 @@ class TestF38TlsPark(unittest.TestCase):
         self.assertIn("guint                 tls_parked_gen;", struct)
 
     def test_b_ttl_and_health_timeout_macros(self):
-        """30s park TTL and 500ms probe timeout are defined by the activate enum."""
+        """300s park TTL (ticket 85) and 500ms probe timeout are defined by the activate enum."""
         src = _read(GOODIX5E0A_C)
         head = _slice(src, "// ---- ACTIVATE SECTION START ----",
                       "enum activate_states")
-        self.assertIn("#define GOODIX_5E0A_TLS_PARK_TTL_US (G_USEC_PER_SEC * 30)", head)
+        self.assertIn("#define GOODIX_5E0A_TLS_PARK_TTL_US (G_USEC_PER_SEC * 300)", head)
         self.assertIn("#define GOODIX_5E0A_TLS_PARK_HEALTH_TIMEOUT_MS 500", head)
 
     def test_c_tls_alive_helper(self):

@@ -1,5 +1,5 @@
 diff --git a/libfprint/drivers/goodixtls/goodix.c b/libfprint/drivers/goodixtls/goodix.c
-index 236589f..f52e513 100644
+index 236589f..025d12a 100644
 --- a/libfprint/drivers/goodixtls/goodix.c
 +++ b/libfprint/drivers/goodixtls/goodix.c
 @@ -27,9 +27,12 @@
@@ -1671,10 +1671,10 @@ index a19379c..9fee8a9 100644
    gx_class->ep_in = GOODIX_511_EP_IN;
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.c b/libfprint/drivers/goodixtls/goodix5e0a.c
 new file mode 100644
-index 0000000..e3415d4
+index 0000000..4b1dbe7
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.c
-@@ -0,0 +1,2137 @@
+@@ -0,0 +1,2142 @@
 +// Goodix TLS driver for libfprint - 27c6:5e0a (Realme Book / ChicagoH)
 +// Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 +
@@ -1826,7 +1826,12 @@ index 0000000..e3415d4
 + * the window sends ONE QUERY_MCU_STATE probe with a short
 + * GOODIX_5E0A_TLS_PARK_HEALTH_TIMEOUT_MS timeout and reuses the session on
 + * success instead of paying the full ladder. Suspend never parks. */
-+#define GOODIX_5E0A_TLS_PARK_TTL_US (G_USEC_PER_SEC * 30)
++/* Ticket 85: 300s — desktop claims (sudo/polkit/lockscreen) recur 1-3min
++ * apart; a 30s window paid the full ~800ms-1s ladder on nearly every such
++ * claim. Safety is unchanged: reuse is still gated on the ONE 0xae probe
++ * (500ms), suspend never parks, and a failed probe falls into the full
++ * ladder (ticket-38 settled fact: the probe, not the TTL, is the guard). */
++#define GOODIX_5E0A_TLS_PARK_TTL_US (G_USEC_PER_SEC * 300)
 +#define GOODIX_5E0A_TLS_PARK_HEALTH_TIMEOUT_MS 500
 +
 +/* Ticket 40 warm activation: a clean chip-enable inside this window on the
@@ -3814,7 +3819,7 @@ index 0000000..e3415d4
 +}
 diff --git a/libfprint/drivers/goodixtls/goodix5e0a.h b/libfprint/drivers/goodixtls/goodix5e0a.h
 new file mode 100644
-index 0000000..3ec76d7
+index 0000000..fd6217c
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix5e0a.h
 @@ -0,0 +1,136 @@
@@ -4577,7 +4582,7 @@ index 855996e..3297349 100644
 \ No newline at end of file
 diff --git a/libfprint/drivers/goodixtls/goodix_milan.c b/libfprint/drivers/goodixtls/goodix_milan.c
 new file mode 100644
-index 0000000..451d618
+index 0000000..ac8b370
 --- /dev/null
 +++ b/libfprint/drivers/goodixtls/goodix_milan.c
 @@ -0,0 +1,1143 @@

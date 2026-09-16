@@ -149,7 +149,12 @@ static void goodix5e0a_reset_touch_frames (FpiDeviceGoodixTls5e0a *self);
  * the window sends ONE QUERY_MCU_STATE probe with a short
  * GOODIX_5E0A_TLS_PARK_HEALTH_TIMEOUT_MS timeout and reuses the session on
  * success instead of paying the full ladder. Suspend never parks. */
-#define GOODIX_5E0A_TLS_PARK_TTL_US (G_USEC_PER_SEC * 30)
+/* Ticket 85: 300s — desktop claims (sudo/polkit/lockscreen) recur 1-3min
+ * apart; a 30s window paid the full ~800ms-1s ladder on nearly every such
+ * claim. Safety is unchanged: reuse is still gated on the ONE 0xae probe
+ * (500ms), suspend never parks, and a failed probe falls into the full
+ * ladder (ticket-38 settled fact: the probe, not the TTL, is the guard). */
+#define GOODIX_5E0A_TLS_PARK_TTL_US (G_USEC_PER_SEC * 300)
 #define GOODIX_5E0A_TLS_PARK_HEALTH_TIMEOUT_MS 500
 
 /* Ticket 40 warm activation: a clean chip-enable inside this window on the

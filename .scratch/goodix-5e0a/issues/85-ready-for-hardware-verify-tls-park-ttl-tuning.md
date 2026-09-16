@@ -4,11 +4,11 @@
 
 **Blocked by:** 84 (Optimistic Verify Fast-Path).
 
-**Status:** ready-for-agent
+**Status:** ready-for-hardware-verify
 
 ## Acceptance Criteria
 
-- [ ] `libfprint-driver/goodix5e0a.c`: Update `GOODIX_5E0A_TLS_PARK_TTL_US` from 30s to 300s (`G_USEC_PER_SEC * 300`).
+- [x] `libfprint-driver/goodix5e0a.c`: Update `GOODIX_5E0A_TLS_PARK_TTL_US` from 30s to 300s (`G_USEC_PER_SEC * 300`).
 - [ ] Claims initiated within 5 minutes of a prior claim reuse the parked TLS session (`5e0a parked TLS session candidate fresh, health-checking`).
 - [ ] Sensor activates and enters capacitive touch wait (`0x32 FDT_DOWN`) in < 15ms instead of ~800ms.
 - [ ] If device loses state or sleeps, the existing health check catches any failure and cleanly falls back to the full ladder (`goodix_shutdown_tls` + full handshake).
@@ -24,11 +24,20 @@
 - Windows keeps the driver service primed continuously in D2 low-power sleep with instant resume.
 - Extending the park TTL to 5 minutes covers ordinary desktop workflows while preserving the safety mechanism: Ticket 38 already includes generation tracking (`tls_parked_gen`) and a 100ms `QUERY_MCU_STATE` probe that safely falls back to a full cold handshake if the device ever desyncs.
 
-## Implementation Plan
+## Implementation (2026-09-16, agent)
 
 One variable: `GOODIX_5E0A_TLS_PARK_TTL_US` value only.
 
-- `libfprint-driver/goodix5e0a.c`: Change `#define GOODIX_5E0A_TLS_PARK_TTL_US (G_USEC_PER_SEC * 30)` to `(G_USEC_PER_SEC * 300)`.
+- `libfprint-driver/goodix5e0a.c:155`: `#define GOODIX_5E0A_TLS_PARK_TTL_US (G_USEC_PER_SEC * 300)` with a rationale comment naming the ticket-38 invariant (the 0xae probe, not the TTL, is the guard; suspend never parks; failed probe falls into the full ladder).
+- `tests/tier1_feature/test_f38_tls_park.py` (`test_b_ttl_and_health_timeout_macros`): pinned literal updated 30 → 300.
+- `0001-Add-driver-support-for-Goodix-27c6-5e0a.patch`: regenerated from the synced build tree; flake copy at `/home/sastauser/NixOS-Hyprland/modules/goodix/` byte-identical (sha256 `23ff7200…`).
+
+## Build and Test Verification (agent-run, no hardware)
+
+- Ninja drivers build (`nix-shell -p ninja`): `libfprint-drivers.a` + `libfprint-2.so.2.0.0`, exit 0.
+- Full suite: 319 passed / 0 failed / 1 skipped (pre-existing native-harness gate).
+- `nix-build` derivation: `/nix/store/zgas80hbwf4lbiqmz9jv50kjlia5wd1m-libfprint-goodix-1.94.5-goodixtls-5e0a`, exit 0.
+- No wall-clock improvement claimed — that is hardware-only evidence.
 
 ## Hardware Verify Protocol (user-only; agent has no fingers/sudo)
 
