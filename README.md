@@ -24,7 +24,7 @@ The driver opens a TLS 1.2 PSK channel to the sensor and uses hardware FDT touch
 - `libfprint-goodix.nix`, `nixos-module.nix`, `flake.nix`: first-party Nix packaging and integration.
 - `install.sh`: installer for other Linux distributions.
 - `windows_driver/`: the vendor DLL.
-- `legacy-experiments/` and `.scratch/`: archived research and reverse-engineering provenance. **DO NOT run these scripts casually.** Some poke the sensor directly and can brick device state.
+- `legacy-experiments/` and `.scratch/`: archived research and reverse-engineering provenance. **DO NOT run these scripts casually.** Some poke the sensor directly and can brick device state. The engineering log lives in `.scratch/goodix-5e0a/issues/` — one ticket per experiment, each with predicted signatures and confirm/falsify verdicts (`.scratch/goodix-5e0a/96-review-log.md` records the review trail for the portability work).
 - `tests/`: software tests.
 
 ## The DLL and legal notice
