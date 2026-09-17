@@ -6,7 +6,7 @@ Built as a libfprint driver with fprintd. Matching runs the vendor Windows engin
 
 ## Status and known limits
 
-Enrollment, verification and PAM authentication for sudo/login work on the developer's Realme Book Prime running NixOS. **This is early/beta software. Keep password login available and enroll at least two fingers.**
+Enrollment, verification and PAM authentication for sudo/login work on the developer's Realme Book Prime running NixOS. **This is early/beta software. Keep password login available and enroll at least two fingers.** Non-NixOS installs are newer and less exercised; if verification fails there, see the limits below before assuming you did something wrong.
 
 - Fingerprint unlock immediately after S3 resume is unreliable. A known idle-dispatch defect remains unresolved; see [ticket 95](.scratch/goodix-5e0a/issues/95-closed-batch-hardware-verification.md). Use your password after suspend.
 - The latest labeled hardware batch had **0/2 first-try genuine matches**. Earlier batches were fine. Two samples do not establish an overall error rate, but they do rule out a reliability promise.
@@ -33,11 +33,11 @@ The driver opens a TLS 1.2 PSK channel to the sensor and uses hardware FDT touch
 
 ## Install — any distro
 
-Requirements: Linux x86_64 with systemd, the sensor connected over USB (`lsusb` must show `27c6:5e0a`), and `GoodixEngineAdapter.dll`. Debian/Ubuntu/Fedora/Arch/openSUSE are recognized; anything else is refused.
+Requirements: Linux x86_64 with systemd, and the sensor connected over USB (`lsusb` must show `27c6:5e0a`). Debian/Ubuntu/Fedora/Arch/openSUSE are recognized; anything else is refused.
+
+**The engine DLL ships in this repo** (`windows_driver/GoodixEngineAdapter.dll`, from the developer's unit — see the legal notice). You do not need to obtain one. If your laptop shipped a different Goodix engine version and you prefer your own copy: take it from a Windows dual-boot (`C:\Windows\System32\WinDriver\` or the Goodix driver folders), or unpack your vendor's Windows driver installer on any machine (e.g. `7z x VendorSetup.exe`) and pass it with `--dll`.
 
 On NixOS, skip to [NixOS / flake](#nixos--flake) — `install.sh` refuses to run there.
-
-Get the DLL from your Windows dual-boot installation. Search `C:\Windows\System32\WinDriver\` or the Goodix driver folders for `GoodixEngineAdapter.dll`. Alternatively, extract it from your laptop vendor's Windows fingerprint driver installer. Put it in `./windows_driver/` after cloning, or pass its location with `--dll`.
 
 ```bash
 git clone https://github.com/jitendradara12/goodix-5e0a.git
@@ -45,15 +45,16 @@ cd goodix-5e0a
 ./install.sh                        # or: ./install.sh --dll /path/to/GoodixEngineAdapter.dll
 ```
 
-Run as your normal user; the script uses sudo only to install dependencies and files. It builds the driver unprivileged, installs it to a private `/opt/goodix-libfprint`, and adds a systemd drop-in so only fprintd uses that copy. It does not replace your system libfprint, does not touch PAM or USB permissions, and does not restart services. `./install.sh --uninstall` removes only files this script installed.
+The installer installs everything it needs, including `fprintd` itself (its package also ships the `fprintd-enroll`/`fprintd-verify` commands used below). It does not replace your system libfprint, does not touch PAM or USB permissions, and does not restart services. `./install.sh --uninstall` removes only files this script installed.
 
 ```bash
-sudo systemctl restart fprintd
+sudo systemctl restart fprintd   # 'not active' is normal: fprintd is dbus-activated
 fprintd-enroll
 fprintd-verify
 ```
 
-PAM is opt-in per distro: Debian/Ubuntu need `libpam-fprintd` plus `pam-auth-update`, Fedora uses `authselect enable-feature with-fingerprint`, Arch expects manual edits to `/etc/pam.d/`. Keep a password-authenticated session open while changing PAM. Note the daemon is left stock, so its idle exit may discard parked TLS sessions; unlock latency can be worse than on NixOS until a service override is added.
+PAM is opt-in and installer-independent — do this or fingerprint login stays unavailable:
+Debian/Ubuntu: `sudo apt install libpam-fprintd`, then `sudo pam-auth-update` and tick **Fingerprint authentication**. Fedora: `authselect enable-feature with-fingerprint`. Arch: add `pam_fprintd.so` to `/etc/pam.d/sudo` and `/etc/pam.d/system-local-login`. Keep a password-authenticated session open while changing PAM. Note the daemon is left stock, so its idle exit may discard parked TLS sessions; unlock latency can be worse than on NixOS until a service override is added.
 
 **Non-NixOS installation is new and end-to-end unverified** — treat it as beta and keep password login working.
 
@@ -67,8 +68,10 @@ The module uses the DLL bundled in `windows_driver/` by default. Set `services.f
 # flake.nix
 inputs.goodix.url = "github:jitendradara12/goodix-5e0a";
 
-# In your NixOS configuration:
-imports = [ goodix.nixosModules.default ];
+# In your NixOS configuration (add the input to specialArgs, e.g.
+#   specialArgs = { inherit inputs; };
+# or reference it fully-qualified as shown):
+imports = [ inputs.goodix.nixosModules.default ];
 # Optional: use a different GoodixEngineAdapter.dll (default: the bundled one)
 # services.fprintd.goodix.dllFile = ./secrets/GoodixEngineAdapter.dll;
 # Optional: fingerprint for login/sudo/sddm/hyprlock/swaylock (default: false)
@@ -85,7 +88,7 @@ Realme Book Prime is tested. The USB sensor must be `27c6:5e0a`, with firmware s
 
 ## Troubleshooting
 
-- Check detection with `lsusb -d 27c6:5e0a` and DLL placement with `ls /var/lib/fprint/GoodixEngineAdapter.dll`.
+- Check detection with `lsusb -d 27c6:5e0a`. Where the engine DLL lives depends on install route: `/opt/goodix-libfprint/GoodixEngineAdapter.dll` (install.sh), `/var/lib/fprint/GoodixEngineAdapter.dll` (NixOS with `dllFile = null`), or the store path shown by `journalctl -u fprintd | grep -m1 GOODIX`.
 - Restart and follow logs with `sudo G_MESSAGES_DEBUG=all systemctl restart fprintd`, then `journalctl -u fprintd -f`. Note that systemd does not pass the command's environment to the service; for actual debug output, set `Environment=G_MESSAGES_DEBUG=all` in a temporary `[Service]` override using `sudo systemctl edit fprintd`, then restart it.
 - `failed to load GoodixEngineAdapter.dll` at device open means the engine did not load. Check file readability and `GOODIX_ENGINE_DLL_PATH` in the service environment.
 - `Invalid device firmware` means the required firmware string does not match. This driver does not support that firmware.
