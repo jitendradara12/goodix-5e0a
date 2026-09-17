@@ -61,3 +61,5 @@ psk*.bin
 dpapi*.bin
 *fingerprint*.pgm
 *bios*.bin
+
+legacy-experiments/benchmark_cross_captures
