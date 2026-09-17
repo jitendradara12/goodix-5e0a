@@ -388,25 +388,6 @@ void goodix_send_tls_successfully_established (FpDevice          *dev,
 
 
 /**
- * @brief Set the device preset psk. May not work for all device firmware versions
- *
- * @param dev
- * @param flags
- * @param psk
- * @param length
- * @param free_func
- * @param callback
- * @param user_data
- */
-void goodix_send_preset_psk_write (FpDevice             *dev,
-                                   guint32               flags,
-                                   guint8               *psk,
-                                   guint16               length,
-                                   GDestroyNotify        free_func,
-                                   GoodixSuccessCallback callback,
-                                   gpointer              user_data);
-
-/**
  * @brief Ask the device what preset psk it has
  *
  * @param dev
