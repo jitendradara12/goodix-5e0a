@@ -17,8 +17,7 @@ Verifies without hardware (hermetic static & structural validation):
 (e) suspend still bumps + clears park/warm + shuts down (untouched
     except the added clean clear);
 (f) no scope creep: ticket-38 park/health, ticket-39 burst, ticket-40
-    predicate/branch, bz3_threshold 12, single tls_init, 25 g_message
-    lines in goodix5e0a.c.
+    predicate/branch, single tls_init, 25 g_message lines in goodix5e0a.c.
 """
 
 import os
@@ -222,8 +221,8 @@ class TestF42ConditionalReset(unittest.TestCase):
         self.assertLess(park, warm)
         self.assertLess(warm, full)
         self.assertIn("self->warm_boot_seq = goodix_boot_seq_get (dev);", src)
-        # biometric operating point (Ticket 43)
-        self.assertIn("img_dev_class->bz3_threshold = 14;", src)
+        # biometric operating point: Milan engine, no NBIS threshold
+        self.assertNotIn("bz3_threshold", src)
         # handshake never skipped: exactly one tls_init site
         self.assertEqual(src.count("goodix_tls_init ("), 1)
         # journal budget: 25 g_message sites (raw dump + wire layout demoted

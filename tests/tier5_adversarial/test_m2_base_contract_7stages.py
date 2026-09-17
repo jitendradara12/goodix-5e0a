@@ -118,10 +118,9 @@ class TestM2BaseContract7Stages(unittest.TestCase):
         for stage in expected_5e0a_stages:
             self.assertIn(stage, self.c_code)
 
-        self.assertIn("img_dev_class->change_state = goodix5e0a_change_state;", self.c_code)
-        self.assertIn("goodix5e0a_scan_start (FP_DEVICE (img_dev));", self.c_code)
+        self.assertIn("goodix5e0a_scan_start (dev);", self.c_code)
         self.assertIn("self->scan_ssm = fpi_ssm_new (dev, goodix5e0a_scan_run_state, SCAN_5E0A_NUM_STATES);", self.c_code)
-        self.assertIn("img_dev_class->deactivate = goodix5e0a_deactivate;", self.c_code)
+        self.assertIn("goodix5e0a_deactivate (FpImageDevice *img_dev)", self.c_code)
 
     def test_finger_status_reporting_in_scan_lifecycle(self):
         """Verify finger status reporting occurs at Stage 4 (TRUE) and Stage 6 (FALSE)."""

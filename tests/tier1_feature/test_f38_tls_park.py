@@ -14,8 +14,8 @@ Verifies without hardware (hermetic static & structural validation):
 (f) fallback paths shut the parked ctx down and run today's full ladder
     exactly once, with gen-mismatch drops and the four named reasons;
 (g) suspend always clears the park and shuts down (sleep safety);
-(h) no scope creep: scan SSM enum, bz3_threshold, ACTIVATE_RESET and
-    ACTIVATE_UPLOAD_CONFIG are untouched.
+(h) no scope creep: scan SSM enum, ACTIVATE_RESET and
+    ACTIVATE_UPLOAD_CONFIG are untouched; the NBIS bz3_threshold stays gone.
 """
 
 import os
@@ -186,8 +186,8 @@ class TestF38TlsPark(unittest.TestCase):
                       "SCAN_5E0A_FDT_UP_1", "SCAN_5E0A_UP_AE",
                       "SCAN_5E0A_FDT_UP_2", "SCAN_5E0A_NUM_STATES"):
             self.assertIn(state, src)
-        # biometric operating point (Ticket 43)
-        self.assertIn("img_dev_class->bz3_threshold = 14;", src)
+        # biometric operating point: Milan engine, no NBIS threshold
+        self.assertNotIn("bz3_threshold", src)
         # init zeroes the new fields
         init = _slice(src, "fpi_device_goodixtls5e0a_init",
                       "goodix5e0a_axis_correlation")

@@ -1666,13 +1666,6 @@ goodix5e0a_scan_start (FpDevice *dev)
   fpi_ssm_start (self->scan_ssm, goodix5e0a_scan_complete);
 }
 
-static void G_GNUC_UNUSED
-goodix5e0a_change_state (FpImageDevice *img_dev, FpiImageDeviceState state)
-{
-  if (state == FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON)
-    goodix5e0a_scan_start (FP_DEVICE (img_dev));
-}
-
 static void
 goodix5e0a_deactivate (FpImageDevice *img_dev)
 {
@@ -2136,15 +2129,6 @@ fpi_device_goodixtls5e0a_class_init (FpiDeviceGoodixTls5e0aClass * class)
   dev_class->cancel = dev_cancel;
   dev_class->suspend = goodix5e0a_suspend;
   dev_class->resume = goodix5e0a_resume;
-
-  /* Legacy image device vtable preserved for static test suites:
-   * img_dev_class->activate = dev_activate;
-   * img_dev_class->change_state = goodix5e0a_change_state;
-   * img_dev_class->deactivate = goodix5e0a_deactivate;
-   * img_dev_class->bz3_threshold = 14;
-   * img_dev_class->img_width = GOODIX_5E0A_SCALED_WIDTH;
-   * img_dev_class->img_height = GOODIX_5E0A_SCALED_HEIGHT;
-   */
 
   fpi_device_class_auto_initialize_features (dev_class);
 }

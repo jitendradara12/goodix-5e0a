@@ -28,11 +28,11 @@ class TestF23PAMReliability(unittest.TestCase):
             content = f.read()
         self.assertIn("scan_type = FP_SCAN_TYPE_PRESS", content)
 
-    def test_bz3_threshold_value(self):
-        """Verify minutiae matching bz3_threshold is calibrated to 14 (Ticket 43)."""
+    def test_bz3_threshold_is_gone(self):
+        """Milan engine replaced NBIS matching; the bz3_threshold pin is retired."""
         with open(repo("libfprint-driver", "goodix5e0a.c"), "r") as f:
             content = f.read()
-        self.assertIn("bz3_threshold = 14", content)
+        self.assertNotIn("bz3_threshold", content)
 
     def test_multi_stage_enroll_state_progression(self):
         """Simulate complete 8-stage enrollment workflow with touch and release cycle per stage."""
