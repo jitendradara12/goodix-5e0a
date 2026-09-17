@@ -1,8 +1,8 @@
 # Final hardware batch, ticket 95
 
 Run this checklist once, yourself, from the repository root in one Bash terminal.
-No rebuild or deployment is needed: the driver is unchanged. Prior software
-integration recorded **368 passed, zero skipped** in ticket 90; this checklist
+No rebuild or deployment is needed. Prior software integration passed the full
+required suite (see `tests/run_all_tests.sh`); this checklist
 has only been syntax-checked, not run on hardware. Tickets 87/88 already verified
 the safety phases, so do not repeat mandatory hands-off/20-second holds here.
 
