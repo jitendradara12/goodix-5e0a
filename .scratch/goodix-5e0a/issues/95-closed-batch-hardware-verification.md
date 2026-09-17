@@ -2,115 +2,85 @@
 
 **What to build:** One short checklist using the tools from 89–94, so the user tests the merged work once at the end.
 
-**Blocked by:** None. Hardware batch complete 2026-09-17; verdicts below.
+**Blocked by:** None. The user's final hardware batch ran 2026-09-17 17:28–17:45 IST.
 **Status:** closed
 
-**Verdict:** batch executed on the unchanged deployed driver; per-ticket
-conclusions below. Evidence: `/home/sastauser/goodix-final-20260917-172810-qt3hNS/`
-(421-line batch journal, isolated per-claim logs, matching report, timing JSON).
+**Verdict:** software integration confirmed (368 local / 366 clean-clone,
+explicit skips named); hardware run completed with evidence folder
+`/home/sastauser/goodix-final-20260917-172810-qt3hNS`. Per-ticket hardware
+conclusions below. The batch was aborted mid-flow by the operator's
+fingerprint-gated sudo and repaired inline; see deviations.
+
 **Owns:** Integration report and batch checklist; no driver changes.
 
 - [x] Record the combined software suite and unresolved defects, reusing the prior passing integration run rather than rerunning it for documentation-only changes.
 - [x] Provide configurable commands for labeled matching samples, resume recovery, activation timing and idle resource sampling. Keep privileged operations, fingerprint claims and suspend user-only.
 - [x] Reuse existing tools, isolate idle sampling from claims, and save evidence together. No per-ticket user checkpoints or hardcoded finger required.
 
-**Evidence:** Apply each ticket's confirm/falsify signatures to the final evidence. Missing or interrupted samples are inconclusive, not failures or passes.
-**Done:** Integration checks pass and the checklist is ready. Then mark ready-for-hardware-verify; the user's eventual run records hardware verdicts without blocking earlier implementation tickets.
+## Hardware run record, 2026-09-17 (folder goodix-final-20260917-172810-qt3hNS)
 
-## Integration handoff, 2026-09-17
+- Setup: `--no-timeout` confirmed in ExecStart; daemon restarted 17:29:20,
+  PID 29796, which remained MainPID for the entire batch (pre-sleep,
+  post-resume and post-claim snapshots identical). This also re-confirms
+  ticket 88 on this build: the resident daemon survived the sleep cycle.
+- Ticket 94 idle sample: identity unchanged, RSS 11600→11600 KiB,
+  CPU 0.0%; `pss_kib: permission-denied` as non-root, so `resource_sample`
+  is `incomplete` and the idle baseline is `inconclusive-because-metrics-
+  unavailable` per the sampler's own contract. Zero fprintd journal lines in
+  the window support the no-claims premise; no power/wakeup verdict is
+  claimed.
+- Ticket 89 samples: 2 genuine labeled claims (pre-sleep, post-resume),
+  both `verify-no-match (done)`, both `journal-and-milan-consistent`:
+  first-touch success 0/2, first-decision miss 1/1 per decision denominator.
+  This is an observed miss rate at n=2, not a population FRR estimate.
+- Ticket 93 timing: cold-start 431.680ms; TTL-expired recovery 427.478ms.
+  No in-TTL reuse intervals exist in this run (post-resume claim began
+  17:44:09, after the ~17:41:52 park expiry), so the earlier warm-path
+  attribution could not be re-confirmed on this run; the saved journals from
+  tickets 87/88 remain the only warm samples. Zero transport-error greps
+  (`timed out|Invalid ACK|verify-unknown|failed to`) in the 421-line batch
+  journal.
+- Ticket 90 sleep scenario: park at 17:36:52 (line 196), desktop suspend
+  boundary 17:40:15→17:40:59 with identical MainPID/start timestamp, claim
+  17:44:09. Because the claim crossed the 300s TTL, the journal shows
+  `unhealthy (expired), full re-handshake` (`reason=ttl-expired`) rather than
+  a disposal-specific signature. Disposal therefore stays
+  **inconclusive-because-claim-followed-TTL-expiry**: the run confirms clean
+  full re-handshake and working post-sleep capture (no transport errors, scan
+  completed, re-parked gen=4) but cannot separate suspend disposal from
+  ordinary expiry. The software-side idle-dispatch bypass defect stands
+  unchanged; this run neither fixes nor falsifies it.
 
-Checklist: `scripts/README-final-batch.md`. No new tool or driver change.
+## Deviations during the run
 
-Prior integration evidence, not a run by this documentation task: ticket 90 records
-`bash tests/run_all_tests.sh` with 368 passed, zero skipped. Tickets 89–94 are
-closed for their stated software scopes; closure does not imply hardware success.
-Ticket 90 explicitly falsifies unconditional idle parked-TLS disposal because
-public idle suspend bypasses the driver hooks. Green characterization is not a
-fix, and health-probe ACK does not establish safe encrypted recovery. This defect
-remains unresolved.
+- The operator's `sudo -v` triggered PAM fingerprint authentication before
+  the batch start; Ctrl-C + password completed it. Pre-restart, outside the
+  measured windows; recorded here rather than hidden.
+- `journalctl --since` rejected `date --iso-8601=ns`'s comma nanoseconds
+  (`Failed to parse timestamp`), leaving empty journals. Repaired live for
+  idle, pre-sleep and post-resume by converting the first comma to a period
+  (`${var/,/.}`); all three evidence files are complete. The checklist's
+  three `journalctl` lines are fixed in this commit.
+- Cleanup ran only via the operator's later interactive sudo (fingerprint
+  prompt, then password); the scripted `sudo -n` correctly refused and
+  warned. Ticket 91's contract held: the failure was explicit, evidence
+  intact, and no hidden auth occurred inside measured windows.
+- Wrong-finger sample skipped by the operator; no rejection data collected.
 
-The user runs one batch at the end with configurable enrollment slot, anonymous
-labels and output directory. Each claim has isolated client/journal evidence and
-an explicit done/cancelled/incomplete disposition. Saved files feed ticket 89's
-collector/report and ticket 93's timing analyzer. Optional ticket 94 sampling runs
-separately from claims and sleep; non-root PSS denial is acceptable incomplete
-evidence, not a reason to add privilege.
+## Conclusions
 
-The recovery scenario requires a real pre-sleep park, manual desktop suspend,
-pre/post timestamps and PID/start identity, then a post-resume claim without any
-restart in between. `verify-ticket88.sh` cannot serve as the post-resume probe
-because it restarts fprintd. Disposal and operational recovery have separate
-confirm/falsify/inconclusive signatures in the checklist. Unknown historical
-results stay unknown. Prior ticket 87/88 safety phases use the already-verified
-exception; no repeated mandatory hold phases or per-ticket checkpoints.
+- Ticket 89: tool confirmed on real evidence (2/2 samples fully attributed);
+  accuracy conclusion deliberately not drawn at n=2. Single next experiment:
+  a larger labeled set (≥20 genuine, ≥10 wrong) using the same claim block.
+- Ticket 90: unchanged — disposal invariant untested on hardware this run;
+  the recorded experiment remains valid for a later run if the claim is
+  issued inside the TTL (sleep within 5 minutes of the park).
+- Ticket 93: cold/expiry envelopes reproduce; warm attribution remains based
+  on the 87/88 samples; no tuning is proposed.
+- Ticket 94: sampler works; idle baseline inconclusive-because-PSS-denied.
+- Ticket 91: cleanup failure surfaced explicitly; no extra PAM prompts inside
+  any measured claim window.
+- Ticket 92: unchanged; CI does not run hardware.
 
-Validation performed here: read closed tickets 89–94 and relevant 87/88 evidence,
-reviewed existing verification source and CLI definitions, ran the three offline
-analysis tools' top-level `--help`, and passed `bash -n` for all eight Markdown
-Bash blocks individually and combined. Shell blocks were syntax-checked only.
-No hardware, sudo, claims, suspend, rebuild, deployment or commits were executed.
-Cleanup instructions use noninteractive sudo with an explicit failure warning;
-unsetting manager debug environment does not restore the running daemon's state.
-
-## Final integration review
-
-The orchestrator reran the local suite: 368 passed, zero skipped. A clean
-validation clone at `/tmp/opencode/goodix-clean-ziq7v9ax` passed 366 tests,
-with two explicit skips for absent `clear-0.pgm` and `fingerprint.pgm` images.
-Both native lanes ran. This used the existing Nix store and host environment,
-not a fresh machine or hosted CI run. Cleanup fixtures passed all 59 mocked
-runs there. Logs: `/tmp/opencode/clean-checkout-suite.log`,
-`/tmp/opencode/clean-tier5.log`, `/tmp/opencode/clean-checkout-cleanup.log`.
-
-Review fixes: cleanup fixtures use the platform temp directory; the integrated
-runner clears inherited suspend binaries and makes the shared native skip mode
-apply to suspend tests unless explicitly overridden. CI explicitly requires both
-native lanes and runs the cleanup fixture. No driver, patch or service changes.
-
-Hardware verdict remains pending. Single next experiment: the user runs the
-checklist once on the unchanged deployed driver and reviews the saved evidence.
-
-## Hardware verdicts 2026-09-17 (batch complete)
-
-Same daemon PID 29796 throughout; `--no-timeout` confirmed. Pre-sleep claim
-17:36:49–17:36:52 completed no-match and parked gen=2. Desktop suspend
-17:40:15–17:40:59, same PID/start identity after resume. Post-resume claim
-17:44:09 completed no-match and re-parked gen=4. Full-journal grep for
-`timed out|Invalid ACK|verify-unknown|failed to`: zero matches.
-
-- **89 matching:** two labeled genuine samples, both no-match with
-  journal-and-milan-consistent evidence; first-touch 0/2 at n=2. Recorded as
-  data, inconclusive for any population accuracy claim. The larger labeled set
-  remains future collection; no threshold change warranted or made.
-- **90 disposal:** inconclusive-because-park-expired-before-post-resume-claim.
-  Park gen=2 (17:36:52) expired ~17:41:52; the claim ran 17:44:09 with
-  `reason=ttl-expired`, so expiry fully explains the fresh handshake and
-  suspend disposal is indistinguishable. The software-path falsification stands.
-- **90 operation:** confirmed for this run. Post-sleep claim completed a full
-  fresh handshake, encrypted capture, verification and re-park with no errors
-  and no duplicate completion. Same-PID survival of real suspend established.
-- **93 timing:** cold-start 431.68ms, TTL-expired recovery 427.478ms,
-  consistent with prior ~430ms samples. No in-TTL reuse intervals occurred, so
-  the earlier chip-enable/D6 attribution is neither re-confirmed nor challenged.
-- **91/92 cleanup:** cleanup isolation held. Expired sudo produced a clean
-  noninteractive failure, explicit warning and manual command; no extra PAM
-  prompts inside the measured window. Ticket 92 had no hardware step.
-- **94 resources:** 20s idle sample, identity unchanged, RSS 11600 stable,
-  0.0% CPU. PSS denied non-root, so per the checklist this is incomplete, not a
-  baseline. Re-captured idle journal shows zero entries, supporting no-claims
-  for that window.
-
-## Checklist errata found during this run (fixed in scripts/README-final-batch.md)
-
-`date --iso-8601=ns` emits comma fractions which this system's `journalctl`
-rejects ("Failed to parse timestamp"), silently emptying all three journal
-captures. All three `journalctl` lines now use `${var/,/.}` substitution.
-Idle and pre-sleep journals were re-captured in-window with corrected
-timestamps; no evidence was fabricated. Also fixed in passing: re-importing a
-claim needs `grep -v ... || true` before `mv` (grep exits 1 when all lines are
-filtered) — noted here, not in the checklist since re-import is a repair path.
-
-Single next experiment, only if the disposal question is pursued: repeat the
-sleep scenario with the post-resume claim inside the 300s park TTL (resume and
-claim within ~4 minutes of the park), so reuse-vs-disposal is distinguishable.
-No driver change proposed.
+Single next experiment for the repo: the ≥20-sample labeled reliability set
+above. No driver, threshold or service change is proposed by this ticket.
