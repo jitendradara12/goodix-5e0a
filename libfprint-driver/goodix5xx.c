@@ -548,12 +548,6 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 max_pixels, guint32 
     }
 }
 
-static void G_GNUC_UNUSED
-dev_change_state (FpImageDevice * img_dev, FpiImageDeviceState state)
-{
-  if (state == FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON)
-    goodixtls5xx_scan_start (FPI_DEVICE_GOODIXTLS5XX (img_dev));
-}
 static void
 dev_deinit (FpImageDevice * img_dev)
 {
@@ -581,28 +575,6 @@ dev_init (FpImageDevice *img_dev)
     }
 
   fpi_device_open_complete (dev, NULL);
-}
-
-static void G_GNUC_UNUSED
-dev_deactivate (FpImageDevice *img_dev)
-{
-  FpDevice *dev = FP_DEVICE (img_dev);
-
-  /* Ticket 34: orphan any in-flight TLS activation; its completion will drop. */
-  goodix_activation_gen_bump (dev);
-
-  goodix_reset_state (dev);
-  GError *error = NULL;
-
-  goodix_shutdown_tls (dev, &error);
-
-  FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
-  goodixtls5xx_cleanup (FPI_DEVICE_GOODIXTLS5XX (dev));
-
-  if (cls->reset_state)
-    cls->reset_state (dev);
-  goodix_stop_read_loop (dev);
-  fpi_image_device_deactivate_complete (img_dev, error);
 }
 
 static void
