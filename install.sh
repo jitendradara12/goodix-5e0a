@@ -82,27 +82,81 @@ build_stage() (
     test -f "$tmp/stage/opt/goodix-libfprint/lib/libfprint-2.so.2"
 )
 
+usage() {
+    echo 'Usage: ./install.sh [--no-deps] [--dll FILE] [--build-only DIRECTORY] | --check | --uninstall | --help'
+    echo 'Run as your normal user. Default: private /opt install for systemd and root-run fprintd.'
+    echo '--no-deps: use installed dependencies on any distro; no package manager calls.'
+    echo '--build-only DIRECTORY: build a staging tree without sudo, systemd, or package installation.'
+    echo '--check: read-only runtime and desktop setup hints; does not test hardware.'
+    echo 'No automatic restart, PAM changes, or --no-timeout override. Uninstall preserves prints and distro packages.'
+}
+
+integration_hints() {
+    if command -v getenforce >/dev/null 2>&1 && [[ $(getenforce 2>/dev/null) == Enforcing ]]; then
+        echo "SELinux is Enforcing: the engine loader needs the memfd policy in packaging/selinux/"
+        echo '(see packaging/selinux/README.md) or enrollment fails with "failed to load GoodixEngineAdapter.dll".'
+    fi
+    if command -v authselect >/dev/null; then
+        echo 'Desktop/login setup is separate from driver installation. Keep a password session open.'
+        if ! command -v rpm >/dev/null || ! rpm -q fprintd-pam >/dev/null 2>&1; then
+            echo 'PAM gap: fprintd-pam is not installed. Fedora/RHEL: sudo dnf install fprintd-pam'
+        fi
+        if ! authselect current 2>/dev/null | grep -q with-fingerprint; then
+            echo 'PAM gap: with-fingerprint is not enabled. On an authselect-managed profile:'
+            echo 'sudo authselect check && sudo authselect enable-feature with-fingerprint'
+            echo 'sudo authselect apply-changes'
+        fi
+        echo 'Log out/in, then GNOME Settings > Users > Fingerprint Login. Other desktops vary.'
+    else
+        echo 'Desktop/login setup is separate: install your distro pam_fprintd module and follow its PAM documentation.'
+        echo 'Debian/Ubuntu: sudo apt install libpam-fprintd; sudo pam-auth-update'
+    fi
+}
+
+check_setup() {
+    echo "Architecture: $(uname -m) (engine requires x86_64)"
+    if command -v lsusb >/dev/null; then
+        lsusb -d 27c6:5e0a || echo 'Sensor 27c6:5e0a not found.'
+    else
+        echo 'Install usbutils to check for USB sensor 27c6:5e0a.'
+    fi
+    if command -v systemctl >/dev/null && [[ -d /run/systemd/system ]]; then
+        systemctl show fprintd.service -p LoadState -p User -p Environment || true
+    else
+        echo 'No running systemd: configure the D-Bus-activated fprintd environment with your service manager. See README.'
+    fi
+    command -v fprintd-enroll >/dev/null || echo 'Missing fprintd-enroll: install fprintd and its client utilities.'
+    integration_hints
+    echo 'These checks do not establish a working driver. Test with fprintd-enroll and fprintd-verify before enabling PAM.'
+}
+
 main() (
     set -euo pipefail
     umask 022
     local mode=install DLL=${GOODIX_ENGINE_DLL_PATH:-} script_dir tmp tool pc
-    case "$#:${1:-}" in
-        0:) ;;
-        1:--help)
-            echo 'Usage: ./install.sh [--dll /path/to/GoodixEngineAdapter.dll] | --uninstall | --help'
-            echo 'Run as your normal user, not sudo. Private /opt install; sudo is used for dependencies and installation.'
-            echo 'Requires systemd and root-run fprintd. No automatic restart, PAM changes, or --no-timeout override.'
-            echo 'Uninstall preserves enrolled prints and installed distro packages.'
-            return ;;
-        1:--uninstall) mode=uninstall ;;
-        2:--dll) [[ -n $2 && $2 != --* ]] || { fail '--dll requires a file'; exit 1; }; DLL=$2 ;;
-        *) fail 'Usage: ./install.sh [--dll /path/to/GoodixEngineAdapter.dll] | --uninstall | --help'; exit 1 ;;
-    esac
+    local no_deps=false output=''
+    while (($#)); do
+        case $1 in
+            --help) [[ $# == 1 ]] || { usage >&2; exit 1; }; usage; return ;;
+            --check|--uninstall)
+                [[ $# == 1 && $mode == install && $no_deps == false && -z $DLL ]] || { usage >&2; exit 1; }
+                mode=${1#--}; shift ;;
+            --no-deps) no_deps=true; shift ;;
+            --dll)
+                [[ $# -ge 2 && -n $2 && $2 != --* ]] || { usage >&2; fail '--dll requires a file'; exit 1; }
+                DLL=$2; shift 2 ;;
+            --build-only)
+                [[ $# -ge 2 && -n $2 && $2 != --* && $mode == install ]] || { usage >&2; exit 1; }
+                mode=build; output=$2; no_deps=true; shift 2 ;;
+            *) usage >&2; exit 1 ;;
+        esac
+    done
+    if [[ $mode == check ]]; then check_setup; return; fi
     # os-release is supplied by the OS; sourcing handles single/double quoted IDs.
     local ID='' ID_LIKE=''
     # shellcheck disable=SC1091
-    . /etc/os-release
-    if [[ $ID == nixos ]]; then
+    if [[ -r /etc/os-release ]]; then . /etc/os-release; fi
+    if [[ $ID == nixos && $mode != build ]]; then
         fail "NixOS detected. Import nixos-module.nix or nixosModules.default and rebuild your configuration."
         exit 1
     fi
@@ -114,12 +168,14 @@ main() (
         *' fedora '*|*' rhel '*) manager=dnf ;;
         *' arch '*) manager=pacman ;;
         *' suse '*|*' opensuse '*|*' opensuse-tumbleweed '*|*' opensuse-leap '*) manager=zypper ;;
-        *) fail "Unsupported OS: $ID. Use the NixOS module on NixOS; other installation paths are unverified."; exit 1 ;;
+        *) no_deps=true; echo "No dependency recipe for ${ID:-this OS}; checking installed tools/libraries instead. See README." ;;
     esac
-    for tool in "$manager" sudo systemctl; do
-        command -v "$tool" >/dev/null || { fail "Required command missing: $tool"; exit 1; }
-    done
-    [[ -d /run/systemd/system ]] || { fail 'This installer requires a running systemd system'; exit 1; }
+    if [[ $mode != build ]]; then
+        for tool in sudo systemctl; do
+            command -v "$tool" >/dev/null || { fail "Required command missing: $tool. For manual integration use --build-only DIRECTORY."; exit 1; }
+        done
+        [[ -d /run/systemd/system ]] || { fail 'Automatic installation requires systemd; use --build-only DIRECTORY for manual integration'; exit 1; }
+    fi
     local prefix=/opt/goodix-libfprint dropdir=/etc/systemd/system/fprintd.service.d
     if [[ $mode == uninstall ]]; then
         sudo bash -c "$(declare -f fail uninstall_files); uninstall_files \"\$@\"" bash "$prefix" "$dropdir"
@@ -127,9 +183,13 @@ main() (
         echo 'Restart when ready: sudo systemctl restart fprintd'
         return
     fi
-    [[ ! -e $prefix && ! -L $prefix && ! -e $dropdir && ! -L $dropdir ]] || {
-        fail "Refusing existing $prefix or $dropdir. No files overwritten; uninstall an owned installation first."; exit 1;
-    }
+    if [[ $mode == build ]]; then
+        [[ ! -e $output && ! -L $output ]] || { fail "Output already exists: $output"; exit 1; }
+    else
+        [[ ! -e $prefix && ! -L $prefix && ! -e $dropdir && ! -L $dropdir ]] || {
+            fail "Refusing existing $prefix or $dropdir. No files overwritten; uninstall an owned installation first."; exit 1;
+        }
+    fi
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     [[ -n $DLL || ! -f $script_dir/windows_driver/GoodixEngineAdapter.dll ]] || DLL="$script_dir/windows_driver/GoodixEngineAdapter.dll"
     [[ -n $DLL || ! -f /var/lib/fprint/GoodixEngineAdapter.dll ]] || DLL=/var/lib/fprint/GoodixEngineAdapter.dll
@@ -141,6 +201,8 @@ main() (
     tmp="$(mktemp -d)"
     trap 'rm -rf -- "$tmp"' EXIT
     cp -- "$DLL" "$tmp/GoodixEngineAdapter.dll"
+    if [[ $no_deps == false ]]; then
+    command -v "$manager" >/dev/null || { fail "Missing $manager; install dependencies manually and use --no-deps"; exit 1; }
     case $manager in
         apt-get)
             sudo apt-get update
@@ -156,7 +218,8 @@ main() (
             sudo zypper --non-interactive install git meson ninja pkg-config gcc gcc-c++ fprintd glib2-devel libusb-1_0-devel \
                 libgusb-devel pixman-devel openssl-devel mozilla-nss-devel mozilla-nspr-devel gobject-introspection-devel ;;
     esac
-    for tool in git meson ninja pkg-config gcc g++ fprintd-enroll; do
+    fi
+    for tool in git meson ninja pkg-config gcc g++; do
         command -v "$tool" >/dev/null || { fail "Required command missing after dependency installation: $tool"; exit 1; }
     done
     local missing=()
@@ -164,6 +227,13 @@ main() (
         pkg-config --exists "$pc" || missing+=("$pc")
     done
     [[ ${#missing[@]} == 0 ]] || { fail "Missing development libraries: ${missing[*]}"; exit 1; }
+    if [[ $mode == build ]]; then
+        build_stage "$tmp" "$script_dir" "$tmp/GoodixEngineAdapter.dll"
+        mkdir -- "$output"
+        cp -R -- "$tmp/stage/." "$output/"
+        echo "Staged under $output/opt/goodix-libfprint. Nothing installed or restarted. See README for service integration."
+        return
+    fi
     [[ $(systemctl show fprintd.service -p LoadState --value) == loaded ]] || { fail 'fprintd.service not available'; exit 1; }
     local daemon_user
     daemon_user=$(systemctl show fprintd.service -p User --value)
@@ -175,7 +245,7 @@ main() (
     echo 'No --no-timeout override: daemon idle-exit may discard parked TLS sessions.'
     echo 'Non-NixOS end-to-end operation is unverified. Keep password login available.'
     echo 'When ready: sudo systemctl restart fprintd; then fprintd-enroll and fprintd-verify.'
-    echo 'PAM is optional: Debian/Ubuntu use libpam-fprintd; configure your distro auth stack separately.'
+    integration_hints
     printf 'Uninstall: %q --uninstall\n' "$script_dir/install.sh"
     echo 'Uninstall preserves enrolled prints and installed distro packages.'
 )

@@ -3,7 +3,7 @@
 **What to build:** Make enroll work on SELinux-enforcing distros (Fedora/RHEL) instead of failing with a misleading `failed to load GoodixEngineAdapter.dll`. Either ship/apply SELinux policy for the engine loader, avoid the denied `memfd:write`, or at minimum surface the real `errno` + detect and document it.
 
 **Blocked by:** None.
-**Status:** ready-for-agent
+**Status:** ready-for-hardware-verify
 **Owns:** `libfprint-driver/goodix_milan.c` loader, `goodix-5e0a-integration.patch` sync, `install.sh`, README troubleshooting, portability test lane.
 
 ## Environment (failing run, 2026-09-17)
@@ -113,6 +113,30 @@ NixOS is unaffected (no SELinux); every Fedora/RHEL/CentOS install via `install.
 - Confirm (policy/fix works): `Goodix Milan engine init` success (no `returned FALSE`), enroll proceeds past stage 1 through 12 touches, zero `denied { write } ... goodix_engine` AVCs.
 - Falsify (still broken): identical `failed to load` + `Failed to start Milan enrollment context` + `denied { write }` triple on next enroll; or `write` allowed but a *new* `denied { execute/map }` on the `PROT_EXEC` mmap step (expected second wave — fix the policy, not the verdict).
 - Inconclusive-because-[flaw]: tested with `setenforce 0` only (workaround, not a fix); or tested on NixOS/permissive (wrong population — SELinux not exercised).
+
+## Agent implementation record, 2026-09-17 (software branch, awaiting hardware)
+
+- `libfprint-driver/goodix_milan.c` `load_pe_file` rewritten on the same W^X
+  memfd design: every failure path now converges on one `fail:` label that
+  logs `load_pe_file: <step> failed for <path>: errno=N (strerror)` with an
+  SELinux/AppArmor hint on EACCES/EPERM, releases fd/memfd/mappings/file
+  buffers, and preserves the old `-1` contract for retry logic. Steps named:
+  open/seek/PE header/allocate file/read/allocate image/PE section/memfd
+  create/write/mmap reserve/headers/section/arch_prctl/DllMain. Short
+  reads/writes and EINTR handled; corrupt/truncated headers now fail with
+  ENOEXEC instead of reading wild offsets (validated against the real DLL).
+- Shipped `packaging/selinux/goodix-engine.te` implementing exactly the
+  confirmed minimal rule `allow fprintd_t tmpfs_t:file { execute map read
+  write };` plus build/remove/verify instructions; no audit2allow, no
+  setenforce. `install.sh` warns on Enforcing with a pointer to it.
+- Installer: `--check` (read-only), `--no-deps` (any-distro, no package
+  manager), `--build-only DIR` (staged build without sudo/systemd).
+- Software verification: PE loader validated CPU-only against the real
+  vendor DLL (loads through DllMain, `Milan_v_3.02.00.20`) and against a
+  missing path (clean step/errno warning, no crash); full suite 362/362
+  green incl. new tier1 `test_f100_installer_flags.py`.
+- Pending: the hardware acceptance items (this file's checklist) — requires
+  the deployed-driver enforcing-distro run; do on next Fedora contact.
 
 ## Hardware verify record, 2026-09-17 ~21:21 IST (Fedora 44, Enforcing, /opt install)
 

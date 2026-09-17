@@ -3,7 +3,7 @@
 **What to build:** A Fedora user who runs `install.sh` successfully and enrolls via `fprintd-enroll` still gets no desktop integration: no Fingerprint Login row in GNOME Settings > Users, no GDM/login/sudo fingerprint. Make the repo either wire it up or document/detect it so "enroll works but Settings shows nothing" stops being a surprise.
 
 **Blocked by:** None (98 is the daemon-side counterpart; this is the session-side counterpart).
-**Status:** ready-for-agent
+**Status:** ready-for-hardware-verify
 **Owns:** `install.sh`, README (Fedora section), portability test lane. No driver changes.
 
 ## Observed on failing setup (2026-09-17, sastalinux, Fedora 44, GNOME)
@@ -40,6 +40,22 @@
 - [ ] Fresh Fedora GNOME box: documented path ends with visible Settings row + GDM fingerprint prompt, or installer states why not.
 - [ ] `bash tests/run_all_tests.sh` green including the new PAM-lane test.
 - [ ] Hardware verify: enroll via Settings (not just CLI) + `verify-match`, record `authselect current`, `rpm -q fprintd-pam`, Settings screenshot/description.
+
+## Agent implementation record, 2026-09-17 (software branch, option A)
+
+- `install.sh` now prints the PAM gap unmissably on every install and
+  `--check` run: missing `fprintd-pam` (rpm probe) and missing
+  `with-fingerprint` (authselect probe), each with the exact distro
+  commands from the "Suggested fix directions" A block. No automatic PAM
+  mutation anywhere (B was not taken); default install still never edits
+  PAM. Non-authselect distros get the generic pam_fprintd guidance.
+- README "PAM / desktop integration" section is copy-paste per distro,
+  with the Settings row + relogin note and "keep a password session open".
+- tier1 `test_f100_installer_flags.py` covers `--check` behavior and flag
+  documentation; full suite 362/362 green.
+- Pending hardware item: enroll via GNOME Settings on a real Fedora GNOME
+  box with `rpm -q fprintd-pam` + `authselect current` recorded. The
+  existing manual-workaround record below covers the commands themselves.
 
 ## Hardware verify record, 2026-09-17 (manual workaround, not repo fix)
 

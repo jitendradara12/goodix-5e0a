@@ -24,6 +24,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdarg.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <time.h>
@@ -717,37 +718,59 @@ static void* get_export(const char *want) {
 }
 
 static int load_pe_file(const char *path) {
-    int fd = open(path, O_RDONLY);
-    if (fd < 0) return -1;
+    const char *step = "open";
+    int fd = -1, mfd = -1;
+    u8 *img = NULL;
+    u32 sizeofimage = 0;
+    fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) goto fail;
+    step = "seek";
     g_filelen = lseek(fd, 0, SEEK_END);
-    lseek(fd, 0, SEEK_SET);
+    if (g_filelen < 0 || lseek(fd, 0, SEEK_SET) < 0) goto fail;
+    step = "PE header";
+    if (g_filelen < 64) { errno = ENOEXEC; goto fail; }
+    step = "allocate file";
     g_file = malloc(g_filelen);
-    if (!g_file || read(fd, g_file, g_filelen) != g_filelen) {
-        close(fd);
-        if (g_file) { free(g_file); g_file = NULL; }
-        return -1;
+    if (!g_file) goto fail;
+    step = "read";
+    for (size_t off = 0; off < (size_t)g_filelen;) {
+        ssize_t n = read(fd, g_file + off, g_filelen - off);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) { if (n == 0) errno = EIO; goto fail; }
+        off += n;
     }
     close(fd);
+    fd = -1;
 
+    /* This is a loader for a trusted vendor DLL, not a general PE runtime. */
+    step = "PE header";
     u32 e = f32(0x3c);
+    if (f16(0) != 0x5a4d || (u64)e + 264 > (u64)g_filelen ||
+        f32(e) != 0x4550 || f16(e + 4) != 0x8664 ||
+        f16(e + 24) != 0x20b) { errno = ENOEXEC; goto fail; }
     g_imagebase = f64(e + 24 + 24);
-    u32 sizeofimage = f32(e + 24 + 56);
+    sizeofimage = f32(e + 24 + 56);
     u32 entry = f32(e + 24 + 16);
     u16 nsec = f16(e + 6);
     u16 optsize = f16(e + 20);
     u64 sectbl = e + 24 + optsize;
     u32 hdrsize = f32(e + 24 + 60);
 
-    u8 *img = calloc(1, sizeofimage);
-    if (!img) return -1;
+    if (optsize < 240 || sectbl + (u64)nsec * 40 > (u64)g_filelen ||
+        !sizeofimage || hdrsize > (u64)g_filelen || hdrsize > sizeofimage ||
+        entry >= sizeofimage) { errno = ENOEXEC; goto fail; }
+    step = "allocate image";
+    img = calloc(1, sizeofimage);
+    if (!img) goto fail;
     memcpy(img, g_file, hdrsize);
 
     for (int i = 0; i < nsec; i++) {
         u64 s = sectbl + i * 40;
         u32 vaddr = f32(s + 12), rawsize = f32(s + 16), rawptr = f32(s + 20);
-        if (rawsize && rawptr + rawsize <= (u32)g_filelen) {
-            memcpy(img + vaddr, g_file + rawptr, rawsize);
-        }
+        step = "PE section";
+        if ((u64)rawptr + rawsize > (u64)g_filelen ||
+            (u64)vaddr + rawsize > sizeofimage) { errno = ENOEXEC; goto fail; }
+        if (rawsize) memcpy(img + vaddr, g_file + rawptr, rawsize);
     }
 
     u32 imprva = f32(e + 24 + 112 + 8 * 1);
@@ -772,25 +795,34 @@ static int load_pe_file(const char *path) {
         }
     }
 
-    int mfd = memfd_create("goodix_engine", MFD_CLOEXEC);
-    if (mfd < 0) { free(img); return -1; }
-    if (write(mfd, img, sizeofimage) != (ssize_t)sizeofimage) {
-        close(mfd); free(img); return -1;
+    step = "memfd_create";
+    mfd = memfd_create("goodix_engine", MFD_CLOEXEC);
+    if (mfd < 0) goto fail;
+    step = "memfd write";
+    for (size_t off = 0; off < sizeofimage;) {
+        ssize_t n = write(mfd, img + off, sizeofimage - off);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) { if (n == 0) errno = EIO; goto fail; }
+        off += n;
     }
     free(img);
+    img = NULL;
 
+    step = "mmap reserve";
     void *m = mmap((void*)g_imagebase, sizeofimage, PROT_NONE,
                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
-    if (m == MAP_FAILED || m != (void*)g_imagebase) {
-        close(mfd);
-        return -1;
+    if (m == MAP_FAILED) goto fail;
+    if (m != (void*)g_imagebase) {
+        munmap(m, sizeofimage);
+        errno = EADDRNOTAVAIL;
+        goto fail;
     }
     g_image = m;
 
+    step = "mmap headers";
     u32 hdrmap = (hdrsize + 0xfff) & ~0xfffu;
-    if (mmap(g_image, hdrmap, PROT_READ, MAP_PRIVATE | MAP_FIXED, mfd, 0) == MAP_FAILED) {
-        close(mfd); return -1;
-    }
+    if (mmap(g_image, hdrmap, PROT_READ, MAP_PRIVATE | MAP_FIXED, mfd, 0) == MAP_FAILED)
+        goto fail;
 
     for (int i = 0; i < nsec; i++) {
         u64 s = sectbl + i * 40;
@@ -803,11 +835,12 @@ static int load_pe_file(const char *path) {
         int prot = PROT_READ;
         if (chars & 0x20000000) prot |= PROT_EXEC;
         if (chars & 0x80000000) prot |= PROT_WRITE;
-        if (mmap(g_image + vaddr, seglen, prot, MAP_PRIVATE | MAP_FIXED, mfd, vaddr) == MAP_FAILED) {
-            close(mfd); return -1;
-        }
+        step = "mmap section";
+        if (mmap(g_image + vaddr, seglen, prot, MAP_PRIVATE | MAP_FIXED, mfd, vaddr) == MAP_FAILED)
+            goto fail;
     }
     close(mfd);
+    mfd = -1;
 
     u32 tlsrva = f32(e + 24 + 112 + 8 * 9);
     if (tlsrva) {
@@ -836,11 +869,30 @@ static int load_pe_file(const char *path) {
     *(u64*)(g_teb + 0x58) = (u64)g_tls_array;
     *(u64*)(g_teb + 0x60) = (u64)g_peb;
 
-    if (syscall(SYS_arch_prctl, ARCH_SET_GS, g_teb) != 0) return -1;
+    step = "arch_prctl";
+    if (syscall(SYS_arch_prctl, ARCH_SET_GS, g_teb) != 0) goto fail;
 
     int(MS *DllMain)(void*, u32, void*) = (void*)(g_image + entry);
     int r = DllMain((void*)g_imagebase, DLL_PROCESS_ATTACH, 0);
-    return r ? 0 : -2;
+    if (r) return 0;
+    step = "DllMain";
+    errno = ENOEXEC;
+
+fail:;
+    int saved_errno = errno;
+    g_warning("5e0a: %s: %s failed for %s: errno=%d (%s)%s",
+              __func__, step, path, saved_errno, g_strerror(saved_errno),
+              saved_errno == EACCES || saved_errno == EPERM
+              ? "; check file permissions and SELinux/AppArmor audit denials; see README" : "");
+    if (fd >= 0) close(fd);
+    if (mfd >= 0) close(mfd);
+    free(img);
+    if (g_image) { munmap(g_image, sizeofimage); g_image = NULL; }
+    free(g_file);
+    g_file = NULL;
+    g_filelen = 0;
+    errno = saved_errno;
+    return -1;
 }
 
 /* Engine Function Pointers */
@@ -875,6 +927,7 @@ static const char *default_search_paths[] = {
 gboolean goodix_milan_init (const char *dll_path) {
     if (g_milan_available) return TRUE;
 
+    g_nshims = 0;
     register_all_shims();
 
     const char *target = dll_path;
@@ -883,7 +936,7 @@ gboolean goodix_milan_init (const char *dll_path) {
     }
 
     int loaded = -1;
-    if (target && access(target, R_OK) == 0) {
+    if (target && *target) {
         loaded = load_pe_file(target);
     } else {
         for (int i = 0; default_search_paths[i]; i++) {
