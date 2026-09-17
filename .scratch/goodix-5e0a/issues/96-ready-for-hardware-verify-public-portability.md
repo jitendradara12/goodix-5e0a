@@ -15,10 +15,11 @@ Predicted signatures (software branch, confirm/falsify):
 - New tier1 portability test green: no `/home/sastauser` in driver/patch/
   install.sh/flake.nix; DLL search paths agree between .c and patch.
 - `nix flake show` succeeds; `bash -n install.sh` clean.
-- Hardware branch (later, hands-on): `sudo ./install.sh` on a fresh path
-  activates the sensor and `fprintd-verify` matches → confirms portability;
-  TLS activation failure on a second unit → confirms per-unit PSK scope
-  (ticket 59) and falsifies per-model scope.
+- Hardware branch (later, hands-on): deploy via the NixOS module on NixOS,
+  or test `sudo ./install.sh` on a supported non-NixOS distribution. A working
+  activation and verification supports compatibility only for that tested setup.
+  TLS failure on a second unit is inconclusive about PSK scope without further
+  diagnosis; it does not establish that the key differs.
 
 Predicted journal signatures (hardware verify phase, per protocol):
 - Hands off 20s: silent, no cycles.
@@ -37,7 +38,21 @@ Predicted journal signatures (hardware verify phase, per protocol):
       → 371/371 passed, 0 failed, 1 skip (105s); tier-1 lane re-run 277/277
       after a later README/nix description edit. All agents reported patch
       sync (9), portability (4), flake show/check, and a real Nix build green.
-- [ ] Hardware verify: install.sh end-to-end + 2-phase protocol.
+- [ ] Hardware verify: NixOS module deployment + 2-phase protocol.
+- [ ] Non-NixOS installer: end-to-end run on a supported distribution.
+
+## NixOS installer follow-up
+
+The user ran `sudo ./install.sh` on NixOS following the agent's incorrect
+verification instructions. It exited with `no supported package manager found`
+before package installation. The preceding fingerprint prompts came from sudo;
+the transcript does not establish a successful fingerprint match.
+
+The installer now detects NixOS before root/DLL checks and temporary staging,
+and directs users to the NixOS module. README links to that installation path.
+The portability suite passed all five tests, including executing the real
+installer unprivileged on NixOS from an empty directory with a missing DLL.
+No deployment or hardware verification was performed for this fix.
 
 ## Decisions (user, 2026-09-17)
 

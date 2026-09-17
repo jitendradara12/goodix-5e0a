@@ -117,6 +117,9 @@ else
 
     echo -n "Evaluating NixOS module configuration... "
     nix-instantiate --parse "${ROOT_DIR}/nixos-module.nix" > /dev/null 2>&1 && echo -e "${GREEN}OK${NC}" || (echo -e "${RED}FAIL${NC}" && exit 1)
+
+    echo -n "Evaluating NixOS module effective configuration (ticket 96)... "
+    nix-instantiate --eval --strict "${ROOT_DIR}/tests/tier1_feature/test_f96_nixos_module.nix" > /dev/null 2>&1 && echo -e "${GREEN}OK${NC}" || (echo -e "${RED}FAIL${NC}" && exit 1)
 fi
 
 echo ""

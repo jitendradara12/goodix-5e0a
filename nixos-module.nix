@@ -16,12 +16,12 @@ in
     pamServices = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "Enable fingerprint authentication in login/sudo/sddm/hyprlock/swaylock.";
+      description = "Default fingerprint authentication for login/sudo/sddm/hyprlock/swaylock. Other PAM services retain NixOS defaults; explicit per-service settings override this option.";
     };
     dllFile = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
-      default = null;
-      description = "Path to GoodixEngineAdapter.dll to install to /var/lib/fprint/GoodixEngineAdapter.dll.";
+      default = ./windows_driver/GoodixEngineAdapter.dll;
+      description = "Vendor engine used by fprintd. Null keeps manual DLL lookup. Path contents enter the world-readable Nix store.";
     };
   };
 
@@ -41,21 +41,22 @@ in
 
     # 2. Install udev rules for the scanner
     services.udev.packages = [ libfprint-goodix ];
+    # 2. USB access rule. The shipped libfprint rules file is empty for 5e0a
+    # (built with udev hwdb disabled), so the module provides it explicitly.
+    # fprintd runs as root; 0660 + uaccess instead of world-writable 0666.
     services.udev.extraRules = ''
-      SUBSYSTEM=="usb", ATTRS{idVendor}=="27c6", ATTRS{idProduct}=="5e0a", MODE="0666", TAG+="uaccess"
+      SUBSYSTEM=="usb", ATTRS{idVendor}=="27c6", ATTRS{idProduct}=="5e0a", MODE="0660", TAG+="uaccess"
     '';
 
     # 3. Opt in to PAM fingerprint authentication across system auth services.
-    security.pam.services = lib.mkIf cfg.pamServices {
-      login.fprintAuth = true;
-      sudo.fprintAuth = true;
-      hyprlock.fprintAuth = lib.mkDefault true;
-      swaylock.fprintAuth = lib.mkDefault true;
-      sddm.fprintAuth = lib.mkDefault true;
-    };
+    security.pam.services = lib.genAttrs
+      [ "login" "sudo" "hyprlock" "swaylock" "sddm" ]
+      (_: { fprintAuth = lib.mkDefault cfg.pamServices; });
 
-    systemd.tmpfiles.rules = lib.mkIf (cfg.dllFile != null) [
-      "C /var/lib/fprint/GoodixEngineAdapter.dll 0444 root root - ${cfg.dllFile}"
-    ];
+    # An explicit store path follows configuration updates and rollbacks, unlike
+    # copy-once tmpfiles rules that leave an older engine in /var/lib/fprint.
+    systemd.services.fprintd.environment = lib.mkIf (cfg.dllFile != null) {
+      GOODIX_ENGINE_DLL_PATH = toString cfg.dllFile;
+    };
   };
 }

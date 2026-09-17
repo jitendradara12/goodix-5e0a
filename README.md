@@ -33,24 +33,19 @@ The driver opens a TLS 1.2 PSK channel to the sensor and uses hardware FDT touch
 
 ## Install — any distro
 
-Requirements: Linux x86_64, `sudo`, the sensor connected over USB (`lsusb` must show `27c6:5e0a`), and `GoodixEngineAdapter.dll`.
+Requirements: Linux x86_64 with systemd, the sensor connected over USB (`lsusb` must show `27c6:5e0a`), and `GoodixEngineAdapter.dll`. Debian/Ubuntu/Fedora/Arch/openSUSE are recognized; anything else is refused.
+
+On NixOS, skip to [NixOS / flake](#nixos--flake) — `install.sh` refuses to run there.
 
 Get the DLL from your Windows dual-boot installation. Search `C:\Windows\System32\WinDriver\` or the Goodix driver folders for `GoodixEngineAdapter.dll`. Alternatively, extract it from your laptop vendor's Windows fingerprint driver installer. Put it in `./windows_driver/` after cloning, or pass its location with `--dll`.
 
 ```bash
 git clone https://github.com/jitendradara12/goodix-5e0a.git
 cd goodix-5e0a
-sudo ./install.sh            # or: sudo ./install.sh --dll /path/to/GoodixEngineAdapter.dll
+./install.sh                        # or: ./install.sh --dll /path/to/GoodixEngineAdapter.dll
 ```
 
-The installer:
-
-- Installs build dependencies using apt, dnf, pacman or zypper.
-- Clones the pinned libfprint fork, applies the patch and builds with Meson into `/usr/local`.
-- Installs udev rules and the DLL at `/var/lib/fprint/GoodixEngineAdapter.dll`.
-- Reloads udev and fixes up `ldconfig` so the new library is found.
-
-Then enroll and test. The package providing the fprintd CLI differs by distro; install it if these commands are missing.
+Run as your normal user; the script uses sudo only to install dependencies and files. It builds the driver unprivileged, installs it to a private `/opt/goodix-libfprint`, and adds a systemd drop-in so only fprintd uses that copy. It does not replace your system libfprint, does not touch PAM or USB permissions, and does not restart services. `./install.sh --uninstall` removes only files this script installed.
 
 ```bash
 sudo systemctl restart fprintd
@@ -58,13 +53,15 @@ fprintd-enroll
 fprintd-verify
 ```
 
-Most distros ship `pam_fprintd` with fprintd. Enable fingerprint authentication in your auth stack: `pam-auth-update` on Ubuntu/Debian, `authselect enable-feature with-fingerprint` on Fedora, or edit `/etc/pam.d/sudo` and `/etc/pam.d/system-local-login` on Arch following its PAM guidance. Keep a password-authenticated session open while changing PAM.
+PAM is opt-in per distro: Debian/Ubuntu need `libpam-fprintd` plus `pam-auth-update`, Fedora uses `authselect enable-feature with-fingerprint`, Arch expects manual edits to `/etc/pam.d/`. Keep a password-authenticated session open while changing PAM. Note the daemon is left stock, so its idle exit may discard parked TLS sessions; unlock latency can be worse than on NixOS until a service override is added.
 
-**This libfprint build contains ONLY the `goodixtls5e0a` driver.** It replaces your system libfprint for fingerprint authentication, so other fingerprint readers would stop working. The target laptops have only this sensor.
+**Non-NixOS installation is new and end-to-end unverified** — treat it as beta and keep password login working.
 
 ## NixOS / flake
 
 Add the input to your flake, then import the module in your NixOS configuration with `goodix` available from the flake inputs:
+
+The module uses the DLL bundled in `windows_driver/` by default. Set `services.fprintd.goodix.dllFile` to use a different engine copy, or `null` to manage it manually.
 
 ```nix
 # flake.nix
@@ -72,12 +69,13 @@ inputs.goodix.url = "github:jitendradara12/goodix-5e0a";
 
 # In your NixOS configuration:
 imports = [ goodix.nixosModules.default ];
-services.fprintd.enable = true; # Already set up by the module
-services.fprintd.goodix.dllFile = ./secrets/GoodixEngineAdapter.dll;
-services.fprintd.goodix.pamServices = true; # Opt-in for login/sudo/sddm/hyprlock/swaylock
+# Optional: use a different GoodixEngineAdapter.dll (default: the bundled one)
+# services.fprintd.goodix.dllFile = ./secrets/GoodixEngineAdapter.dll;
+# Optional: fingerprint for login/sudo/sddm/hyprlock/swaylock (default: false)
+services.fprintd.goodix.pamServices = true;
 ```
 
-Omit `dllFile` if you place the DLL manually in `/var/lib/fprint/`. The module keeps fprintd resident because daemon idle-exit destroys parked TLS sessions, and adds the `uaccess` udev rule.
+With `dllFile = null`, place the DLL manually in `/var/lib/fprint/`. The module adds a restrictive USB rule for the sensor (0660 + uaccess; the package's shipped rules file is empty for this device). The module keeps fprintd resident because daemon idle-exit destroys parked TLS sessions. `pamServices` sets the fingerprint default for those five services only; other PAM services keep standard NixOS behavior, and explicit per-service settings override it.
 
 At runtime the DLL search order is `/var/lib/fprint` → `/run/current-system/sw/lib` → `/etc/goodix` → `/usr/lib/goodix` → `/usr/local/lib`. Override it with `GOODIX_ENGINE_DLL_PATH`, set in the fprintd service environment.
 
