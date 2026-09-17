@@ -18,25 +18,20 @@
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
-#include <arpa/inet.h>
 #include <errno.h>
 #include <glib.h>
-#include <netinet/in.h>
-#include <openssl/crypto.h>
+#include <pthread.h>
+#include <string.h>
+#include <sys/socket.h>
+
 #include <openssl/err.h>
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <openssl/tls1.h>
-#include <poll.h>
-#include <pthread.h>
-#include <signal.h>
-#include <string.h>
-#include <sys/socket.h>
 
 #include "drivers_api.h"
 #include "fp-device.h"
 #include "fpi-device.h"
-#include "glibconfig.h"
 #include "goodix.h"
 #include "goodixtls.h"
 
@@ -132,12 +127,6 @@ goodix_tls_client_write (GoodixTlsServer *self, guint8 *data, guint16 length)
 {
   return write (self->client_fd, data, length * sizeof (guint8));
 }
-int
-goodix_tls_client_read (GoodixTlsServer *self, guint8 *data, guint16 length)
-{
-  return read (self->client_fd, data, length * sizeof (guint8));
-}
-
 int
 goodix_tls_server_read (GoodixTlsServer *self, guint8 *data,
                         guint32 length, GError **error)
