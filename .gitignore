@@ -4,8 +4,6 @@ __pycache__/
 *$py.class
 
 # Windows driver binaries & dumps
-# *.dll
-# windows_driver/
 *.bin
 
 # Captured images / test artifacts
@@ -47,6 +45,7 @@ legacy-experiments/test_best_of_n_adversarial
 
 # Internal AI agent workdir
 .agents/
+.pi/
 session-*.md
 legacy-experiments/test_goodix_loader
 legacy-experiments/test_goodix_shootout
@@ -61,5 +60,3 @@ psk*.bin
 dpapi*.bin
 *fingerprint*.pgm
 *bios*.bin
-
-legacy-experiments/benchmark_cross_captures
