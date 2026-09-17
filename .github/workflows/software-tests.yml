@@ -20,6 +20,7 @@ jobs:
         run: |
           bash tests/fixtures/runner_summary/run_check.sh
           bash tests/fixtures/native_lane/run_check.sh
+          python3 tests/fixtures/verify_cleanup/check.py
       - name: Build and run software suite, native harness required
         env:
           GOODIX_NATIVE_TESTS: required

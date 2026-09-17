@@ -25,7 +25,7 @@
 ## Software validation
 
 ```bash
-python3 -m unittest discover -s tests -p test_resource_sampler.py -v
+python3 -m unittest tests.tier4_realworld.test_resource_sampler -v
 python3 scripts/sample_fprintd_resources.py --help
 ```
 
