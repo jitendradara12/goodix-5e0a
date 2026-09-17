@@ -17,7 +17,7 @@ Context: ticket 26 closed as could-not-reproduce (single cold-boot
 bad-record-MAC event, true-poweroff boot clean); Exp 26.4 falsified the
 bb020001 slot as the TLS slot and Exp 26.5 proved 0xe0 rejected in both
 encodings. The strip removes two per-activation USB round-trips plus
-journal noise and the factory secret (docs/UPSTREAM.md section 6).
+journal noise and the factory secret (see the ticket-26 provenance notes).
 
 Not covered here: live activation sequencing (needs hardware/fprintd).
 """
