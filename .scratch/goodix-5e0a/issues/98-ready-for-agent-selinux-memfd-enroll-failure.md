@@ -93,7 +93,7 @@ NixOS is unaffected (no SELinux); every Fedora/RHEL/CentOS install via `install.
 
 ## Suggested fix directions (maintainer picks)
 
-- **A (preferred): ship SELinux policy.** Generate with `ausearch -m avc -ts recent | audit2allow`, e.g. `allow fprintd_t tmpfs_t:file { read write map }` (+ `execute` if the exec mapping trips next — expect a second denial wave on `mmap PROT_EXEC` once `write` is allowed). Ship a `.te`/`.pp` + `install.sh` apply on dnf/zypper systems, uninstall removal, and a tier1 test asserting the module source allows exactly the memfd rule.
+- **A (preferred): ship SELinux policy.** Confirmed minimal rule on Fedora 44 Enforcing: `allow fprintd_t tmpfs_t:file { execute map read write };` (full chain was `write` → `map` → `read` → `execute`, one per iteration). Build with `ausearch -m avc -ts boot` (not `recent` — `recent` drops older perms and regressed `write` at 21:20), strip unrelated `tlp_t dac_override` noise, ship a `.te`/`.pp` + `install.sh` apply on dnf/zypper systems, uninstall removal, and a tier1 test asserting the module source allows exactly the memfd rule.
 - **B: avoid memfd.** Anonymous `MAP_PRIVATE` mappings filled with `memcpy` instead of `memfd + write + mmap(MAP_FIXED)` would sidestep `tmpfs:file write` entirely, at the cost of revisiting the ticket-72 W^X rationale. Needs a security note if chosen.
 - **C (minimum, do regardless): observability + docs.**
   - Log `__func__`, step (`memfd_create/write/mmap`), target path, `errno`/`strerror`, and `getenforce` hint in the `failed to load` path; distinguish "file not readable" from "PE mapping failed".
@@ -140,7 +140,9 @@ NixOS is unaffected (no SELinux); every Fedora/RHEL/CentOS install via `install.
 sudo setenforce 0
 fprintd-enroll   # should now advance past stage 1
 sudo setenforce 1
-# permanent (needs audit log access):
-sudo ausearch -m avc -ts recent | audit2allow -M fprintd-goodix
+# permanent (use -ts boot, NOT -ts recent: recent drops older perms and
+# regresses write; strip any unrelated tlp_t lines audit2allow picks up):
+sudo ausearch -m avc -ts boot | audit2allow -M fprintd-goodix
 sudo semodule -i fprintd-goodix.pp
+# final rule must read: allow fprintd_t tmpfs_t:file { execute map read write };
 ```
