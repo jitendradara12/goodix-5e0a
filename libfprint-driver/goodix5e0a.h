@@ -54,9 +54,8 @@
 
 /* Host TLS PSK for TLS_PSK_WITH_AES_128_CBC_SHA256 (flags 0xbb020001).
  * Captured once from the Windows driver stack (DPAPI-decrypted material);
- * no runtime derivation is known. Per-unit vs per-model scope is unconfirmed
- * (upstream disclosure is tracked in .scratch ticket history). Required for
- * the TLS handshake; the driver performs no on-device key provisioning.
+ * no runtime derivation is known. Per-unit vs per-model scope is unconfirmed.
+ * Required for the TLS handshake; the driver performs no on-device key provisioning.
  * Ticket 26 closure: the 0xe4-readable bb020001 slot always reports factory
  * bytes even while TLS with this key succeeds, and 0xe0 writes are rejected
  * by the MCU, so activation talks TLS directly with this key. */
