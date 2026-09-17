@@ -25,9 +25,6 @@ G_BEGIN_DECLS
  * Returns TRUE on success, FALSE on failure. */
 gboolean goodix_milan_init (const char *dll_path);
 
-/* Check if the Milan engine is loaded and available. */
-gboolean goodix_milan_is_available (void);
-
 /* Get engine version string (e.g. "Milan_v_3.02.00.20"). */
 const char *goodix_milan_get_version (void);
 
@@ -93,8 +90,5 @@ guint goodix_milan_frame_quality (const uint8_t *pixels,
                                   int height,
                                   guint *out_quality,
                                   guint *out_overlap);
-
-/* Teardown and close the Milan engine. */
-void goodix_milan_close (void);
 
 G_END_DECLS

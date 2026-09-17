@@ -987,10 +987,6 @@ gboolean goodix_milan_init (const char *dll_path) {
     return TRUE;
 }
 
-gboolean goodix_milan_is_available (void) {
-    return g_milan_available;
-}
-
 const char *goodix_milan_get_version (void) {
     return g_milan_version;
 }
@@ -1189,8 +1185,4 @@ fail_closed:
         if (unpacked[i]) m_templateDelete (unpacked[i]);
     g_free (unpacked);
     return 0;
-}
-
-void goodix_milan_close (void) {
-    /* Process lifetime mappings intentionally preserved */
 }
