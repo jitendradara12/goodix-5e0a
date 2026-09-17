@@ -7,7 +7,7 @@ import unittest
 import os
 import subprocess
 import hashlib
-from tests.repo_paths import repo, NIXOS_MODULE_DIR
+from tests.repo_paths import repo
 
 class TestM1C1LifecycleAdversarial(unittest.TestCase):
     """
@@ -24,8 +24,7 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
         self.goodix5e0a_h = repo("libfprint-driver", "goodix5e0a.h")
         self.goodix_c = repo("libfprint-driver", "goodix.c")
         self.goodix_h = repo("libfprint-driver", "goodix.h")
-        self.repo_patch = repo("0001-Add-driver-support-for-Goodix-27c6-5e0a.patch")
-        self.nixos_patch = str(NIXOS_MODULE_DIR / "0001-Add-driver-support-for-Goodix-27c6-5e0a.patch")
+        self.repo_patch = repo("goodix-5e0a-integration.patch")
         self.c_test_bin = os.environ.get("GOODIX_NATIVE_HARNESS", "")
 
     # --------------------------------------------------------------------------
@@ -186,22 +185,21 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
     # --------------------------------------------------------------------------
 
     def test_patch_sha256_checksum_parity(self):
-        """Verify SHA256 checksum parity between repo patch and NixOS flake patch."""
-        self.assertTrue(os.path.exists(self.repo_patch), f"Missing repo patch: {self.repo_patch}")
+        """The integration patch must stay small and must not embed driver sources.
 
-        with open(self.repo_patch, "rb") as f:
-            repo_hash = hashlib.sha256(f.read()).hexdigest()
-
-        self.assertGreater(os.path.getsize(self.repo_patch), 10000)
-
-        if not os.path.exists(self.nixos_patch):
-            self.skipTest("external NixOS flake tree absent")
-        with open(self.nixos_patch, "rb") as f:
-            nixos_hash = hashlib.sha256(f.read()).hexdigest()
-
-        if repo_hash != nixos_hash:
-            self.skipTest("NixOS flake patch pending deployment sync")
-        self.assertEqual(repo_hash, nixos_hash, "Patch checksums must match exactly")
+        Ticket 97: driver sources live only in libfprint-driver/ and are copied
+        in by the flake. If this patch starts touching goodixtls driver files,
+        a second embedded copy exists again and drift becomes possible.
+        """
+        self.assertTrue(os.path.exists(self.repo_patch), f"Missing integration patch: {self.repo_patch}")
+        with open(self.repo_patch, "r", encoding="utf-8") as f:
+            content = f.read()
+        for path in content.splitlines():
+            self.assertFalse(
+                path.startswith("diff --git a/libfprint/drivers/goodixtls/"),
+                f"integration patch embeds driver file: {path}",
+            )
+        self.assertLess(os.path.getsize(self.repo_patch), 20000, "integration patch grew; driver sources must be copied, not patched in")
 
     # --------------------------------------------------------------------------
     # 5. Native C Empirical Invariant Execution

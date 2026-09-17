@@ -40,10 +40,11 @@ class TestF22NixDerivation(unittest.TestCase):
             self.assertIn(dep, content)
 
     def test_nix_derivation_patch_included(self):
-        """Verify patch is listed in patches attribute."""
+        """Verify the integration patch is listed and driver sources are copied in."""
         with open(self.derivation_file, "r") as f:
             content = f.read()
-        self.assertIn("./0001-Add-driver-support-for-Goodix-27c6-5e0a.patch", content)
+        self.assertIn("./goodix-5e0a-integration.patch", content)
+        self.assertIn("cp ${./libfprint-driver}", content)
 
     def test_fprintd_override_in_nixos_module(self):
         """Verify default.nix overrides fprintd with libfprint-goodix package."""

@@ -11,17 +11,15 @@ stdenv.mkDerivation {
     hash = "sha256-6llzCeVOtv0HRaNdB8mMzZCA8RBZtGkSCErsXwKE/vk=";
   };
 
+  # Upstream integration only (meson registration, small core fixes).
+  # Driver sources are copied from libfprint-driver/ below, so there is no
+  # second embedded copy to keep in sync (replaces the 6k-line patch).
   patches = [
-    ./0001-Add-driver-support-for-Goodix-27c6-5e0a.patch
+    ./goodix-5e0a-integration.patch
   ];
 
   postPatch = ''
-    if ! grep -q "1.94.9" meson.build; then
-      sed -i "s/1.94.5/1.94.9/" meson.build
-    fi
-    if ! grep -q "FP_DEVICE_RETRY_TOO_FAST" libfprint/fp-device.h; then
-      sed -i "s/FP_DEVICE_RETRY_REMOVE_FINGER,/FP_DEVICE_RETRY_REMOVE_FINGER,\n  FP_DEVICE_RETRY_TOO_FAST,/" libfprint/fp-device.h
-    fi
+    cp ${./libfprint-driver}/*.c ${./libfprint-driver}/*.h libfprint/drivers/goodixtls/
   '';
 
   nativeBuildInputs = [

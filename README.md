@@ -20,7 +20,8 @@ The driver opens a TLS 1.2 PSK channel to the sensor and uses hardware FDT touch
 ## What's in this repo
 
 - `libfprint-driver/`: driver sources.
-- `0001-*.patch`: the same sources as a patch against the pinned libfprint fork.
+- `libfprint-driver/`: driver sources (single source of truth).
+- `goodix-5e0a-integration.patch`: upstream-integration changes only (meson registration, small core fixes) — applied by the flake and install.sh; driver sources are copied in from `libfprint-driver/`.
 - `libfprint-goodix.nix`, `nixos-module.nix`, `flake.nix`: first-party Nix packaging and integration.
 - `install.sh`: installer for other Linux distributions.
 - `windows_driver/`: the vendor DLL.
@@ -102,7 +103,7 @@ Realme Book Prime is tested. The USB sensor must be `27c6:5e0a`, with firmware s
 bash tests/run_all_tests.sh
 ```
 
-These are software tests; no hardware is needed. Some tiers need Nix for the native harness; see [scripts/README-native-tests.md](scripts/README-native-tests.md). Keep the patch synchronized: `libfprint-driver/` sources are byte-embedded in `0001-*.patch`, checked by `test_f25`.
+These are software tests; no hardware is needed. Some tiers need Nix for the native harness; see [scripts/README-native-tests.md](scripts/README-native-tests.md). Driver sources live only in `libfprint-driver/`; the flake and install.sh copy them into the fork and apply `goodix-5e0a-integration.patch` on top.
 
 ## License
 

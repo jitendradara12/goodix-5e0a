@@ -68,13 +68,11 @@ build_stage() (
     fi
     cd "$tmp/libfprint"
     git checkout "$rev"
-    git apply "$script_dir/0001-Add-driver-support-for-Goodix-27c6-5e0a.patch"
-    if ! grep -q '1.94.9' meson.build; then
-        sed -i 's/1.94.5/1.94.9/' meson.build
-    fi
-    if ! grep -q FP_DEVICE_RETRY_TOO_FAST libfprint/fp-device.h; then
-        sed -i 's/FP_DEVICE_RETRY_REMOVE_FINGER,/FP_DEVICE_RETRY_REMOVE_FINGER,\n  FP_DEVICE_RETRY_TOO_FAST,/' libfprint/fp-device.h
-    fi
+    # Upstream integration only; driver sources are copied from the repo
+    # checkout (single source of truth, same mechanism as the flake).
+    git apply "$script_dir/goodix-5e0a-integration.patch"
+    mkdir -p libfprint/drivers/goodixtls
+    cp "$script_dir"/libfprint-driver/*.c "$script_dir"/libfprint-driver/*.h libfprint/drivers/goodixtls/
     # fprintd runs as root; no world-writable USB rule or global linker changes.
     meson setup build -Ddrivers=goodixtls5e0a -Dgtk-examples=false -Ddoc=false \
         -Dudev_rules=disabled -Dudev_hwdb=disabled --prefix=/opt/goodix-libfprint --libdir=lib

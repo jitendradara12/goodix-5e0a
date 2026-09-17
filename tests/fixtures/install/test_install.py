@@ -127,8 +127,9 @@ class InstallerTests(unittest.TestCase):
             result = self.run_functions(r'''
                 git() {
                     if [[ $1 == -C && $3 == fetch ]]; then return 1; fi
+                    if [[ $1 == apply ]]; then return 0; fi # core patch: guarded by tier5 content test
                     if [[ $1 == clone ]]; then
-                        mkdir -p "$3/libfprint"
+                        mkdir -p "$3/libfprint/drivers/goodixtls"
                         echo 1.94.5 > "$3/meson.build"
                         echo FP_DEVICE_RETRY_REMOVE_FINGER, > "$3/libfprint/fp-device.h"
                         touch "$3/fallback-used"
@@ -147,8 +148,12 @@ class InstallerTests(unittest.TestCase):
             ''', root, SCRIPT.parent)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue((root / "libfprint/fallback-used").exists())
-            self.assertEqual((root / "libfprint/meson.build").read_text().strip(), "1.94.9")
-            self.assertIn("FP_DEVICE_RETRY_TOO_FAST", (root / "libfprint/libfprint/fp-device.h").read_text())
+            # build_stage owns the copy; the core patch's content is guarded
+            # by the tier5 content test (mock git cannot represent it here).
+            copied = root / "libfprint/libfprint/drivers/goodixtls/goodix5e0a.c"
+            self.assertTrue(copied.exists(), "driver sources must be copied into the tree")
+            self.assertEqual(copied.read_text(),
+                             (SCRIPT.parent / "libfprint-driver/goodix5e0a.c").read_text())
             args = (root / "libfprint/meson-args").read_text()
             self.assertIn("--prefix=/opt/goodix-libfprint", args)
             self.assertIn("-Dudev_rules=disabled", args)
