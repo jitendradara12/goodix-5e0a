@@ -1,6 +1,8 @@
 # 88: Keep fprintd resident for the 300s TLS park
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
+
+**Verdict:** confirmed on deployed hardware, 2026-09-17; evidence below.
 
 **Blocked by:** User deployment and the targeted 90s hardware probe. Blocks hardware acceptance of 85.
 
@@ -154,9 +156,33 @@ not newly prove PAM retry withholding.
 - Inconclusive-because-[flaw]: missing flag, client timeout/error, suspend,
   another claim during idle, or missing journal access. Do not infer success.
 
-Hardware verdict pending. After the user run, conclude only confirmed /
-falsified / inconclusive-because-[flaw]. Single next experiment is this
-90s probe; no further service or driver changes are proposed.
+## Hardware result 2026-09-17: confirmed
+
+Evidence: `/home/sastauser/goodix-ticket88-20260917-110502/`.
+`before-idle.txt`, `after-idle.txt`, and `after-second.txt` show active PID
+12821 throughout. `phases.txt` records an actual 90-second wait.
+
+Pasted from `journal.txt`, all under PID 12821:
+
+```text
+192 11:05:03.570958 5e0a parking live TLS session (gen=2)
+202 11:06:33.732012 5e0a USB reset skipped (clean close, boot_seq=1)
+222 11:06:33.744226 5e0a parked TLS session candidate fresh, health-checking (gen=3)
+228 11:06:33.744799 5e0a TLS session reused (parked 90.2s, gen=3)
+235 11:06:33.757996 Chip enabled! Activation complete.
+251 11:06:33.771981 Running command: 0x32
+305 11:06:36.974374 report_verify_status: result verify-no-match
+320 11:06:36.976155 5e0a parking live TLS session (gen=4)
+```
+
+First claim matched at line 177. Second claim completed no-match and parked
+again; no second handshake occurred. A grep of the full journal for
+`timed out|Invalid ACK|verify-unknown-error|failed to` returns no matches.
+
+Verdict: confirmed for service survival and parked reuse across 90s idle.
+Ticket 85 still owns the unmet <15ms FDT_DOWN target and untested >300s
+expiry/fallback. Single next experiment, if continuing that ticket: a
+controlled >300s idle pair on this unchanged build. No further service change.
 
 ## Rollback
 

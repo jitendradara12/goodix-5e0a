@@ -2,7 +2,7 @@
 
 **What to build:** Extend `GOODIX_5E0A_TLS_PARK_TTL_US` from 30 seconds to 300 seconds (5 minutes). This allows subsequent authentication claims (e.g. repeated `sudo` commands, lockscreen prompts, polkit dialogs) to reuse the live, primed TLS session via the lightweight `QUERY_MCU_STATE` health check (< 10ms), eliminating the 800ms–1s activation handshake penalty.
 
-**Blocked by:** User deployment of ticket 88's implemented and Nix-evaluated `--no-timeout` override, then its targeted 90s hardware probe. Ticket 88 is ready-for-hardware-verify. Daemon survival and 300s TLS reuse remain unverified. Tickets 84 and 87 are closed.
+**Blocked by:** None. Ticket 88 now confirms daemon survival and parked reuse at 90s. Full acceptance remains incomplete: <15ms finger-wait target missed, >300s expiry and state-loss recovery untested. Tickets 84 and 87 are closed.
 
 **Status:** ready-for-hardware-verify
 
@@ -183,6 +183,29 @@ AGENTS.md's already-verified exception for ticket 87's prior hands-off,
 steady-hold and PAM evidence; do not repeat those phases. A same-PID claim
 pair still needs journal proof of parked reuse and measured activation
 latency before acceptance. The 300s expiry/fallback criteria remain pending.
+
+## Hardware update 2026-09-17: 90s reuse confirmed, full acceptance incomplete
+
+Evidence: `/home/sastauser/goodix-ticket88-20260917-110502/journal.txt`.
+Ticket 88's closed report records the relevant lines verbatim. PID 12821
+survived the idle gap and logged `TLS session reused (parked 90.2s)` at
+11:06:33.744799, line 228. First claim matched; second completed no-match
+and parked again. No transport-error grep hits or second TLS handshake.
+
+Measured from candidate-fresh at 11:06:33.744226 (line 222):
+- Chip enable complete: 11:06:33.757996 (235), 13.770ms.
+- FDT_DOWN sent: 11:06:33.771981 (251), 27.755ms.
+
+Thus reuse beyond the old 30s TTL is confirmed. The literal <15ms FDT_DOWN
+criterion is falsified by this run, not satisfied by the chip-enable timing.
+Do not close the entire ticket or claim all five-minute gaps are verified.
+>300s expiry, state-loss recovery and desktop PAM latency remain untested.
+The earlier daemon-lifetime blocker is resolved by ticket 88.
+
+Overall verdict: inconclusive-because-expiry-and-recovery-untested, with
+the <15ms finger-wait subcriterion falsified. Single next experiment if
+continuing: a >300s idle claim pair on the unchanged build, checking lazy
+expiry and clean full-handshake recovery. No performance tuning is proposed.
 
 ## Predicted Journal Signatures
 
