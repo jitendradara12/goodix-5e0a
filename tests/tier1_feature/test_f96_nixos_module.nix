@@ -28,14 +28,8 @@ assert pamOn.sudo.fprintAuth == true;
 assert pamOn.sddm.fprintAuth == true;
 # The module must ship its own restrictive USB rule (0660 + uaccess, not 0666):
 # the package's rules file is empty for 5e0a because hwdb generation is disabled.
-let
-  udevPkg = pkgs.runCommand "goodix-udev-check" {} ''
-    grep -q '5e0a' ${default.services.udev.extraRules} >/dev/null
-    grep -q 'MODE="0660"' ${default.services.udev.extraRules} >/dev/null
-    grep -q 'uaccess' ${default.services.udev.extraRules} >/dev/null
-    ! grep -q '0666' ${default.services.udev.extraRules} >/dev/null
-    touch $out
-  '';
-in
-assert udevPkg != null;
+assert pkgs.lib.hasInfix
+  ''SUBSYSTEM=="usb", ATTRS{idVendor}=="27c6", ATTRS{idProduct}=="5e0a", MODE="0660", TAG+="uaccess"''
+  default.services.udev.extraRules;
+assert !(pkgs.lib.hasInfix ''MODE="0666"'' default.services.udev.extraRules);
 true
