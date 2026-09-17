@@ -24,4 +24,5 @@ jobs:
       - name: Build and run software suite, native harness required
         env:
           GOODIX_NATIVE_TESTS: required
+          GOODIX_SUSPEND_TESTS: required
         run: bash tests/run_all_tests.sh

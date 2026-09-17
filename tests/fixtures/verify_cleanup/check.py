@@ -81,7 +81,7 @@ def main():
         'auth-fail': (7, 7), 'restart-fail': (23, 23), 'set-fail': (19, 19),
     }
     runs = 0
-    with tempfile.TemporaryDirectory(prefix='verify-cleanup-', dir='/tmp/opencode') as tmp:
+    with tempfile.TemporaryDirectory(prefix='verify-cleanup-') as tmp:
         sandbox = Path(tmp)
         bin_dir = sandbox / 'bin'
         bin_dir.mkdir()

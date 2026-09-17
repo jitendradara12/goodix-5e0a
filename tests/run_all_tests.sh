@@ -88,7 +88,10 @@ echo -e "${BOLD}${BLUE}▶ Pre-flight: Build System & Nix Derivation Evaluation$
 echo -e "${CYAN}------------------------------------------------------------------------------${NC}"
 
 export GOODIX_NATIVE_TESTS="${GOODIX_NATIVE_TESTS:-required}"
-unset GOODIX_NATIVE_HARNESS # Never reuse an inherited or temporary binary.
+unset GOODIX_NATIVE_HARNESS GOODIX_SUSPEND_HARNESS GOODIX_SUSPEND_DISPATCH_HARNESS
+# Never reuse inherited binaries in the integrated lane. Direct unittest
+# invocation can still use explicitly supplied binaries.
+export GOODIX_SUSPEND_TESTS="${GOODIX_SUSPEND_TESTS:-$GOODIX_NATIVE_TESTS}"
 case "$GOODIX_NATIVE_TESTS" in
     required)
         echo 'Building required native harness...'
