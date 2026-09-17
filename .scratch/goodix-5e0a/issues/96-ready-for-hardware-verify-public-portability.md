@@ -57,6 +57,42 @@ The portability suite passed all five tests, including executing the real
 installer unprivileged on NixOS from an empty directory with a missing DLL.
 No deployment or hardware verification was performed for this fix.
 
+## Hardware run record, 2026-09-17 19:16–19:19 IST (deployed-driver mismatch)
+
+- Daemon: PID 29796 since 17:29:20, `/nix/store/8jkiyn4gjry62n92vl6h9cmvbblrklqd-fprintd-1.94.5`
+  with `/nix/store/q2qbsdmcjcz8zkcffywyfbyyrmdi9h08-libfprint-goodix-1.94.5-goodixtls-5e0a`.
+  `strings` on the deployed `.so` still contains
+  `/home/sastauser/goodix-27c6-5e0a-re/drivers/GoodixEngineAdapter.dll`;
+  repo HEAD `goodix_milan.c:867-870` no longer does. Service env has no
+  `GOODIX_ENGINE_DLL_PATH`; deployed udev rule is still `MODE="0666"`.
+  Conclusion: the running driver predates ticket 96. This run exercises the
+  sensor path, not the new module/env/0660 wiring.
+- Software re-check this session: `test_f96_public_portability` 5/5,
+  `test_f25_patch_sync` 9/9, `bash -n install.sh` clean, `nix flake show`
+  succeeds (transient `flake.lock` removed afterwards).
+- Phase 1, hands off 19:16:11 IST 20s: `-- No entries --` (silent, no cycles).
+  Matches predicted silent signature.
+- Phase 2, first attempt holding 19:16:36: cold-start activation
+  (`reason=cold-start`), start-verification 19:16:36.755 → `0x32` send
+  19:16:37.182 (~427 ms, in line with ticket 93 cold 429–431 ms envelope),
+  then finger-wait 29 s with no touch → idle cancel, `verify-no-match`.
+  No-touch, so no latency verdict from this attempt.
+- Phase 2 retry, user holding, 19:19:33.786 start-verification →
+  `0x32` send 19:19:34.213 (~427 ms cold) → touch confirmed 19:19:34.274
+  (`mask=0x3f energy=1291`, ~61 ms finger-wait) → 4/4 frames
+  (range 2136–2141, overlap 45–46) → Milan `match=0 pts=0 (threshold=50)` →
+  `verify-no-match (done)` at 19:19:34.470. Total start-to-verdict ~684 ms.
+  Advances on retry confirmed; latency envelope reproduced.
+- Verdict for ticket 96: **inconclusive-because-deployed-driver-predates-96**.
+  The 2-phase journal signatures reproduce on the old deployment, but the
+  NixOS module deployment (`GOODIX_ENGINE_DLL_PATH` + 0660 rule) and the
+  non-NixOS `/opt` installer remain unverified on hardware.
+- Single next experiment: rebuild the system with the repo's
+  `nixosModules.default` imported (`dllFile` default + `pamServices` as
+  desired), `nixos-rebuild switch`, confirm service env + 0660 rule +
+  `/proc/<pid>/maps` engine load, then repeat the 20 s hands-off / press-hold
+  protocol.
+
 ## Decisions (user, 2026-09-17)
 
 - DLL stays committed ("nobody is filing a case on me") — prominent README
