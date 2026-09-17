@@ -2,7 +2,7 @@
 # Run explicitly; outside unittest discovery to avoid runner recursion.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-SANDBOX="$(mktemp -d /tmp/opencode/runner-summary.XXXXXX)"
+SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/runner-summary.XXXXXX")"
 trap 'rm -rf "$SANDBOX"' EXIT
 
 # Bypass preflight tools; only the runner's reporting is under test.
@@ -34,7 +34,7 @@ check() {
 }
 run_fixture() {
     rc=0
-    FAKE_PY_FAIL="$1" PATH="$SANDBOX:$PATH" bash "$ROOT/tests/run_all_tests.sh" > "$SANDBOX/raw.log" 2>&1 || rc=$?
+    GOODIX_NATIVE_TESTS=skip FAKE_PY_FAIL="$1" PATH="$SANDBOX:$PATH" bash "$ROOT/tests/run_all_tests.sh" > "$SANDBOX/raw.log" 2>&1 || rc=$?
     sed $'s/\033\\[[0-9;]*m//g' "$SANDBOX/raw.log" > "$SANDBOX/out.log"
 }
 LOG="$SANDBOX/out.log"

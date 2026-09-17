@@ -1,21 +1,10 @@
 #!/usr/bin/env bash
-# Requires the configured, built libfprint tree at /tmp/libfprint-goodix.
-# Builds only a fake-device test binary; never claims fingerprint hardware.
+# Software only. Requires Nix and a nixpkgs channel/NIX_PATH; see scripts/README-native-tests.md.
+# stdout is the executable path; build diagnostics go to stderr.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
-
-nix-shell -p pkg-config glib gusb --run '
-  gcc -o /tmp/test_ssm_teardown \
-    tests/tier5_adversarial/test_ssm_teardown_c.c \
-    /tmp/libfprint-goodix/tests/test-device-fake.c \
-    -I/tmp/libfprint-goodix \
-    -I/tmp/libfprint-goodix/libfprint \
-    -I/tmp/libfprint-goodix/tests \
-    -I/tmp/libfprint-goodix/build \
-    -I/tmp/libfprint-goodix/build/libfprint \
-    /tmp/libfprint-goodix/build/libfprint/libfprint-private.a \
-    /tmp/libfprint-goodix/build/libfprint/libnbis.a \
-    -L/tmp/libfprint-goodix/build/libfprint \
-    -Wl,-rpath,/tmp/libfprint-goodix/build/libfprint \
-    -lfprint-2 $(pkg-config --cflags --libs gio-2.0 gusb) -lm
-'
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+command -v nix-build >/dev/null || { echo 'Native harness requires nix-build and <nixpkgs>.' >&2; exit 1; }
+output=$(nix-build "$ROOT_DIR/scripts/native-harness.nix" --no-out-link)
+harness="$output/bin/test_ssm_teardown"
+[[ -x "$harness" ]] || { echo "Native harness unavailable: $harness" >&2; exit 1; }
+printf '%s\n' "$harness"

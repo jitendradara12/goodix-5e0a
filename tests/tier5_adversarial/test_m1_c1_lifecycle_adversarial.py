@@ -26,7 +26,7 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
         self.goodix_h = repo("libfprint-driver", "goodix.h")
         self.repo_patch = repo("0001-Add-driver-support-for-Goodix-27c6-5e0a.patch")
         self.nixos_patch = str(NIXOS_MODULE_DIR / "0001-Add-driver-support-for-Goodix-27c6-5e0a.patch")
-        self.c_test_bin = "/tmp/test_ssm_teardown"
+        self.c_test_bin = os.environ.get("GOODIX_NATIVE_HARNESS", "")
 
     # --------------------------------------------------------------------------
     # 1. SSM Lifecycle & Deactivation Invariants
@@ -207,15 +207,19 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
     # 5. Native C Empirical Invariant Execution
     # --------------------------------------------------------------------------
 
-    @unittest.skipUnless(os.path.exists("/tmp/test_ssm_teardown"), "native C harness absent; run bash scripts/build_native_harness.sh")
     def test_native_c_ssm_and_cancellation_invariants(self):
         """Execute compiled C test harness verifying 8 runtime invariants directly in libfprint."""
-        self.assertTrue(os.path.exists(self.c_test_bin), f"C test binary not found: {self.c_test_bin}")
+        mode = os.environ.get("GOODIX_NATIVE_TESTS", "required")
+        if mode == "skip":
+            self.skipTest("native C harness explicitly disabled by GOODIX_NATIVE_TESTS=skip")
+        self.assertEqual(mode, "required", "GOODIX_NATIVE_TESTS must be required or skip")
+        self.assertTrue(os.access(self.c_test_bin, os.X_OK),
+                        "Native harness unavailable; run bash tests/run_all_tests.sh "
+                        "or explicitly set GOODIX_NATIVE_TESTS=skip")
 
         env = dict(os.environ)
-        # Only the build tree is pinned; glib/gusb resolve via the binary's
-        # nix-stamped RUNPATH, so store paths here would just go stale.
-        env["LD_LIBRARY_PATH"] = "/tmp/libfprint-goodix/build/libfprint"
+        # Use the packaged RUNPATH, not a developer's build tree.
+        env.pop("LD_LIBRARY_PATH", None)
 
         res = subprocess.run(
             [self.c_test_bin],

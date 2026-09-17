@@ -87,20 +87,23 @@ run_tier() {
 echo -e "${BOLD}${BLUE}▶ Pre-flight: Build System & Nix Derivation Evaluation${NC}"
 echo -e "${CYAN}------------------------------------------------------------------------------${NC}"
 
-if [ -f "/tmp/libfprint-goodix/build/build.ninja" ]; then
-    if command -v ninja > /dev/null 2>&1 && ninja -C /tmp/libfprint-goodix/build libfprint/libfprint-drivers.a libfprint/libfprint-2.so.2.0.0 > /dev/null 2>&1; then
-        echo -e "${GREEN}OK${NC}"
-    else
-        NINJA_STORE_BIN=$(find /nix/store -maxdepth 3 -name ninja -type f -perm -111 2>/dev/null | grep -E "ninja-[0-9]" | head -n 1 || true)
-        if [ -n "${NINJA_STORE_BIN}" ] && "${NINJA_STORE_BIN}" -C /tmp/libfprint-goodix/build libfprint/libfprint-drivers.a libfprint/libfprint-2.so.2.0.0 > /dev/null 2>&1; then
-            echo -e "${GREEN}OK${NC}"
-        elif nix-shell -p ninja --run "ninja -C /tmp/libfprint-goodix/build libfprint/libfprint-drivers.a libfprint/libfprint-2.so.2.0.0" > /dev/null 2>&1; then
-            echo -e "${GREEN}OK${NC}"
-        else
-            echo -e "${YELLOW}SKIP (non-fatal)${NC}"
-        fi
-    fi
-fi
+export GOODIX_NATIVE_TESTS="${GOODIX_NATIVE_TESTS:-required}"
+unset GOODIX_NATIVE_HARNESS # Never reuse an inherited or temporary binary.
+case "$GOODIX_NATIVE_TESTS" in
+    required)
+        echo 'Building required native harness...'
+        GOODIX_NATIVE_HARNESS=$(bash "$ROOT_DIR/scripts/build_native_harness.sh")
+        export GOODIX_NATIVE_HARNESS
+        [[ -x "$GOODIX_NATIVE_HARNESS" ]] || { echo 'Required native harness unavailable'; exit 1; }
+        ;;
+    skip)
+        echo 'SKIP native harness (explicit GOODIX_NATIVE_TESTS=skip; not a required-lane pass)'
+        ;;
+    *)
+        echo 'GOODIX_NATIVE_TESTS must be required or skip' >&2
+        exit 1
+        ;;
+esac
 
 
 if ! command -v nix-instantiate >/dev/null 2>&1; then
