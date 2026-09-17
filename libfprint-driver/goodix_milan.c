@@ -907,9 +907,8 @@ static int (MS *m_templatePack)(void*, void*) = NULL;
 static int (MS *m_templateUnPack)(const void*, int, void*, void**) = NULL;
 static int (MS *m_templateDelete)(void*) = NULL;
 static int (MS *m_identifyImage)(GoodixImage*, void*, void**, int, int*, int*, u32*, int, int, void*, int) = NULL;
-/* Ticket 76: native frame quality export. Optional: older DLL variants may
- * lack it, so a missing export degrades to the legacy minutiae tiebreak
- * instead of failing engine init. */
+/* Optional native quality export: without it, frame selection uses
+ * residual range and active area instead of failing engine init. */
 static int (MS *m_getQuality)(GoodixImage*, u32*) = NULL;
 
 static gboolean g_milan_available = FALSE;
@@ -976,7 +975,7 @@ gboolean goodix_milan_init (const char *dll_path) {
         return FALSE;
     }
     if (!m_getQuality)
-        g_debug ("5e0a: Milan getQuality export missing; frame judging falls back to minutiae proxy");
+        g_debug ("5e0a: Milan getQuality export missing; frame judging falls back to residual range and active area");
 
     ensure_gs();
     m_getAlgorithmVersion(g_milan_version);
@@ -1008,7 +1007,7 @@ static void make_goodix_image(GoodixImage *img, const uint8_t *pix, int width, i
  * local-contrast frames report quality 18-19 / overlap 98-100, while blank,
  * noise, and poor-clarity frames report 0/0 — enough range to rank a burst.
  * The caller passes the 64x80 normalized buffer (the exact bytes verify
- * feeds identifyImage), never the 128x160 scaled FpImage minutiae runs on. */
+ * feeds identifyImage), never the 128x160 scaled FpImage. */
 guint goodix_milan_frame_quality (const uint8_t *pixels,
                                   int width,
                                   int height,

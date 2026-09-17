@@ -83,8 +83,8 @@ int goodix_milan_identify_image (const uint8_t *pixels,
  * Outputs quality/overlap (0-255 each); returns the combined ranking proxy
  * (quality << 8 | overlap) so quality is primary and overlap breaks ties.
  * Returns 0 with outputs zeroed when the engine or export is unavailable or
- * the geometry is not 64x80 — callers fall back to the legacy minutiae
- * tiebreak and never fail the touch. */
+ * the geometry is not 64x80 — callers break ties by residual range, then
+ * active area. Missing quality alone does not reject a touch. */
 guint goodix_milan_frame_quality (const uint8_t *pixels,
                                   int width,
                                   int height,

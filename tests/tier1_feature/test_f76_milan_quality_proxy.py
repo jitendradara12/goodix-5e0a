@@ -56,7 +56,7 @@ class TestF76MilanQualityProxy(unittest.TestCase):
         gate = _slice(src, "if (!m_getAlgorithmVersion", "required Milan engine exports missing")
         self.assertNotIn("m_getQuality", gate)
         # missing export degrades with a debug line, never fails init
-        self.assertIn("falls back to minutiae proxy", src)
+        self.assertIn("falls back to residual range and active area", src)
         # wrapper body: fixed geometry, engine-down fallback, GS, combine
         fn = _slice(src, "goodix_milan_frame_quality (const uint8_t *pixels",
                     "void *goodix_milan_enroll_start")

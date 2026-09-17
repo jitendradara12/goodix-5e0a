@@ -1030,7 +1030,7 @@ goodix5e0a_deliver_frame (FpDevice *dev)
                                                    self->tmpl_blob,
                                                    self->tmpl_len,
                                                    &match_pts);
-          fp_dbg ("5e0a Milan verify: match=%d pts=%d (threshold=50)", is_match, match_pts);
+          fp_dbg ("5e0a Milan verify: match=%d pts=%d", is_match, match_pts);
           if (is_match)
             fpi_device_verify_report (dev, FPI_MATCH_SUCCESS, NULL, NULL);
           else
@@ -1872,7 +1872,7 @@ process_raw_frame (GoodixTls5xxPix * pix)
 
   /* Create the scaled 128x160 image directly via bilinear upscaling.
    * Use FPI_IMAGE_COLORS_INVERTED for capacitive ridges (high ADC = black).
-   * Omit FPI_IMAGE_PARTIAL so remove_perimeter_pts=0 retains edge minutiae. */
+   * Omit FPI_IMAGE_PARTIAL so the interpreter retains edge points. */
   FpImage *img = fp_image_new (dst_w, dst_h);
   img->flags = FPI_IMAGE_COLORS_INVERTED;
   img->ppmm = GOODIX_5E0A_PPMM;
