@@ -53,7 +53,7 @@ idle_rc=0
 python3 scripts/sample_fprintd_resources.py --interval "$idle_seconds" > "$out/idle-resources.json" || idle_rc=$?
 idle_end=$(date --iso-8601=ns)
 printf '%s idle-end exit=%s; record any interference here\n' "$idle_end" "$idle_rc" >> "$out/phases.txt"
-journalctl -u fprintd --since "$idle_start" --until "$idle_end" -o short-precise --no-pager > "$out/idle-journal.txt" 2> "$out/idle-journal-error.txt"
+journalctl -u fprintd --since "${idle_start/,/.}" --until "${idle_end/,/.}" -o short-precise --no-pager > "$out/idle-journal.txt" 2> "$out/idle-journal-error.txt"
 ```
 
 PSS permission denial as non-root is acceptable incomplete evidence. Keep the
@@ -87,7 +87,7 @@ timeout --signal=INT --kill-after=5s 60s fprintd-verify -f "$enrolled_finger" 2>
 client_rc=${PIPESTATUS[0]}
 claim_end=$(date --iso-8601=ns)
 printf '%s %s end client_exit=%s\n' "$claim_end" "$claim_id" "$client_rc" >> "$out/phases.txt"
-journalctl -u fprintd --since "$claim_start" --until "$claim_end" -o short-precise --no-pager > "$out/$claim_id-journal.txt" 2> "$out/$claim_id-journal-error.txt"
+journalctl -u fprintd --since "${claim_start/,/.}" --until "${claim_end/,/.}" -o short-precise --no-pager > "$out/$claim_id-journal.txt" 2> "$out/$claim_id-journal-error.txt"
 read -r -p 'Disposition: done, cancelled (timeout/interruption), or incomplete: ' disposition
 printf '%s disposition=%s\n' "$claim_id" "$disposition" >> "$out/phases.txt"
 cancel_args=()
@@ -147,7 +147,7 @@ errors. Empty/inaccessible logs are missing evidence, not silent hardware.
 ```bash
 batch_end=$(date --iso-8601=ns)
 printf '%s batch-end\n' "$batch_end" >> "$out/phases.txt"
-journalctl -u fprintd --since "$batch_start" --until "$batch_end" -o short-precise --no-pager > "$out/journal.txt" 2> "$out/journal-error.txt"
+journalctl -u fprintd --since "${batch_start/,/.}" --until "${batch_end/,/.}" -o short-precise --no-pager > "$out/journal.txt" 2> "$out/journal-error.txt"
 python3 scripts/matching_reliability.py report "$out/matching-samples.jsonl" > "$out/matching-report.json"
 python3 scripts/analyze_activation_timing.py "$out/journal.txt" > "$out/activation-timing.json"
 cleanup_rc=0

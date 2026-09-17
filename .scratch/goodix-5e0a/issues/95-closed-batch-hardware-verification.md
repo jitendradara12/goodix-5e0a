@@ -2,8 +2,12 @@
 
 **What to build:** One short checklist using the tools from 89–94, so the user tests the merged work once at the end.
 
-**Blocked by:** User's final hardware batch only. Software work in 89–94 is complete; ticket 90's disposal acceptance deviation remains documented.
-**Status:** ready-for-hardware-verify
+**Blocked by:** None. Hardware batch complete 2026-09-17; verdicts below.
+**Status:** closed
+
+**Verdict:** batch executed on the unchanged deployed driver; per-ticket
+conclusions below. Evidence: `/home/sastauser/goodix-final-20260917-172810-qt3hNS/`
+(421-line batch journal, isolated per-claim logs, matching report, timing JSON).
 **Owns:** Integration report and batch checklist; no driver changes.
 
 - [x] Record the combined software suite and unresolved defects, reusing the prior passing integration run rather than rerunning it for documentation-only changes.
@@ -65,3 +69,48 @@ native lanes and runs the cleanup fixture. No driver, patch or service changes.
 
 Hardware verdict remains pending. Single next experiment: the user runs the
 checklist once on the unchanged deployed driver and reviews the saved evidence.
+
+## Hardware verdicts 2026-09-17 (batch complete)
+
+Same daemon PID 29796 throughout; `--no-timeout` confirmed. Pre-sleep claim
+17:36:49–17:36:52 completed no-match and parked gen=2. Desktop suspend
+17:40:15–17:40:59, same PID/start identity after resume. Post-resume claim
+17:44:09 completed no-match and re-parked gen=4. Full-journal grep for
+`timed out|Invalid ACK|verify-unknown|failed to`: zero matches.
+
+- **89 matching:** two labeled genuine samples, both no-match with
+  journal-and-milan-consistent evidence; first-touch 0/2 at n=2. Recorded as
+  data, inconclusive for any population accuracy claim. The larger labeled set
+  remains future collection; no threshold change warranted or made.
+- **90 disposal:** inconclusive-because-park-expired-before-post-resume-claim.
+  Park gen=2 (17:36:52) expired ~17:41:52; the claim ran 17:44:09 with
+  `reason=ttl-expired`, so expiry fully explains the fresh handshake and
+  suspend disposal is indistinguishable. The software-path falsification stands.
+- **90 operation:** confirmed for this run. Post-sleep claim completed a full
+  fresh handshake, encrypted capture, verification and re-park with no errors
+  and no duplicate completion. Same-PID survival of real suspend established.
+- **93 timing:** cold-start 431.68ms, TTL-expired recovery 427.478ms,
+  consistent with prior ~430ms samples. No in-TTL reuse intervals occurred, so
+  the earlier chip-enable/D6 attribution is neither re-confirmed nor challenged.
+- **91/92 cleanup:** cleanup isolation held. Expired sudo produced a clean
+  noninteractive failure, explicit warning and manual command; no extra PAM
+  prompts inside the measured window. Ticket 92 had no hardware step.
+- **94 resources:** 20s idle sample, identity unchanged, RSS 11600 stable,
+  0.0% CPU. PSS denied non-root, so per the checklist this is incomplete, not a
+  baseline. Re-captured idle journal shows zero entries, supporting no-claims
+  for that window.
+
+## Checklist errata found during this run (fixed in scripts/README-final-batch.md)
+
+`date --iso-8601=ns` emits comma fractions which this system's `journalctl`
+rejects ("Failed to parse timestamp"), silently emptying all three journal
+captures. All three `journalctl` lines now use `${var/,/.}` substitution.
+Idle and pre-sleep journals were re-captured in-window with corrected
+timestamps; no evidence was fabricated. Also fixed in passing: re-importing a
+claim needs `grep -v ... || true` before `mv` (grep exits 1 when all lines are
+filtered) — noted here, not in the checklist since re-import is a repair path.
+
+Single next experiment, only if the disposal question is pursued: repeat the
+sleep scenario with the post-resume claim inside the 300s park TTL (resume and
+claim within ~4 minutes of the park), so reuse-vs-disposal is distinguishable.
+No driver change proposed.
