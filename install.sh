@@ -134,12 +134,11 @@ main() (
     set -euo pipefail
     umask 022
     local mode=install DLL=${GOODIX_ENGINE_DLL_PATH:-} script_dir tmp tool pc
-    local no_deps=false output=''
+    local no_deps=false output='' argc=$#
     while (($#)); do
         case $1 in
-            --help) [[ $# == 1 ]] || { usage >&2; exit 1; }; usage; return ;;
-            --check|--uninstall)
-                [[ $# == 1 && $mode == install && $no_deps == false && -z $DLL ]] || { usage >&2; exit 1; }
+            --help|--check|--uninstall)
+                [[ $argc == 1 ]] || { usage >&2; exit 1; }
                 mode=${1#--}; shift ;;
             --no-deps) no_deps=true; shift ;;
             --dll)
@@ -151,6 +150,7 @@ main() (
             *) usage >&2; exit 1 ;;
         esac
     done
+    if [[ $mode == help ]]; then usage; return; fi
     if [[ $mode == check ]]; then check_setup; return; fi
     # os-release is supplied by the OS; sourcing handles single/double quoted IDs.
     local ID='' ID_LIKE=''

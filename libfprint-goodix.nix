@@ -11,9 +11,8 @@ stdenv.mkDerivation {
     hash = "sha256-6llzCeVOtv0HRaNdB8mMzZCA8RBZtGkSCErsXwKE/vk=";
   };
 
-  # Upstream integration only (meson registration, small core fixes).
-  # Driver sources are copied from libfprint-driver/ below, so there is no
-  # second embedded copy to keep in sync (replaces the 6k-line patch).
+  # Register the driver; keep its sources in one place. Current fprintd also
+  # requires the patch's 1.94.9 pkg-config version and TOO_FAST retry enum.
   patches = [
     ./goodix-5e0a-integration.patch
   ];

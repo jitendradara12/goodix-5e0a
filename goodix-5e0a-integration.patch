@@ -10,57 +10,6 @@ index 9dda747..2466dc3 100644
  } FpDeviceRetry;
  
  /**
-diff --git a/libfprint/fp-image.c b/libfprint/fp-image.c
-index 8870cfa..abdf4f9 100644
---- a/libfprint/fp-image.c
-+++ b/libfprint/fp-image.c
-@@ -312,6 +312,9 @@ fp_image_detect_minutiae_thread_func (GTask        *task,
-   data->binarized = g_steal_pointer (&bdata);
-   data->minutiae = minutiae;
- 
-+  fp_dbg ("5e0a get_minutiae: ret=%d minutiae_count=%d (image %dx%d WxH, scan_time=%.4fs)",
-+          r, (minutiae ? minutiae->num : 0), data->width, data->height, g_timer_elapsed (timer, NULL));
-+
-   if (r)
-     {
-       fp_err ("get minutiae failed, code %d", r);
-diff --git a/libfprint/fpi-print.c b/libfprint/fpi-print.c
-index 00289b4..161daa5 100644
---- a/libfprint/fpi-print.c
-+++ b/libfprint/fpi-print.c
-@@ -185,6 +185,8 @@ fpi_print_add_from_image (FpPrint *print,
- 
-   xyt = g_new0 (struct xyt_struct, 1);
-   minutiae_to_xyt (&_minutiae, image->width, image->height, xyt);
-+  fp_dbg ("5e0a minutiae added to print: detected=%u (xyt->nrows=%d) on image %dx%d (WxH)",
-+          minutiae->len, xyt->nrows, image->width, image->height);
-   g_ptr_array_add (print->prints, xyt);
- 
-   g_clear_object (&print->image);
-@@ -233,6 +235,8 @@ fpi_print_bz3_match (FpPrint *template, FpPrint *print, gint bz3_threshold, GErr
- 
-   pstruct = g_ptr_array_index (print->prints, 0);
-   probe_len = bozorth_probe_init (pstruct);
-+  fp_dbg ("5e0a bz3 match start: probe_nrows=%d gallery_len=%u (probe_len=%d)",
-+          pstruct->nrows, template->prints->len, probe_len);
- 
-   for (i = 0; i < template->prints->len; i++)
-     {
-@@ -240,7 +244,13 @@ fpi_print_bz3_match (FpPrint *template, FpPrint *print, gint bz3_threshold, GErr
-       gint score;
-       gstruct = g_ptr_array_index (template->prints, i);
-       score = bozorth_to_gallery (probe_len, pstruct, gstruct);
--      fp_dbg ("score %d/%d", score, bz3_threshold);
-+      fp_dbg ("5e0a bz3 match: gallery[%d]_nrows=%d score=%d/%d (probe_nrows=%d)",
-+              i, gstruct->nrows, score, bz3_threshold, pstruct->nrows);
-+      if (pstruct->nrows < 10 || gstruct->nrows < 10)
-+        {
-+          fp_dbg ("5e0a bz3 floor tripped: probe_nrows=%d gallery[%d]_nrows=%d < MIN_COMPUTABLE_BOZORTH_MINUTIAE(10)",
-+                  pstruct->nrows, i, gstruct->nrows);
-+        }
- 
-       if (score >= bz3_threshold)
-         return FPI_MATCH_SUCCESS;
 diff --git a/libfprint/fprint-list-udev-hwdb.c b/libfprint/fprint-list-udev-hwdb.c
 index b726b67..9e5680b 100644
 --- a/libfprint/fprint-list-udev-hwdb.c

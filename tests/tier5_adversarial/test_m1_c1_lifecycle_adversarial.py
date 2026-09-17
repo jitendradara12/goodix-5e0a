@@ -6,7 +6,6 @@ Empirically tests state teardown, SSM cleanup, and USB cancellation handling in 
 import unittest
 import os
 import subprocess
-import hashlib
 from tests.repo_paths import repo
 
 class TestM1C1LifecycleAdversarial(unittest.TestCase):
@@ -181,25 +180,25 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
         self.assertIn("residual[i] * GOODIX_5E0A_CONTRAST_GAIN", source_content)
 
     # --------------------------------------------------------------------------
-    # 4. Patch Integrity & Checksum Parity
+    # 4. Upstream Integration Boundary
     # --------------------------------------------------------------------------
 
-    def test_patch_sha256_checksum_parity(self):
-        """The integration patch must stay small and must not embed driver sources.
-
-        Ticket 97: driver sources live only in libfprint-driver/ and are copied
-        in by the flake. If this patch starts touching goodixtls driver files,
-        a second embedded copy exists again and drift becomes possible.
-        """
-        self.assertTrue(os.path.exists(self.repo_patch), f"Missing integration patch: {self.repo_patch}")
-        with open(self.repo_patch, "r", encoding="utf-8") as f:
+    def test_patch_integration_boundary(self):
+        """Keep driver sources and obsolete matcher changes out of the patch."""
+        with open(self.repo_patch, encoding="utf-8") as f:
             content = f.read()
-        for path in content.splitlines():
-            self.assertFalse(
-                path.startswith("diff --git a/libfprint/drivers/goodixtls/"),
-                f"integration patch embeds driver file: {path}",
-            )
-        self.assertLess(os.path.getsize(self.repo_patch), 20000, "integration patch grew; driver sources must be copied, not patched in")
+        paths = {line.split()[2] for line in content.splitlines()
+                 if line.startswith("diff --git ")}
+        self.assertEqual(paths, {
+            "a/libfprint/fp-device.h",
+            "a/libfprint/fprint-list-udev-hwdb.c",
+            "a/libfprint/meson.build",
+            "a/meson.build",
+        })
+        # Current fprintd requires both the version and the new retry enum.
+        self.assertIn("+    version: '1.94.9',", content)
+        self.assertIn("+  FP_DEVICE_RETRY_TOO_FAST,", content)
+        self.assertLess(len(content), 20000)
 
     # --------------------------------------------------------------------------
     # 5. Native C Empirical Invariant Execution
