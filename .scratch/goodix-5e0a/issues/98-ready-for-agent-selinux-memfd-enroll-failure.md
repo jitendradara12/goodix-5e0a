@@ -114,6 +114,18 @@ NixOS is unaffected (no SELinux); every Fedora/RHEL/CentOS install via `install.
 - Falsify (still broken): identical `failed to load` + `Failed to start Milan enrollment context` + `denied { write }` triple on next enroll; or `write` allowed but a *new* `denied { execute/map }` on the `PROT_EXEC` mmap step (expected second wave — fix the policy, not the verdict).
 - Inconclusive-because-[flaw]: tested with `setenforce 0` only (workaround, not a fix); or tested on NixOS/permissive (wrong population — SELinux not exercised).
 
+## Hardware verify record, 2026-09-17 ~21:21 IST (Fedora 44, Enforcing, /opt install)
+
+- Iterated `sudo ausearch -m avc | audit2allow -M fprintd-goodix` + `sudo semodule -i` through the full chain: `write` → `map` → `read` → `execute`. Each fix exposed the next step, as predicted.
+- Pitfall found: regenerating with `-ts recent` drops older perms (write denials aged out at 21:20, caused `denied { write }` regression). Final working module was built with `-ts boot`.
+- Final minimal rule (strip the unrelated `tlp_t dac_override` noise that `boot` scope picks up):
+  `allow fprintd_t tmpfs_t:file { execute map read write };`
+- Success signatures, PID 12989:
+  `5e0a: Milan biometric matching engine loaded successfully (Milan_v_3.02.00.20)`
+  12x `enrollment quality check: active=5120 range=1976 quality=0 overlap=30` → `fprintd-enroll: enroll-completed`
+  `optimistic fast-path match on frame 1: pts=71` → `fprintd-verify: verify-match (done)` (first verify was `verify-no-match`, second `verify-match` — normal positioning).
+- Verdict: confirm — SELinux memfd policy was the sole blocker; sensor/TLS/capture path was healthy throughout.
+
 ## Evidence collected this run
 
 - `journalctl -u fprintd -b 0` full enroll cycles (PIDs 10995/11124/11226/11339), TLS ready + 4/4 frames each attempt.
