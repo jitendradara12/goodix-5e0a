@@ -53,8 +53,8 @@ stdenv.mkDerivation {
   ];
 
   meta = with lib; {
-    description = "libfprint fork with support for Goodix 27c6:5e0a TLS fingerprint scanner";
+    description = "libfprint fork with support for the Goodix 27c6:5e0a TLS fingerprint scanner (x86-64 only)";
     license = licenses.lgpl21Plus;
-    platforms = platforms.linux;
+    platforms = [ "x86_64-linux" ];
   };
 }

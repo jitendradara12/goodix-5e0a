@@ -50,3 +50,14 @@ legacy-experiments/test_best_of_n_adversarial
 session-*.md
 legacy-experiments/test_goodix_loader
 legacy-experiments/test_goodix_shootout
+
+# Fresh captures / proprietary artifacts — never commit
+*.tpl
+*.exe
+*.pnf
+*.cat
+*.sys
+psk*.bin
+dpapi*.bin
+*fingerprint*.pgm
+*bios*.bin

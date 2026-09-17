@@ -864,11 +864,11 @@ static gboolean g_milan_available = FALSE;
 static char g_milan_version[128] = "Unknown";
 
 static const char *default_search_paths[] = {
-    "/home/sastauser/goodix-27c6-5e0a-re/drivers/GoodixEngineAdapter.dll",
     "/var/lib/fprint/GoodixEngineAdapter.dll",
-    "/etc/goodix/GoodixEngineAdapter.dll",
     "/run/current-system/sw/lib/GoodixEngineAdapter.dll",
+    "/etc/goodix/GoodixEngineAdapter.dll",
     "/usr/lib/goodix/GoodixEngineAdapter.dll",
+    "/usr/local/lib/GoodixEngineAdapter.dll",
     NULL,
 };
 
