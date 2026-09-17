@@ -279,6 +279,48 @@ static void test_public_idle_suspend (void)
   goodix5e0a_suspend (dev);
 }
 
+/* Test the actual normalizer included above, with independently calculated
+ * values: an affine ramp has zero interior residual and clipped edge means. */
+static void test_frame_normalization (void)
+{
+  GoodixTls5xxPix raw[64 * 80] = {0};
+  guint8 normalized[64 * 80];
+  float low, high;
+
+  g_assert_false (goodix5e0a_normalize_raw_frame (raw, normalized, NULL, NULL));
+  for (guint i = 0; i < 63; i++)
+    raw[i] = 1000;
+  g_assert_false (goodix5e0a_normalize_raw_frame (raw, normalized, NULL, NULL));
+  raw[63] = 1000;
+  g_assert_true (goodix5e0a_normalize_raw_frame (raw, normalized, NULL, NULL));
+
+  for (int y = 0; y < 80; y++)
+    for (int x = 0; x < 64; x++)
+      raw[y * 64 + x] = 1000 + 6 * x + 12 * y;
+  g_assert_true (goodix5e0a_normalize_raw_frame (raw, normalized, &low, &high));
+  g_assert_cmpfloat (low, ==, -9.0f);
+  g_assert_cmpfloat (high, ==, 9.0f);
+  for (int y = 0; y < 80; y++)
+    for (int x = 0; x < 64; x++)
+      g_assert_cmpuint (normalized[y * 64 + x], ==,
+                        128 + (x == 0 ? -3 : x == 63 ? 3 : 0)
+                            + (y == 0 ? -6 : y == 79 ? 6 : 0));
+
+  for (guint i = 0; i < G_N_ELEMENTS (raw); i++)
+    raw[i] = 1000;
+  g_assert_false (goodix5e0a_normalize_raw_frame (raw, normalized, &low, &high));
+  g_assert_cmpfloat (low, ==, 0.0f);
+  g_assert_cmpfloat (high, ==, 0.0f);
+  for (int delta = -900; delta <= 900; delta += 1800)
+    {
+      raw[40 * 64 + 32] = 1000 + delta;
+      g_assert_true (goodix5e0a_normalize_raw_frame (raw, normalized, NULL, NULL));
+      g_assert_cmpuint (normalized[40 * 64 + 32], ==, delta < 0 ? 0 : 255);
+      g_assert_cmpuint (normalized[40 * 64 + 31], ==, 128 - delta / 9);
+      g_assert_cmpuint (normalized[0], ==, 128);
+    }
+}
+
 int main (int argc, char **argv)
 {
   g_test_init (&argc, &argv, NULL);
@@ -287,5 +329,6 @@ int main (int argc, char **argv)
   g_test_add_func ("/goodix/lifecycle/late-probe-after-suspend", test_late_probe_after_suspend);
   g_test_add_func ("/goodix/lifecycle/active-scan-cancel", test_active_scan_cancel);
   g_test_add_func ("/goodix/lifecycle/public-idle-suspend", test_public_idle_suspend);
+  g_test_add_func ("/goodix/frame/normalization", test_frame_normalization);
   return g_test_run ();
 }

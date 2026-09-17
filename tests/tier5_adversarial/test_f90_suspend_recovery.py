@@ -59,7 +59,8 @@ class TestF90SuspendRecovery(unittest.TestCase):
 
     def test_suspend_recovery_lifecycle(self):
         """Parked TLS dies on suspend; stale callbacks drop; fresh activation after resume."""
-        out = self.run_harness(self.suspend, "1..5")
+        out = self.run_harness(self.suspend, "1..6")
+        self.assertIn("ok 6 /goodix/frame/normalization", out)
         self.assertNotIn("not ok", out)
         for i, case in enumerate(("park-suspend-resume", "late-tls-after-cancel",
                                   "late-probe-after-suspend", "active-scan-cancel",
