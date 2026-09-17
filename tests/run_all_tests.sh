@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Master E2E Test Suite Runner for Goodix 27c6:5e0a Fingerprint Sensor Driver
-# Covers Tiers 1-5: Features, Boundaries, Combinations, Scenarios, and Stress tests
+# Runs software tests in Tiers 1, 4, and 5; does not verify hardware.
 # ==============================================================================
 
 set -euo pipefail
@@ -19,6 +19,7 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
+TOTAL_EXECUTED=0
 TOTAL_PASSED=0
 TOTAL_FAILED=0
 TOTAL_SKIPPED=0
@@ -52,14 +53,25 @@ run_tier() {
     local tier_duration=$((tier_end - tier_start))
 
     if [ ${status} -eq 0 ]; then
-        local count=$(echo "${output}" | grep -E "Ran [0-9]+ tests" | awk '{print $2}' || echo "N/A")
+        local count skipped executed passed
+        count=$(echo "${output}" | sed -nE 's/^Ran ([0-9]+) tests? in .*/\1/p')
+        if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+            echo "Missing unittest test count for ${tier_name}"
+            echo "${output}"
+            return 1
+        fi
+        skipped=$(echo "${output}" | sed -nE 's/^OK \(.*skipped=([0-9]+).*\)$/\1/p')
+        skipped=${skipped:-0}
+        # unittest's Ran count includes skips; executed tests exclude them.
+        executed=$((count - skipped))
+        passed=$(echo "${output}" | grep -c '\.\.\. ok$' || true)
         echo "${output}" | grep -E "(\.\.\. ok|\.\.\. OK)" | head -n 10 || true
         if [ "$(echo "${output}" | grep -c "\.\.\. ok")" -gt 10 ]; then
             echo -e "... [truncated $(($(echo "${output}" | grep -c "\.\.\. ok") - 10)) passing test cases] ..."
         fi
-        echo -e "${GREEN}✔ ${tier_name} PASSED (${count} tests in ${tier_duration}s)${NC}\n"
-        TOTAL_PASSED=$((TOTAL_PASSED + count))
-        local skipped=$(echo "${output}" | grep -oE "OK \(skipped=[0-9]+\)" | grep -oE "[0-9]+" || echo "0")
+        echo -e "${GREEN}✔ ${tier_name} PASSED (${count} tests: ${passed} passed, ${skipped} skipped; ${executed} executed in ${tier_duration}s)${NC}\n"
+        TOTAL_EXECUTED=$((TOTAL_EXECUTED + executed))
+        TOTAL_PASSED=$((TOTAL_PASSED + passed))
         TOTAL_SKIPPED=$((TOTAL_SKIPPED + skipped))
     else
         echo -e "${RED}✖ ${tier_name} FAILED in ${tier_duration}s${NC}"
@@ -116,15 +128,17 @@ TOTAL_DURATION=$((END_TIME - START_TIME))
 echo -e "${BOLD}${CYAN}==============================================================================${NC}"
 echo -e "${BOLD}${CYAN}  Test Execution Summary                                                      ${NC}"
 echo -e "${BOLD}${CYAN}==============================================================================${NC}"
+echo -e "Total Tests Executed: ${BOLD}${TOTAL_EXECUTED}${NC}"
 echo -e "Total Tests Passed: ${BOLD}${GREEN}${TOTAL_PASSED}${NC}"
-echo -e "Total Tests Failed: ${BOLD}${RED}${TOTAL_FAILED}${NC}"
-echo -e "Total Tests Skipped (env-gated): ${BOLD}${YELLOW}${TOTAL_SKIPPED}${NC}"
+echo -e "Total Tiers Failed: ${BOLD}${RED}${TOTAL_FAILED}${NC}"
+echo -e "Total Tests Skipped: ${BOLD}${YELLOW}${TOTAL_SKIPPED}${NC}"
 echo -e "Total Execution Time: ${BOLD}${TOTAL_DURATION}s${NC}"
 
 if [ ${TOTAL_FAILED} -eq 0 ]; then
-    echo -e "\n${BOLD}${GREEN}🎉 ALL TEST TIERS PASSED PERFECTLY! DRIVER IS VERIFIED AND READY FOR RELEASE!${NC}\n"
+    echo -e "\n${BOLD}${GREEN}Software test suite completed without failures. See skipped count above.${NC}"
+    echo -e "Hardware verification and release readiness are not established by this suite.\n"
     exit 0
 else
-    echo -e "\n${BOLD}${RED}❌ TEST SUITE FAILED WITH ${TOTAL_FAILED} ERRORS!${NC}\n"
+    echo -e "\n${BOLD}${RED}Software test suite failed: ${TOTAL_FAILED} tier(s) failed.${NC}\n"
     exit 1
 fi
