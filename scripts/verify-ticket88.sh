@@ -2,7 +2,13 @@
 # User-only: restarts the service and claims the sensor twice. Run after deployment.
 set -euo pipefail
 export LC_ALL=C
-out="$HOME/goodix-ticket88-$(date +%Y%m%d-%H%M%S)"
+gap=${1:-90}
+case "$gap" in
+  90) label=ticket88 ;;
+  310) label=ticket85-expiry ;;
+  *) printf 'Usage: bash %s [90|310]\n' "$0" >&2; exit 2 ;;
+esac
+out="$HOME/goodix-$label-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$out"
 start=$(date --iso-8601=seconds)
 debug_set=0
@@ -49,17 +55,17 @@ pid_snapshot() {
   cat "$out/$1.txt"
 }
 # Ticket 87 already captured hands-off, steady-hold and PAM evidence.
-# Use AGENTS.md's already-verified exception; only the 90s idle pair is new.
-mark 'targeted 90s probe; prior safety phases not repeated'
+# Use AGENTS.md's already-verified exception; only the idle pair is new.
+mark "targeted ${gap}s probe; prior safety phases not repeated"
 verify first
 pid_snapshot before-idle
 before=$(sed -n 's/^MainPID=//p' "$out/before-idle.txt")
 [[ "$before" =~ ^[1-9][0-9]*$ ]] || fail 'inconclusive-because-no-daemon-before-idle'
-mark "90s idle start PID=$before; lift finger, no authentication or suspend"
-sleep 90
+mark "${gap}s idle start PID=$before; lift finger, no authentication or suspend"
+sleep "$gap"
 pid_snapshot after-idle
 after=$(sed -n 's/^MainPID=//p' "$out/after-idle.txt")
-mark "90s idle end PID=$after"
+mark "${gap}s idle end PID=$after"
 [[ "$after" == "$before" ]] || fail 'falsified: daemon did not survive idle with the same PID'
 verify second
 pid_snapshot after-second

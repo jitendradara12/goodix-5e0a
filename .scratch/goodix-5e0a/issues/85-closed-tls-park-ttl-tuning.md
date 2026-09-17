@@ -2,11 +2,53 @@
 
 **What to build:** Extend `GOODIX_5E0A_TLS_PARK_TTL_US` from 30 seconds to 300 seconds (5 minutes). This allows subsequent authentication claims (e.g. repeated `sudo` commands, lockscreen prompts, polkit dialogs) to reuse the live, primed TLS session via the lightweight `QUERY_MCU_STATE` health check (< 10ms), eliminating the 800ms–1s activation handshake penalty.
 
-**Blocked by:** None. Ticket 88 now confirms daemon survival and parked reuse at 90s. Full acceptance remains incomplete: <15ms finger-wait target missed, >300s expiry and state-loss recovery untested. Tickets 84 and 87 are closed.
+**Blocked by:** None. Tickets 84, 87 and 88 are closed. Closure covers TTL reuse and expiry recovery only; original performance and state-loss criteria have explicit deviations below.
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
 
-## Acceptance Criteria
+**Verdict:** confirmed for TTL reuse and expiry recovery; original acceptance deviations recorded below.
+
+## Closure scope and final evidence, 2026-09-17
+
+Verdict: confirmed for extended-TTL reuse and expiry recovery on deployed
+hardware, with deviations. This is not a claim that all original criteria passed.
+
+- Reuse after 90.2s confirmed in `goodix-ticket88-20260917-110502` (below).
+- Expiry after 310.2s confirmed in
+  `/home/sastauser/goodix-ticket85-expiry-20260917-113015/journal.txt`:
+
+```text
+221 11:30:16.691419 PID 24034: 5e0a parking live TLS session (gen=2)
+231 11:35:26.892794 PID 24034: 5e0a USB reset skipped (clean close, boot_seq=1)
+251 11:35:26.922384 PID 24034: 5e0a parked TLS session unhealthy (expired), full re-handshake
+274 11:35:27.152138 PID 24034: Starting up goodix tls server
+337 11:35:27.335011 PID 24034: Chip enabled! Activation complete.
+353 11:35:27.349115 PID 24034: Running command: 0x32
+407 11:36:05.886638 PID 24034: report_verify_status: result verify-no-match
+422 11:36:05.889080 PID 24034: 5e0a parking live TLS session (gen=4)
+```
+
+The first claim matched (line 206). PID stayed 24034 throughout. Expiry to
+finger wait took 426.731ms; later client latency must not be attributed to
+TLS after the driver had entered finger wait. A grep of this full journal
+for `timed out|Invalid ACK|verify-unknown-error|failed to` found no matches.
+No-match is a completed scan, not a transport failure. Extra sudo prompts
+in the terminal follow journal capture during debug-environment cleanup;
+those PAM attempts are outside this evidence window.
+
+Explicit deviations retained rather than checked off:
+- Original <15ms FDT_DOWN target falsified: 27.755ms in the 90s run,
+  despite chip enable completing in 13.770ms. No timing changes stacked.
+- Arbitrary device-state-loss/suspend recovery not tested here. Expiry
+  recovery is confirmed, not a substitute for those fault scenarios.
+- Subjective repeated desktop unlock latency not established by these pairs.
+- Samples at 90s and 310s do not exhaust every time within the five-minute window.
+
+Single next experiment if further performance work is requested: measure
+which pre-touch operations account for the 27.755ms path on this unchanged
+build. No additional experiment is required for this narrowed TTL closure.
+
+## Original acceptance criteria (unchecked items are deviations)
 
 - [x] `libfprint-driver/goodix5e0a.c`: Update `GOODIX_5E0A_TLS_PARK_TTL_US` from 30s to 300s (`G_USEC_PER_SEC * 300`).
 - [ ] Claims initiated within 5 minutes of a prior claim reuse the parked TLS session (`5e0a parked TLS session candidate fresh, health-checking`).
@@ -206,6 +248,32 @@ Overall verdict: inconclusive-because-expiry-and-recovery-untested, with
 the <15ms finger-wait subcriterion falsified. Single next experiment if
 continuing: a >300s idle claim pair on the unchanged build, checking lazy
 expiry and clean full-handshake recovery. No performance tuning is proposed.
+
+## Final expiry probe prepared 2026-09-17
+
+User-only, no rebuild or repeated safety phases:
+
+```bash
+bash /home/sastauser/code/temp/goodix/scripts/verify-ticket88.sh 310
+```
+
+The optional gap accepts only 90 or 310, defaults to 90, and uses an actual
+sleep. The 310s run saves `~/goodix-ticket85-expiry-<timestamp>/`. Same PID
+checks, bounded claims and unfiltered journal capture remain in place.
+Both match and completed no-match are valid transport results.
+
+- Confirm expiry: initial park, unchanged PID, then `parked TLS session
+  unhealthy (expired), full re-handshake`, fresh TLS handshake and normally
+  completed scan after >300s. No transport errors.
+- Falsify: reuse of that same >300s-old park or failed recovery/transport errors.
+- Inconclusive: no initial park, intervening claims, suspend, daemon restart,
+  client timeout or missing journal.
+
+Agent checks: `bash -n scripts/verify-ticket88.sh` passed. Six mocked cases
+(match, no-match, missing flag, timeout, client error, daemon exit) passed for
+both 90 and 310; sleep and hardware commands were stubbed. Driver unchanged.
+This probe does not erase the measured <15ms target miss or prove arbitrary
+state-loss recovery; closure must state any acceptance deviation explicitly.
 
 ## Predicted Journal Signatures
 
