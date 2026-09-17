@@ -35,9 +35,12 @@ Predicted journal signatures (hardware verify phase, per protocol):
 - [x] .gitignore: never-commit section for tpl/exe/pnf/cat/psk/dpapi artifacts.
 - [x] Portability regression test (tier1).
 - [x] Full suite green after all agents land: `bash tests/run_all_tests.sh`
-      → 371/371 passed, 0 failed, 1 skip (105s); tier-1 lane re-run 277/277
-      after a later README/nix description edit. All agents reported patch
-      sync (9), portability (4), flake show/check, and a real Nix build green.
+      → 372/372 passed, 0 failed, 1 skip; NixOS module eval wired into the
+      suite preflight. Independent review round accepted and fixed: real PAM
+      opt-in, bundled-DLL default via service env, 0660+uaccess USB rule
+      (shipped rules file is empty for 5e0a), rewritten /opt installer with
+      rollback + uninstall, C++ deps. Evidence chain in
+      `.scratch/goodix-5e0a/96-review-log.md`.
 - [ ] Hardware verify: NixOS module deployment + 2-phase protocol.
 - [ ] Non-NixOS installer: end-to-end run on a supported distribution.
 
