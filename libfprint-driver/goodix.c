@@ -375,7 +375,7 @@ goodix_receive_protocol (FpDevice *dev, guint8 *data, guint32 length)
   guint8 cmd;
   g_autofree guint8 *payload = NULL;
   guint16 payload_len;
-  gboolean valid_checksum, valid_null_checksum; // TODO implement checksum.
+  gboolean valid_checksum, valid_null_checksum;
 
   if (!goodix_decode_protocol (data, length, &cmd, &payload, &payload_len,
                                &valid_checksum, &valid_null_checksum))
@@ -385,6 +385,11 @@ goodix_receive_protocol (FpDevice *dev, guint8 *data, guint32 length)
       // TODO implement protocol assembling.
       return;
     }
+
+  /* Ticket 52: Goodix firmware emits null-checksum (0x88) and MCU quirks;
+   * strict drops cause timeouts. Maintain log-only tolerance while delivering. */
+  if (!valid_checksum && !valid_null_checksum)
+    fp_dbg ("Protocol checksum mismatch for cmd 0x%02x; tolerated per ticket 52", cmd);
 
   if (cmd == GOODIX_CMD_ACK)
     {
@@ -420,7 +425,7 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
   guint8 flags;
   g_autofree guint8 *payload = NULL;
   guint16 payload_len;
-  gboolean valid_checksum; // TODO implement checksum.
+  gboolean valid_checksum;
 
   priv->data = g_realloc (priv->data, priv->length + length);
   memcpy (priv->data + priv->length, data, length);
@@ -433,6 +438,10 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
       fp_dbg ("not full packet");
       return;
     }
+
+  /* Ticket 52: maintain log-only tolerance for pack checksums against hardware quirks. */
+  if (!valid_checksum)
+    fp_dbg ("Pack checksum mismatch for flags 0x%02x; tolerated per ticket 52", flags);
 
   switch (flags)
     {

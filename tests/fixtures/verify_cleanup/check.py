@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -69,6 +70,10 @@ else:
 
 
 def main():
+    try:
+        signal.signal(signal.SIGHUP, signal.SIG_DFL)
+    except (ValueError, AttributeError):
+        pass
     cases = {
         'match': (0, 0), 'no-match': (0, 0), 'garbage': (1, 1),
         'timeout': (124, 124), 'second-timeout': (124, 124),
