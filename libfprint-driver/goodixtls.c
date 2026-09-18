@@ -125,15 +125,25 @@ tls_server_config_ctx (SSL_CTX *ctx)
 int
 goodix_tls_client_write (GoodixTlsServer *self, guint8 *data, guint16 length)
 {
+  if (!self || self->client_fd < 0 || !data)
+    return -1;
+
   return write (self->client_fd, data, length * sizeof (guint8));
 }
 int
 goodix_tls_server_read (GoodixTlsServer *self, guint8 *data,
                         guint32 length, GError **error)
 {
+  if (!self || !self->ssl_layer || !data)
+    {
+      if (error && !*error)
+        *error = fpi_device_error_new (FP_DEVICE_ERROR_GENERAL);
+      return -1;
+    }
+
   int retr = SSL_read (self->ssl_layer, data, length * sizeof (guint8));
 
-  if (retr <= 0)
+  if (retr <= 0 && error && !*error)
     *error = err_from_ssl ();
   return retr;
 }

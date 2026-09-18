@@ -106,6 +106,9 @@ G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (FpiDeviceGoodixTls, fpi_device_goodixtls,
 gchar *
 data_to_str (guint8 *data, guint32 length)
 {
+  if (!data || length > (G_MAXSIZE - 1) / 2)
+    return NULL;
+
   gchar *string = g_malloc ((length * 2) + 1);
 
   for (guint32 i = 0; i < length; i++)
@@ -426,6 +429,14 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
   g_autofree guint8 *payload = NULL;
   guint16 payload_len;
   gboolean valid_checksum;
+
+  /* Cap accumulator to prevent unbounded allocation on corrupt streams */
+  if (priv->length + length > GOODIX_EP_IN_MAX_BUF_SIZE * 2)
+    {
+      fp_warn ("Receive buffer exceeded frame cap; resetting accumulator");
+      g_clear_pointer (&priv->data, g_free);
+      priv->length = 0;
+    }
 
   priv->data = g_realloc (priv->data, priv->length + length);
   memcpy (priv->data + priv->length, data, length);

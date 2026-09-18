@@ -111,6 +111,9 @@ goodix_decode_pack (guint8 *data, guint32 data_len, guint8 *flags,
   return TRUE;
 }
 
+G_STATIC_ASSERT (sizeof (GoodixPack) == 3);
+G_STATIC_ASSERT (sizeof (GoodixProtocol) == 3);
+
 gboolean
 goodix_decode_protocol (guint8 *data, guint32 data_len, guint8 *cmd,
                         guint8 **payload, guint16 *payload_len,
@@ -121,6 +124,9 @@ goodix_decode_protocol (guint8 *data, guint32 data_len, guint8 *cmd,
   guint16 length;
 
   if (data_len < sizeof (GoodixProtocol) + sizeof (guint8))
+    return FALSE;
+
+  if (GUINT16_FROM_LE (protocol->length) < sizeof (guint8))
     return FALSE;
 
   length = GUINT16_FROM_LE (protocol->length) - sizeof (guint8);

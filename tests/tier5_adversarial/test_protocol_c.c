@@ -68,6 +68,19 @@ main (void)
     g_assert_false (valid_checksum);
   }
 
+  /* Exercise zero-length wire protocol underflow guard */
+  {
+    guint8 zero_len_wire[4] = {0x70, 0x00, 0x00, 0x00};
+    guint8 decoded_cmd;
+    g_autofree guint8 *payload = NULL;
+    guint16 payload_len;
+    gboolean checksum, null_checksum;
+
+    g_assert_false (goodix_decode_protocol (zero_len_wire, sizeof (zero_len_wire),
+                                           &decoded_cmd, &payload, &payload_len,
+                                           &checksum, &null_checksum));
+  }
+
   return 0;
 }
 
