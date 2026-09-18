@@ -718,20 +718,28 @@ static void register_all_shims(void) {
     reg_name("__stdio_common_vfwprintf", sh_stdio_common_vfwprintf);
 }
 
+static u32 g_sizeofimage = 0;
+
 static void* get_export(const char *want) {
-    if (!g_image) return NULL;
-    u32 e = f32(0x3c);
-    u32 exprva = f32(e + 24 + 112 + 8 * 0);
+    if (!g_image || !g_sizeofimage) return NULL;
+    u32 e = *(u32*)(g_image + 0x3c);
+    if (e + 24 + 112 + 8 > g_sizeofimage) return NULL;
+    u32 exprva = *(u32*)(g_image + e + 24 + 112 + 8 * 0);
+    if (!exprva || exprva + 40 > g_sizeofimage) return NULL;
     u32 nnames = *(u32*)(g_image + exprva + 24);
     u32 fns = *(u32*)(g_image + exprva + 28);
     u32 names = *(u32*)(g_image + exprva + 32);
     u32 ords = *(u32*)(g_image + exprva + 36);
+    if (names + nnames * 4 > g_sizeofimage || ords + nnames * 2 > g_sizeofimage) return NULL;
 
     for (u32 i = 0; i < nnames; i++) {
         u32 nrva = *(u32*)(g_image + names + i * 4);
+        if (nrva >= g_sizeofimage) continue;
         if (strcmp((char*)(g_image + nrva), want) == 0) {
             u16 ord = *(u16*)(g_image + ords + i * 2);
+            if (fns + (u32)ord * 4 + 4 > g_sizeofimage) return NULL;
             u32 frva = *(u32*)(g_image + fns + ord * 4);
+            if (frva >= g_sizeofimage) return NULL;
             return g_image + frva;
         }
     }
@@ -771,6 +779,7 @@ static int load_pe_file(const char *path) {
         f16(e + 24) != 0x20b) { errno = ENOEXEC; goto fail; }
     g_imagebase = f64(e + 24 + 24);
     sizeofimage = f32(e + 24 + 56);
+    g_sizeofimage = sizeofimage;
     u32 entry = f32(e + 24 + 16);
     u16 nsec = f16(e + 6);
     u16 optsize = f16(e + 20);
@@ -896,7 +905,14 @@ static int load_pe_file(const char *path) {
 
     int(MS *DllMain)(void*, u32, void*) = (void*)(g_image + entry);
     int r = DllMain((void*)g_imagebase, DLL_PROCESS_ATTACH, 0);
-    if (r) return 0;
+    if (r) {
+        if (fd >= 0) close(fd);
+        if (mfd >= 0) close(mfd);
+        free(g_file);
+        g_file = NULL;
+        g_filelen = 0;
+        return 0;
+    }
     step = "DllMain";
     errno = ENOEXEC;
 
@@ -910,6 +926,7 @@ fail:;
     if (mfd >= 0) close(mfd);
     free(img);
     if (g_image) { munmap(g_image, sizeofimage); g_image = NULL; }
+    g_sizeofimage = 0;
     free(g_file);
     g_file = NULL;
     g_filelen = 0;
@@ -935,7 +952,7 @@ static int (MS *m_getQuality)(GoodixImage*, u32*) = NULL;
 
 static gboolean g_milan_available = FALSE;
 static char g_milan_version[128] = "Unknown";
-static GMutex g_milan_mutex;
+static GRecMutex g_milan_mutex;
 
 static const char *default_search_paths[] = {
     "/var/lib/fprint/GoodixEngineAdapter.dll",
@@ -947,9 +964,9 @@ static const char *default_search_paths[] = {
 };
 
 gboolean goodix_milan_init (const char *dll_path) {
-    g_mutex_lock (&g_milan_mutex);
+    g_rec_mutex_lock (&g_milan_mutex);
     if (g_milan_available) {
-        g_mutex_unlock (&g_milan_mutex);
+        g_rec_mutex_unlock (&g_milan_mutex);
         return TRUE;
     }
 
@@ -976,7 +993,7 @@ gboolean goodix_milan_init (const char *dll_path) {
 
     if (loaded != 0) {
         g_warning("5e0a: failed to load GoodixEngineAdapter.dll");
-        g_mutex_unlock (&g_milan_mutex);
+        g_rec_mutex_unlock (&g_milan_mutex);
         return FALSE;
     }
 
@@ -1000,7 +1017,7 @@ gboolean goodix_milan_init (const char *dll_path) {
         !m_templateGetPackedSize || !m_templatePack || !m_templateUnPack ||
         !m_templateDelete || !m_identifyImage) {
         g_warning("5e0a: required Milan engine exports missing");
-        g_mutex_unlock (&g_milan_mutex);
+        g_rec_mutex_unlock (&g_milan_mutex);
         return FALSE;
     }
     if (!m_getQuality)
@@ -1012,7 +1029,7 @@ gboolean goodix_milan_init (const char *dll_path) {
 
     g_message("5e0a: Milan biometric matching engine loaded successfully (%s)", g_milan_version);
     g_milan_available = TRUE;
-    g_mutex_unlock (&g_milan_mutex);
+    g_rec_mutex_unlock (&g_milan_mutex);
     return TRUE;
 }
 
@@ -1050,8 +1067,11 @@ guint goodix_milan_frame_quality (const uint8_t *pixels,
      * it never saw in the ticket-72 shootout. */
     if (!pixels || width != 64 || height != 80)
         return 0;
-    if (!g_milan_available || !m_getQuality)
+    g_rec_mutex_lock (&g_milan_mutex);
+    if (!g_milan_available || !m_getQuality) {
+        g_rec_mutex_unlock (&g_milan_mutex);
         return 0;
+    }
     ensure_gs();
 
     GoodixImage img;
@@ -1063,17 +1083,23 @@ guint goodix_milan_frame_quality (const uint8_t *pixels,
     guint o = img.overlap;
     if (out_quality) *out_quality = q;
     if (out_overlap) *out_overlap = o;
+    g_rec_mutex_unlock (&g_milan_mutex);
     return (q << 8) | o;
 }
 
 void *goodix_milan_enroll_start (int *max_images) {
     if (!g_milan_available && !goodix_milan_init(NULL)) return NULL;
+    g_rec_mutex_lock (&g_milan_mutex);
     ensure_gs();
     int max_imgs = 16;
     void *ctx = m_enrolStartEx(&max_imgs);
-    if (!ctx) return NULL;
+    if (!ctx) {
+        g_rec_mutex_unlock (&g_milan_mutex);
+        return NULL;
+    }
     if (max_images) *max_images = max_imgs;
     *(u16*)((char*)ctx + 8) = 12; /* Target 12 enrollment touches */
+    g_rec_mutex_unlock (&g_milan_mutex);
     return ctx;
 }
 
@@ -1084,6 +1110,7 @@ int goodix_milan_enroll_add_image (void *ctx,
                                    int *enrolled_count,
                                    int *progress_pct) {
     if (!ctx || !pixels) return -1;
+    g_rec_mutex_lock (&g_milan_mutex);
     ensure_gs();
 
     GoodixImage img;
@@ -1093,6 +1120,7 @@ int goodix_milan_enroll_add_image (void *ctx,
     int add_res = m_enrolAddImage(ctx, &img, NULL, NULL, 0, status_out);
     if (enrolled_count) *enrolled_count = *(u16*)((char*)ctx + 10);
     if (progress_pct) *progress_pct = *(int*)((char*)ctx + 12);
+    g_rec_mutex_unlock (&g_milan_mutex);
     return add_res;
 }
 
@@ -1100,21 +1128,27 @@ int goodix_milan_enroll_commit (void *ctx,
                                 uint8_t **out_blob,
                                 size_t *out_len) {
     if (!ctx || !out_blob || !out_len) return -1;
+    g_rec_mutex_lock (&g_milan_mutex);
     ensure_gs();
 
     void *master_template = NULL;
     int t_res = m_enrolGetTemplate(ctx, &master_template);
-    if (t_res != 0 || !master_template) return -2;
+    if (t_res != 0 || !master_template) {
+        g_rec_mutex_unlock (&g_milan_mutex);
+        return -2;
+    }
 
     int packed_size = m_templateGetPackedSize(master_template);
     if (packed_size <= 0) {
         m_templateDelete(master_template);
+        g_rec_mutex_unlock (&g_milan_mutex);
         return -3;
     }
 
     uint8_t *packed_buf = malloc(packed_size);
     if (!packed_buf) {
         m_templateDelete(master_template);
+        g_rec_mutex_unlock (&g_milan_mutex);
         return -4;
     }
 
@@ -1122,18 +1156,22 @@ int goodix_milan_enroll_commit (void *ctx,
     m_templateDelete(master_template);
     if (pack_res != 0) {
         free(packed_buf);
+        g_rec_mutex_unlock (&g_milan_mutex);
         return -5;
     }
 
     *out_blob = packed_buf;
     *out_len = (size_t)packed_size;
+    g_rec_mutex_unlock (&g_milan_mutex);
     return 0;
 }
 
 void goodix_milan_enroll_finish (void *ctx) {
     if (!ctx) return;
+    g_rec_mutex_lock (&g_milan_mutex);
     ensure_gs();
     m_enrolFinish(ctx);
+    g_rec_mutex_unlock (&g_milan_mutex);
 }
 
 int goodix_milan_verify_image (const uint8_t *pixels,
@@ -1145,12 +1183,14 @@ int goodix_milan_verify_image (const uint8_t *pixels,
     if (!pixels || !template_blob || template_len == 0) return 0;
     if (width != 64 || height != 80) return 0;
     if (!g_milan_available && !goodix_milan_init(NULL)) return 0;
+    g_rec_mutex_lock (&g_milan_mutex);
     ensure_gs();
 
     void *unpacked_template = NULL;
     int unpack_res = m_templateUnPack(template_blob, (int)template_len, NULL, &unpacked_template);
     if (unpack_res != 0 || !unpacked_template) {
         g_warning("5e0a: templateUnPack failed (err=%d)", unpack_res);
+        g_rec_mutex_unlock (&g_milan_mutex);
         return 0;
     }
 
@@ -1170,6 +1210,7 @@ int goodix_milan_verify_image (const uint8_t *pixels,
 
     int is_match = (matched_idx == 0 && match_score > 0);
     if (out_score) *out_score = (match_score >= 0) ? match_score : 0;
+    g_rec_mutex_unlock (&g_milan_mutex);
     return is_match;
 }
 
@@ -1190,6 +1231,7 @@ int goodix_milan_identify_image (const uint8_t *pixels,
     if (width != 64 || height != 80)
         return 0;
     if (!g_milan_available && !goodix_milan_init(NULL)) return 0;
+    g_rec_mutex_lock (&g_milan_mutex);
     ensure_gs();
 
     void **unpacked = g_new0 (void *, n_templates);
@@ -1214,6 +1256,7 @@ int goodix_milan_identify_image (const uint8_t *pixels,
     int is_match = (matched_idx >= 0 && matched_idx < n_templates && match_score > 0);
     if (out_idx) *out_idx = is_match ? matched_idx : -1;
     if (out_score) *out_score = (match_score >= 0) ? match_score : 0;
+    g_rec_mutex_unlock (&g_milan_mutex);
     return is_match;
 
 fail_closed:
@@ -1221,5 +1264,6 @@ fail_closed:
     for (int i = 0; i < n_templates; i++)
         if (unpacked[i]) m_templateDelete (unpacked[i]);
     g_free (unpacked);
+    g_rec_mutex_unlock (&g_milan_mutex);
     return 0;
 }

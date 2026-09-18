@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <time.h>
 
 #define FP_COMPONENT "goodixtls5e0a"
 
@@ -38,6 +39,15 @@
 #include "goodix_proto.h"
 #include "goodix5e0a.h"
 #include "goodix_milan.h"
+
+static inline gint64
+goodix_get_boottime_us (void)
+{
+  struct timespec ts;
+  if (clock_gettime (CLOCK_BOOTTIME, &ts) == 0)
+    return (gint64) ts.tv_sec * G_USEC_PER_SEC + ts.tv_nsec / 1000;
+  return g_get_monotonic_time ();
+}
 
 guint32 goodix5e0a_last_declen = 0;
 
@@ -87,6 +97,7 @@ struct _FpiDeviceGoodixTls5e0a
   gboolean              tls_parked;
   gint64                tls_parked_at;
   guint                 tls_parked_gen;
+  gint64                tls_parked_boot;
 
   /* Ticket 40 warm activation fast path: host-observed recency of the last
    * clean chip-enable (stamped ONLY in on_chip_enabled success — the last
@@ -103,6 +114,7 @@ struct _FpiDeviceGoodixTls5e0a
   const char           *warm_down_reason;
   gboolean              warm_attempted;
   gboolean              warm_retried;
+  gint64                last_clean_boot;
 
   /* Best-of-N per-touch state: collect up to
    * GOODIX_5E0A_FRAMES_PER_TOUCH frames in SCAN_5E0A_GET_IMAGE, retain the
@@ -318,6 +330,7 @@ on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
   /* Ticket 40: the last host→device proof — stamp warmth for the next claim. */
   self->warm_ok = TRUE;
   self->last_clean_mono = g_get_monotonic_time ();
+  self->last_clean_boot = goodix_get_boottime_us ();
   self->warm_boot_seq = goodix_boot_seq_get (dev);
   self->warm_attempted = FALSE;
   fp_dbg ("Chip enabled! Activation complete.");
@@ -332,6 +345,21 @@ static gboolean
 goodix5e0a_warm_fresh (FpDevice *dev)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+  gint64 now_boot = goodix_get_boottime_us ();
+  gint64 now_mono = g_get_monotonic_time ();
+
+  if (self->last_clean_boot > 0)
+    {
+      gint64 sleep_time = (now_boot - self->last_clean_boot) - (now_mono - self->last_clean_mono);
+      if (sleep_time > 500000)
+        {
+          self->warm_ok = FALSE;
+          self->warm_down_reason = "suspended";
+          return FALSE;
+        }
+      if ((now_boot - self->last_clean_boot) >= GOODIX_5E0A_WARM_TTL_US)
+        return FALSE;
+    }
 
   return self->warm_ok
          && self->warm_boot_seq == goodix_boot_seq_get (dev)
@@ -609,6 +637,9 @@ dev_activate (FpImageDevice *img_dev)
    * deactivate/teardown raced between park and this claim. */
   guint pre_gen = goodix_activation_gen_get (dev);
   guint new_gen = goodix_activation_gen_bump (dev);
+  gint64 now_mono = g_get_monotonic_time ();
+  gint64 now_boot = goodix_get_boottime_us ();
+  gboolean park_suspended = FALSE;
 
   /* Ticket 39: a stale burst winner must never survive across claims. */
   goodix5e0a_reset_touch_frames (self);
@@ -616,8 +647,17 @@ dev_activate (FpImageDevice *img_dev)
   /* Ticket 40: each claim gets exactly one silent warm-to-full retry. */
   self->warm_retried = FALSE;
 
+  if (self->tls_parked && self->tls_parked_boot > 0)
+    {
+      gint64 sleep_time = (now_boot - self->tls_parked_boot) - (now_mono - self->tls_parked_at);
+      if (sleep_time > 500000 || (now_boot - self->tls_parked_boot) >= GOODIX_5E0A_TLS_PARK_TTL_US)
+        park_suspended = TRUE;
+    }
+
   if (self->tls_parked && self->tls_parked_gen == pre_gen
       && goodix_tls_is_alive (dev)
+      && !park_suspended
+      && (now_boot - self->tls_parked_boot) < GOODIX_5E0A_TLS_PARK_TTL_US
       && (g_get_monotonic_time () - self->tls_parked_at) < GOODIX_5E0A_TLS_PARK_TTL_US)
     {
       GoodixCallbackInfo *cb_info;
@@ -660,6 +700,11 @@ dev_activate (FpImageDevice *img_dev)
       else
         reason = "expired";
       self->tls_parked = FALSE;
+      if (park_suspended)
+        {
+          self->warm_ok = FALSE;
+          self->warm_down_reason = "suspended";
+        }
       g_message ("5e0a parked TLS session unhealthy (%s), full re-handshake", reason);
       goodix_shutdown_tls (dev, NULL);
     }
@@ -1769,6 +1814,7 @@ goodix5e0a_deactivate (FpImageDevice *img_dev)
       goodix_stop_read_loop (dev);
       self->tls_parked = TRUE;
       self->tls_parked_at = g_get_monotonic_time ();
+      self->tls_parked_boot = goodix_get_boottime_us ();
       self->tls_parked_gen = goodix_activation_gen_get (dev);
       goodix_session_mark_clean (dev);
       fp_dbg ("5e0a parking live TLS session (gen=%u)", self->tls_parked_gen);
@@ -1798,8 +1844,10 @@ fpi_device_goodixtls5e0a_init (FpiDeviceGoodixTls5e0a *self)
   self->tls_parked = FALSE;
   self->tls_parked_at = 0;
   self->tls_parked_gen = 0;
+  self->tls_parked_boot = 0;
   self->warm_ok = FALSE;
   self->last_clean_mono = 0;
+  self->last_clean_boot = 0;
   self->warm_boot_seq = 0;
   self->warm_down_reason = "cold-start";
   self->warm_attempted = FALSE;
@@ -1812,6 +1860,12 @@ fpi_device_goodixtls5e0a_init (FpiDeviceGoodixTls5e0a *self)
   self->best_active = 0;
   self->retry_guard = FALSE;
   self->retry_guard_mono = 0;
+  self->is_verify = FALSE;
+  self->is_identify = FALSE;
+  self->enroll_stage = 0;
+  self->milan_enrol_ctx = NULL;
+  self->tmpl_blob = NULL;
+  self->tmpl_len = 0;
 }
 
 static double
@@ -2044,6 +2098,8 @@ dev_close (FpDevice *dev)
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
   GError *error = NULL;
 
+  self->is_verify = FALSE;
+  self->is_identify = FALSE;
   g_clear_pointer (&self->milan_enrol_ctx, goodix_milan_enroll_finish);
   g_clear_pointer (&self->tmpl_blob, g_free);
   self->tmpl_len = 0;
@@ -2142,7 +2198,10 @@ dev_cancel (FpDevice *dev)
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 
   fp_dbg ("5e0a dev_cancel requested");
+  self->is_verify = FALSE;
   self->is_identify = FALSE;
+  g_clear_pointer (&self->tmpl_blob, g_free);
+  self->tmpl_len = 0;
   g_clear_pointer (&self->milan_enrol_ctx, goodix_milan_enroll_finish);
 
   goodix5e0a_deactivate ((FpImageDevice *) dev);

@@ -106,7 +106,7 @@ G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (FpiDeviceGoodixTls, fpi_device_goodixtls,
 gchar *
 data_to_str (guint8 *data, guint32 length)
 {
-  if (!data || length > (G_MAXSIZE - 1) / 2)
+  if (!data || length > (G_MAXUINT32 - 1) / 2)
     return NULL;
 
   gchar *string = g_malloc ((length * 2) + 1);
@@ -1572,6 +1572,8 @@ goodix_tls_read_all_records (int fd, guint8 *buf, int buf_size)
               return total;
             }
           int n = read (fd, buf + total + hdr_got, 5 - hdr_got);
+          if (n < 0 && errno == EINTR)
+            continue;
           if (n <= 0)
             {
               fp_dbg ("5e0a TLS-RELAY: read header failed (got %d, errno %d)", n, errno);
@@ -1595,6 +1597,8 @@ goodix_tls_read_all_records (int fd, guint8 *buf, int buf_size)
               return total;
             }
           int n = read (fd, buf + total + body_got, rec_len - body_got);
+          if (n < 0 && errno == EINTR)
+            continue;
           if (n <= 0)
             {
               fp_dbg ("5e0a TLS-RELAY: read body failed (got %d, errno %d)", n, errno);
@@ -1621,6 +1625,13 @@ goodix_read_tls (FpDevice *dev, GoodixTlsCallback callback,
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
   FpiDeviceGoodixTlsPrivate *priv =
     fpi_device_goodixtls_get_instance_private (self);
+  if (priv->timeout)
+    {
+      g_source_destroy (priv->timeout);
+      priv->timeout = NULL;
+    }
+  priv->timeout = fpi_device_add_timeout (
+    dev, GOODIX_TIMEOUT, goodix_receive_timeout_cb, NULL, NULL);
   priv->callback = callback;
   priv->user_data = user_data;
   priv->reply = TRUE;
@@ -1720,6 +1731,8 @@ tls_handshake_done (FpiSsm *ssm, FpDevice *dev, GError *error)
             dev, priv->tls_ready_callback->user_data, error);
           g_clear_pointer (&priv->tls_ready_callback, g_free);
         }
+      else
+        g_error_free (error);
       return;
     }
   goodix_send_tls_successfully_established (
@@ -1824,6 +1837,8 @@ on_goodix_request_tls_connection (FpDevice *dev, guint8 *data,
             dev, priv->tls_ready_callback->user_data, error);
           g_clear_pointer (&priv->tls_ready_callback, g_free);
         }
+      else
+        g_error_free (error);
       return;
     }
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (user_data);
