@@ -142,7 +142,10 @@ static void* MS sh_LocalFree(void *h) { free(h); return NULL; }
 
 static void* MS sh_malloc(size_t s) { return malloc(s ? s : 1); }
 static void* MS sh_calloc(size_t n, size_t s) { return calloc(n ? n : 1, s ? s : 1); }
-static void* MS sh_realloc(void *p, size_t s) { return realloc(p, s ? s : 1); }
+static void* MS sh_realloc(void *p, size_t s) {
+    if (!s) { free(p); return NULL; }
+    return realloc(p, s);
+}
 static void  MS sh_free(void *p) { free(p); }
 
 static void MS sh_InitCS(void *p) { }
@@ -285,15 +288,12 @@ static int MS sh_CryptAcquireContextW(void **ph, void *cn, void *pn, u32 pt, u32
 }
 static int MS sh_CryptReleaseContext(void *h, u32 f) { return 1; }
 static int MS sh_CryptGenRandom(void *h, u32 len, u8 *buf) {
-    if (buf) {
-        int fd = open("/dev/urandom", O_RDONLY);
-        if (fd >= 0) {
-            ssize_t ignored = read(fd, buf, len);
-            (void)ignored;
-            close(fd);
-        }
-    }
-    return 1;
+    if (!buf) return 0;
+    int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return 0;
+    ssize_t n = read(fd, buf, len);
+    close(fd);
+    return (n == (ssize_t)len) ? 1 : 0;
 }
 static u32 MS sh_EventUnregister(u64 h) { return 0; }
 static u32 MS sh_RegOpenCurrentUser(u32 am, void **k) { if (k) *k = (void*)0x5001; return 0; }
@@ -449,18 +449,31 @@ static int MS sh_waccess_s(const u16 *p, int m) { return -1; }
 static int MS sh_access_s(const char *p, int m) { return -1; }
 static int MS sh_wmkdir(const u16 *p) { return 0; }
 static u64 MS sh_time64(u64 *t) { time_t n = time(NULL); if (t) *t = n; return n; }
+struct win_tm {
+    int tm_sec, tm_min, tm_hour, tm_mday, tm_mon, tm_year, tm_wday, tm_yday, tm_isdst;
+};
 static int MS sh_localtime64_s(void *tm_out, const u64 *t) {
     if (!tm_out || !t) return 1;
-    time_t now = *t;
-    struct tm *r = localtime(&now);
-    if (!r) return 1;
-    memcpy(tm_out, r, sizeof(struct tm));
+    time_t now = (time_t)*t;
+    struct tm r;
+    if (!localtime_r(&now, &r)) return 1;
+    struct win_tm *w = (struct win_tm*)tm_out;
+    w->tm_sec = r.tm_sec;   w->tm_min = r.tm_min;   w->tm_hour = r.tm_hour;
+    w->tm_mday = r.tm_mday; w->tm_mon = r.tm_mon;   w->tm_year = r.tm_year;
+    w->tm_wday = r.tm_wday; w->tm_yday = r.tm_yday; w->tm_isdst = r.tm_isdst;
     return 0;
 }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
 static size_t MS sh_strftime(char *s, size_t max, const char *fmt, const void *tm) {
-    return strftime(s, max, fmt, (const struct tm*)tm);
+    if (!s || !fmt || !tm) return 0;
+    const struct win_tm *w = (const struct win_tm*)tm;
+    struct tm ltm = {
+        .tm_sec = w->tm_sec, .tm_min = w->tm_min, .tm_hour = w->tm_hour,
+        .tm_mday = w->tm_mday, .tm_mon = w->tm_mon, .tm_year = w->tm_year,
+        .tm_wday = w->tm_wday, .tm_yday = w->tm_yday, .tm_isdst = w->tm_isdst,
+    };
+    return strftime(s, max, fmt, &ltm);
 }
 #pragma GCC diagnostic pop
 static u64 MS sh_clock(void) { return (u64)clock(); }
@@ -1109,7 +1122,7 @@ int goodix_milan_enroll_add_image (void *ctx,
                                    int height,
                                    int *enrolled_count,
                                    int *progress_pct) {
-    if (!ctx || !pixels) return -1;
+    if (!ctx || !pixels || width != 64 || height != 80) return -1;
     g_rec_mutex_lock (&g_milan_mutex);
     ensure_gs();
 

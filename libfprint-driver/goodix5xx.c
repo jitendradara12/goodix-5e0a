@@ -554,6 +554,8 @@ dev_deinit (FpImageDevice * img_dev)
   FpDevice *dev = FP_DEVICE (img_dev);
   GError *error = NULL;
 
+  goodixtls5xx_cleanup (FPI_DEVICE_GOODIXTLS5XX (dev));
+
   if (!goodix_dev_deinit (dev, &error))
     {
       fpi_device_close_complete (dev, error);
@@ -641,6 +643,5 @@ goodixtls5xx_cleanup (FpiDeviceGoodixTls5xx * dev)
 {
   FpiDeviceGoodixTls5xxPrivate * priv = fpi_device_goodixtls5xx_get_instance_private (dev);
 
-  g_free (priv->calibration_img);
-  priv->calibration_img = NULL;
+  g_clear_pointer (&priv->calibration_img, free);
 }

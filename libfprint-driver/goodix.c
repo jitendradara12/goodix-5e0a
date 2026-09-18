@@ -150,6 +150,8 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
       return;
     }
 
+  priv->callback = NULL;
+  priv->user_data = NULL;
   goodix_reset_state (dev);
   if (!error)
     fp_dbg ("Completed command: 0x%02x", priv->cmd);
@@ -1415,7 +1417,9 @@ goodix_reset_state (FpDevice *dev)
   priv->reply = FALSE;
   priv->cmd = 0;
   if (priv->callback == goodix_receive_none ||
+      priv->callback == goodix_receive_none_tolerant ||
       priv->callback == goodix_receive_default ||
+      priv->callback == goodix_receive_firmware_version ||
       priv->callback == (GoodixCmdCallback) goodix_receive_success ||
       priv->callback == (GoodixCmdCallback) goodix_receive_reset ||
       priv->callback == (GoodixCmdCallback) goodix_receive_preset_psk_read)
@@ -1508,6 +1512,7 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
   if (!clean_close)
     goodix_activation_gen_bump (dev);
 
+  priv->inited = FALSE;
   if (priv->timeout)
     {
       g_source_destroy (priv->timeout);
@@ -1522,7 +1527,6 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
     goodix_shutdown_tls (dev, error);
 
   goodix_reset_state (dev);
-  priv->inited = FALSE;
 
   released = g_usb_device_release_interface (fpi_device_get_usb_device (dev),
                                               class->interface, 0, error);
