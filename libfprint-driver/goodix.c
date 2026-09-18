@@ -95,6 +95,8 @@ typedef struct
   guint16       last_usb_vid;
   guint16       last_usb_pid;
   gboolean      usb_identity_valid;
+  gint64        last_close_boot;
+  gint64        last_close_mono;
 
   GCancellable *transfer_cancel_tkn;
   gboolean      inited;
@@ -1360,6 +1362,17 @@ goodix_dev_init (FpDevice *dev, GError **error)
         reenumerated = TRUE;
         priv->clean_close = FALSE;
       }
+    if (priv->last_close_boot > 0)
+      {
+        gint64 now_boot = goodix_get_boottime_us ();
+        gint64 now_mono = g_get_monotonic_time ();
+        gint64 sleep_time = (now_boot - priv->last_close_boot) - (now_mono - priv->last_close_mono);
+        if (sleep_time > 500000)
+          {
+            reenumerated = TRUE;
+            priv->clean_close = FALSE;
+          }
+      }
     take_reset = !priv->clean_close;
     if (take_reset)
       {
@@ -1371,7 +1384,8 @@ goodix_dev_init (FpDevice *dev, GError **error)
         else
           g_message ("5e0a USB reset taken (dirty close, boot_seq=%u)",
                      priv->boot_seq);
-        g_usb_device_reset (fpi_device_get_usb_device (dev), NULL);
+        if (usb != NULL)
+          g_usb_device_reset (usb, NULL);
       }
     else
       {
@@ -1400,6 +1414,12 @@ goodix_reset_state (FpDevice *dev)
   priv->ack = FALSE;
   priv->reply = FALSE;
   priv->cmd = 0;
+  if (priv->callback == goodix_receive_none ||
+      priv->callback == goodix_receive_default ||
+      priv->callback == (GoodixCmdCallback) goodix_receive_success ||
+      priv->callback == (GoodixCmdCallback) goodix_receive_reset ||
+      priv->callback == (GoodixCmdCallback) goodix_receive_preset_psk_read)
+    g_clear_pointer (&priv->user_data, g_free);
   priv->callback = NULL;
   priv->user_data = NULL;
   g_clear_pointer (&priv->data, g_free);
@@ -1517,6 +1537,8 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
           goodix_shutdown_tls (dev, NULL);
         }
     }
+  priv->last_close_boot = goodix_get_boottime_us ();
+  priv->last_close_mono = g_get_monotonic_time ();
   return released;
 }
 

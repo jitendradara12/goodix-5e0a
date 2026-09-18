@@ -20,7 +20,17 @@
 
 #pragma once
 
+#include <time.h>
 #include "drivers_api.h"
+
+static inline gint64
+goodix_get_boottime_us (void)
+{
+  struct timespec ts;
+  if (clock_gettime (CLOCK_BOOTTIME, &ts) == 0)
+    return ((gint64) ts.tv_sec * G_USEC_PER_SEC) + (ts.tv_nsec / 1000);
+  return g_get_monotonic_time ();
+}
 
 // 1 seconds USB timeout
 #define GOODIX_TIMEOUT (1000)

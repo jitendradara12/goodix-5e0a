@@ -223,7 +223,6 @@ goodix_tls_server_deinit (GoodixTlsServer *self, GError **error)
 
   if (self->ssl_layer)
     {
-      SSL_shutdown (self->ssl_layer);
       SSL_free (self->ssl_layer);
       self->ssl_layer = NULL;
     }
@@ -268,10 +267,11 @@ goodix_tls_server_init (GoodixTlsServer *self, GError **error)
   if (self->ssl_ctx == NULL)
     {
       fp_dbg ("Unable to create TLS server context\n");
-      *error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL, "Unable to "
-                                                                  "create TLS "
-                                                                  "server "
-                                                                  "context");
+      if (error)
+        *error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL, "Unable to "
+                                                                    "create TLS "
+                                                                    "server "
+                                                                    "context");
       return FALSE;
     }
   tls_server_config_ctx (self->ssl_ctx);
@@ -288,10 +288,17 @@ goodix_tls_server_init (GoodixTlsServer *self, GError **error)
   self->sock_fd = socks[0];
   self->client_fd = socks[1];
 
+  struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
+  setsockopt (self->sock_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof (tv));
+  setsockopt (self->sock_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof (tv));
+  setsockopt (self->client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof (tv));
+  setsockopt (self->client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof (tv));
+
   self->ssl_layer = SSL_new (self->ssl_ctx);
   if (!self->ssl_layer)
     {
-      *error = err_from_ssl ();
+      if (error)
+        *error = err_from_ssl ();
       close (self->sock_fd);
       close (self->client_fd);
       self->sock_fd = -1;
@@ -305,8 +312,9 @@ goodix_tls_server_init (GoodixTlsServer *self, GError **error)
 
   if (pthread_create (&self->serve_thread, 0, goodix_tls_init_serve, self) != 0)
     {
-      *error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                         "failed to start TLS serve thread");
+      if (error)
+        *error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                           "failed to start TLS serve thread");
       SSL_free (self->ssl_layer);
       self->ssl_layer = NULL;
       close (self->sock_fd);

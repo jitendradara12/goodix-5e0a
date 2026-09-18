@@ -40,14 +40,6 @@
 #include "goodix5e0a.h"
 #include "goodix_milan.h"
 
-static inline gint64
-goodix_get_boottime_us (void)
-{
-  struct timespec ts;
-  if (clock_gettime (CLOCK_BOOTTIME, &ts) == 0)
-    return (gint64) ts.tv_sec * G_USEC_PER_SEC + ts.tv_nsec / 1000;
-  return g_get_monotonic_time ();
-}
 
 guint32 goodix5e0a_last_declen = 0;
 
@@ -88,26 +80,13 @@ struct _FpiDeviceGoodixTls5e0a
   guint                 scan_timeout_gen;
   GSource              *down_timeout;
 
-  /* Ticket 38 parked TLS session: deactivate leaves a live negotiated
-   * context in place and stamps it; the next activate inside the TTL
-   * health-checks it instead of paying the full ladder. Cleared on any
-   * fallback, on destroy-path deactivate, and unconditionally on suspend
-   * (sleep safety). tls_parked_gen pins the park to the post-deactivate
-   * activation generation (ticket-34 counter). */
+  /* Ticket 38 parked TLS session */
   gboolean              tls_parked;
   gint64                tls_parked_at;
   guint                 tls_parked_gen;
   gint64                tls_parked_boot;
 
-  /* Ticket 40 warm activation fast path: host-observed recency of the last
-   * clean chip-enable (stamped ONLY in on_chip_enabled success — the last
-   * host→device proof, not TLS-ready). warm_ok + same boot_seq + age <
-   * GOODIX_5E0A_WARM_TTL_US lets the next claim skip RESET/CHIP_ID/OTP +
-   * config upload (READ_AND_NOP + FW check + TLS kept). This is NEVER a
-   * device-key claim — the handshake always runs, and warmth costs at most
-   * one ladder, never a sticky dead session. warm_down_reason names the
-   * last invalidation for the expired journal line; warm_attempted /
-   * warm_retried bound the silent once-per-claim full-ladder retry. */
+  /* Ticket 40 warm activation fast path */
   gboolean              warm_ok;
   gint64                last_clean_mono;
   guint                 warm_boot_seq;
@@ -116,10 +95,7 @@ struct _FpiDeviceGoodixTls5e0a
   gboolean              warm_retried;
   gint64                last_clean_boot;
 
-  /* Best-of-N per-touch state: collect up to
-   * GOODIX_5E0A_FRAMES_PER_TOUCH frames in SCAN_5E0A_GET_IMAGE, retain the
-   * winner in best_pixels, and submit that winner. Ranks by Milan native
-   * quality first, tie-breaking on contrast range and active touch area. */
+  /* Best-of-N per-touch state */
   guint               frame_count;
   guint               best_frame_no;
   guint               best_quality;
@@ -130,11 +106,7 @@ struct _FpiDeviceGoodixTls5e0a
   gboolean            retry_guard;
   gint64              retry_guard_mono;
 
-  /* Ticket 73: Milan engine enrollment and verification state.
-   * Ticket 77: is_identify marks a gallery (1:N) claim; it shares the
-   * verify single-touch flow (one burst, then report+complete, never the
-   * enroll multi-touch loop). Both flags are per-claim, set only in
-   * dev_enroll/dev_verify/dev_identify entries. */
+  /* Ticket 73 + 77: Milan enrollment, verify and identify state */
   gboolean            is_verify;
   gboolean            is_identify;
   guint               enroll_stage;
@@ -396,11 +368,7 @@ goodix5e0a_start_warm_activation (FpDevice *dev)
                  activate_complete);
 }
 
-/* Ticket 38: the bring-up ladder (cold: CHECK_FW_VER → PSK latch → TLS →
- * post-TLS config → enable; warm: FW check → TLS → enable). Both cold
- * activate and parked-session fallback funnel through here; there is never
- * a third half-bring-up path (warm skipping is ticket 40's lane, and RESET
- * jumps straight through per ticket 45). */
+/* Ticket 38: the bring-up ladder */
 static void
 goodix5e0a_start_full_activation (FpDevice *dev)
 {
@@ -417,18 +385,7 @@ goodix5e0a_start_full_activation (FpDevice *dev)
                  activate_complete);
 }
 
-/* Ticket 38 parked-session health probe reply (GoodixNoneCallback, fed via
- * goodix_receive_none like every other 0xae sender). Generation-tagged
- * like the ticket-34 TLS guard: a mismatch means a deactivate/teardown
- * landed while the probe was in flight, so drop without touching hardware
- * or completing activation. Any live error (notably the short-timeout
- * expiry on a dead device-side key, or a TLS/bus fault) shuts the parked
- * context down and runs today's full ladder exactly once — tls_parked was
- * already cleared at reuse entry, so the fallback cannot loop back here.
- * Ticket 40 refines the error half: a transport-grade miss (short-timeout
- * expiry — the device went silent) also clears warmth before the full
- * ladder; a crypto-grade miss (device answered, session key dead) preserves
- * warmth and enters the warm ladder when fresh, else the full ladder. */
+/* Ticket 38 parked-session health probe reply */
 static void
 on_parked_health_reply (FpDevice *dev, gpointer user_data, GError *error)
 {
@@ -906,7 +863,16 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
       return;
     }
 
-  guint8 status = (len > 0) ? data[0] : 0x00;
+  if (!data || len == 0)
+    {
+      g_clear_pointer (&self->down_timeout, g_source_destroy);
+      self->scan_timeout_gen = self->scan_gen;
+      self->down_timeout = fpi_device_add_timeout (dev, 50, goodix5e0a_on_down_poll_timeout,
+                                                   ssm, NULL);
+      return;
+    }
+
+  guint8 status = data[0];
 
   GString *hex_str = g_string_new ("");
   for (guint16 i = 0; i < len; i++)
@@ -985,8 +951,10 @@ static gboolean
 goodix5e0a_normalize_raw_frame (const GoodixTls5xxPix *pix, guint8 *out_norm,
                                 float *out_min, float *out_max)
 {
-  const int W = GOODIX_5E0A_WIDTH;
-  const int H = GOODIX_5E0A_HEIGHT;
+  if (!pix || !out_norm)
+    return FALSE;
+
+  const int W = GOODIX_5E0A_WIDTH, H = GOODIX_5E0A_HEIGHT;
   guint active = 0;
 
   for (int i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
@@ -995,14 +963,12 @@ goodix5e0a_normalize_raw_frame (const GoodixTls5xxPix *pix, guint8 *out_norm,
 
   if (active < 64)
     {
-      if (out_norm)
-        memset (out_norm, 0, GOODIX_5E0A_FRAME_SIZE);
+      memset (out_norm, 0, GOODIX_5E0A_FRAME_SIZE);
       return FALSE;
     }
 
   g_autofree float *residual = g_new (float, GOODIX_5E0A_FRAME_SIZE);
-  float residual_min = G_MAXFLOAT;
-  float residual_max = -G_MAXFLOAT;
+  float residual_min = G_MAXFLOAT, residual_max = -G_MAXFLOAT;
 
   for (int y = 0; y < H; y++)
     {
@@ -1032,8 +998,7 @@ goodix5e0a_normalize_raw_frame (const GoodixTls5xxPix *pix, guint8 *out_norm,
 
   if (residual_range < 1.0f)
     {
-      if (out_norm)
-        memset (out_norm, 0, GOODIX_5E0A_FRAME_SIZE);
+      memset (out_norm, 0, GOODIX_5E0A_FRAME_SIZE);
       return FALSE;
     }
 
@@ -1254,6 +1219,7 @@ goodix5e0a_deliver_frame (FpDevice *dev)
             }
           else
             {
+              free (packed_blob);
               fp_err ("5e0a Milan enroll commit failed: err=%d", commit_res);
               fpi_device_enroll_complete (dev, NULL,
                                           fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
@@ -1431,8 +1397,6 @@ choose_best:
    * polls (Ticket 20 latency fix for the first claim; a retry claim within the guard
    * window instead parks in FDT_UP until genuine release, ticket 47). */
 deliver:
-  fpi_image_device_image_captured (dev);
-
   if (action != FPI_DEVICE_ACTION_ENROLL || self->enroll_stage >= FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
     {
       self->scan_ssm = NULL;
@@ -1445,6 +1409,8 @@ deliver:
     {
       fpi_ssm_next_state (ssm);
     }
+
+  fpi_image_device_image_captured (dev);
 }
 
 /* Ticket 39 + 76: best-of-N judging for one burst frame. Evaluates the candidate directly from
@@ -1878,8 +1844,11 @@ goodix5e0a_axis_correlation (const GoodixTls5xxPix *pix,
   double sum_a = 0.0, sum_b = 0.0;
   guint count = 0;
 
-  for (int y = 0; y + dy < height; y++)
-    for (int x = 0; x + dx < width; x++)
+  int start_y = MAX (0, -dy);
+  int start_x = MAX (0, -dx);
+
+  for (int y = start_y; y + dy < height && y < height; y++)
+    for (int x = start_x; x + dx < width && x < width; x++)
       {
         sum_a += pix[y * width + x];
         sum_b += pix[(y + dy) * width + x + dx];
@@ -1893,8 +1862,8 @@ goodix5e0a_axis_correlation (const GoodixTls5xxPix *pix,
   double mean_b = sum_b / count;
   double covariance = 0.0, variance_a = 0.0, variance_b = 0.0;
 
-  for (int y = 0; y + dy < height; y++)
-    for (int x = 0; x + dx < width; x++)
+  for (int y = start_y; y + dy < height && y < height; y++)
+    for (int x = start_x; x + dx < width && x < width; x++)
       {
         double a = pix[y * width + x] - mean_a;
         double b = pix[(y + dy) * width + x + dx] - mean_b;
@@ -2037,12 +2006,12 @@ goodix5e0a_suspend (FpDevice *dev)
   self->retry_guard = FALSE;
   self->retry_guard_mono = 0;
   self->session_started = FALSE;
+  self->is_verify = self->is_identify = FALSE;
+  g_clear_pointer (&self->tmpl_blob, g_free);
+  self->tmpl_len = 0;
+  g_clear_pointer (&self->milan_enrol_ctx, goodix_milan_enroll_finish);
   self->scan_gen++;
-  if (self->down_timeout)
-    {
-      g_source_destroy (self->down_timeout);
-      self->down_timeout = NULL;
-    }
+  g_clear_pointer (&self->down_timeout, g_source_destroy);
 
   /* Reset in-flight protocol commands and timeout */
   goodix_reset_state (dev);
