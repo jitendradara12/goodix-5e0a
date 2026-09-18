@@ -318,11 +318,32 @@ static int MS sh_CoCreateGuid(void *guid) { if (guid) memset(guid, 0x42, 16); re
 static int MS sh_CoSetProxyBlanket(void *p, u32 a, u32 b, void *c, u32 d, u32 e, void *f, u32 g) { return 0; }
 static int MS sh_CoInitializeSecurity(void *p, long c, void *as, void *r1, u32 l, u32 il, void *r2, u32 cap, void *r3) { return 0; }
 
-static void* MS sh_SysAllocString(const u16 *s) { return (void*)s; }
-static void* MS sh_SysAllocStringLen(const u16 *s, u32 l) { return (void*)s; }
-static void  MS sh_SysFreeString(void *s) { }
-static u32   MS sh_SysStringLen(const u16 *s) { if (!s) return 0; u32 l = 0; while (s[l]) l++; return l; }
-static u32   MS sh_SysStringByteLen(const u16 *s) { return sh_SysStringLen(s) * 2; }
+static void* MS sh_SysAllocStringLen(const u16 *s, u32 l) {
+    u32 byte_len = l * sizeof(u16);
+    u8 *buf = malloc(sizeof(u32) + byte_len + sizeof(u16));
+    if (!buf) return NULL;
+    *(u32*)buf = byte_len;
+    u16 *str = (u16*)(buf + sizeof(u32));
+    if (s) memcpy(str, s, byte_len);
+    str[l] = 0;
+    return (void*)str;
+}
+static void* MS sh_SysAllocString(const u16 *s) {
+    if (!s) return NULL;
+    u32 l = 0;
+    while (s[l]) l++;
+    return sh_SysAllocStringLen(s, l);
+}
+static void  MS sh_SysFreeString(void *s) {
+    if (s) free((u8*)s - sizeof(u32));
+}
+static u32   MS sh_SysStringByteLen(const u16 *s) {
+    if (!s) return 0;
+    return *(const u32*)((const u8*)s - sizeof(u32));
+}
+static u32   MS sh_SysStringLen(const u16 *s) {
+    return sh_SysStringByteLen(s) / sizeof(u16);
+}
 static void  MS sh_VariantInit(void *v) { if (v) memset(v, 0, 24); }
 static int   MS sh_VariantClear(void *v) { if (v) memset(v, 0, 24); return 0; }
 static int   MS sh_VariantCopy(void *d, void *s) { if (d && s) memcpy(d, s, 24); return 0; }
@@ -766,11 +787,12 @@ static int load_pe_file(const char *path) {
 
     for (int i = 0; i < nsec; i++) {
         u64 s = sectbl + i * 40;
-        u32 vaddr = f32(s + 12), rawsize = f32(s + 16), rawptr = f32(s + 20);
+        u32 vaddr = f32(s + 12), vsize = f32(s + 8), rawsize = f32(s + 16), rawptr = f32(s + 20);
         step = "PE section";
         if ((u64)rawptr + rawsize > (u64)g_filelen ||
             (u64)vaddr + rawsize > sizeofimage) { errno = ENOEXEC; goto fail; }
-        if (rawsize) memcpy(img + vaddr, g_file + rawptr, rawsize);
+        u32 copysize = (vsize && vsize < rawsize) ? vsize : rawsize;
+        if (copysize) memcpy(img + vaddr, g_file + rawptr, copysize);
     }
 
     u32 imprva = f32(e + 24 + 112 + 8 * 1);
@@ -842,6 +864,17 @@ static int load_pe_file(const char *path) {
     close(mfd);
     mfd = -1;
 
+    memset(g_teb, 0, sizeof(g_teb));
+    memset(g_peb, 0, sizeof(g_peb));
+    *(u64*)(g_teb + 0x30) = (u64)g_teb;
+    *(u64*)(g_teb + 0x08) = (u64)(g_teb + sizeof(g_teb));
+    *(u64*)(g_teb + 0x10) = (u64)g_teb;
+    *(u64*)(g_teb + 0x58) = (u64)g_tls_array;
+    *(u64*)(g_teb + 0x60) = (u64)g_peb;
+
+    step = "arch_prctl";
+    if (syscall(SYS_arch_prctl, ARCH_SET_GS, g_teb) != 0) goto fail;
+
     u32 tlsrva = f32(e + 24 + 112 + 8 * 9);
     if (tlsrva) {
         u64 start = *(u64*)(g_image + tlsrva);
@@ -860,17 +893,6 @@ static int load_pe_file(const char *path) {
             }
         }
     }
-
-    memset(g_teb, 0, sizeof(g_teb));
-    memset(g_peb, 0, sizeof(g_peb));
-    *(u64*)(g_teb + 0x30) = (u64)g_teb;
-    *(u64*)(g_teb + 0x08) = (u64)(g_teb + sizeof(g_teb));
-    *(u64*)(g_teb + 0x10) = (u64)g_teb;
-    *(u64*)(g_teb + 0x58) = (u64)g_tls_array;
-    *(u64*)(g_teb + 0x60) = (u64)g_peb;
-
-    step = "arch_prctl";
-    if (syscall(SYS_arch_prctl, ARCH_SET_GS, g_teb) != 0) goto fail;
 
     int(MS *DllMain)(void*, u32, void*) = (void*)(g_image + entry);
     int r = DllMain((void*)g_imagebase, DLL_PROCESS_ATTACH, 0);
@@ -913,6 +935,7 @@ static int (MS *m_getQuality)(GoodixImage*, u32*) = NULL;
 
 static gboolean g_milan_available = FALSE;
 static char g_milan_version[128] = "Unknown";
+static GMutex g_milan_mutex;
 
 static const char *default_search_paths[] = {
     "/var/lib/fprint/GoodixEngineAdapter.dll",
@@ -924,7 +947,11 @@ static const char *default_search_paths[] = {
 };
 
 gboolean goodix_milan_init (const char *dll_path) {
-    if (g_milan_available) return TRUE;
+    g_mutex_lock (&g_milan_mutex);
+    if (g_milan_available) {
+        g_mutex_unlock (&g_milan_mutex);
+        return TRUE;
+    }
 
     g_nshims = 0;
     register_all_shims();
@@ -949,6 +976,7 @@ gboolean goodix_milan_init (const char *dll_path) {
 
     if (loaded != 0) {
         g_warning("5e0a: failed to load GoodixEngineAdapter.dll");
+        g_mutex_unlock (&g_milan_mutex);
         return FALSE;
     }
 
@@ -972,6 +1000,7 @@ gboolean goodix_milan_init (const char *dll_path) {
         !m_templateGetPackedSize || !m_templatePack || !m_templateUnPack ||
         !m_templateDelete || !m_identifyImage) {
         g_warning("5e0a: required Milan engine exports missing");
+        g_mutex_unlock (&g_milan_mutex);
         return FALSE;
     }
     if (!m_getQuality)
@@ -983,6 +1012,7 @@ gboolean goodix_milan_init (const char *dll_path) {
 
     g_message("5e0a: Milan biometric matching engine loaded successfully (%s)", g_milan_version);
     g_milan_available = TRUE;
+    g_mutex_unlock (&g_milan_mutex);
     return TRUE;
 }
 
@@ -1077,12 +1107,19 @@ int goodix_milan_enroll_commit (void *ctx,
     if (t_res != 0 || !master_template) return -2;
 
     int packed_size = m_templateGetPackedSize(master_template);
-    if (packed_size <= 0) return -3;
+    if (packed_size <= 0) {
+        m_templateDelete(master_template);
+        return -3;
+    }
 
     uint8_t *packed_buf = malloc(packed_size);
-    if (!packed_buf) return -4;
+    if (!packed_buf) {
+        m_templateDelete(master_template);
+        return -4;
+    }
 
     int pack_res = m_templatePack(master_template, packed_buf);
+    m_templateDelete(master_template);
     if (pack_res != 0) {
         free(packed_buf);
         return -5;
@@ -1106,6 +1143,7 @@ int goodix_milan_verify_image (const uint8_t *pixels,
                                size_t template_len,
                                int *out_score) {
     if (!pixels || !template_blob || template_len == 0) return 0;
+    if (width != 64 || height != 80) return 0;
     if (!g_milan_available && !goodix_milan_init(NULL)) return 0;
     ensure_gs();
 

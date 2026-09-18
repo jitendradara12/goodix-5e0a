@@ -128,7 +128,21 @@ goodix_tls_client_write (GoodixTlsServer *self, guint8 *data, guint16 length)
   if (!self || self->client_fd < 0 || !data)
     return -1;
 
-  return write (self->client_fd, data, length * sizeof (guint8));
+  guint16 written = 0;
+  while (written < length)
+    {
+      ssize_t n = send (self->client_fd, data + written, length - written, MSG_NOSIGNAL);
+      if (n < 0)
+        {
+          if (errno == EINTR)
+            continue;
+          return -1;
+        }
+      if (n == 0)
+        break;
+      written += (guint16) n;
+    }
+  return written;
 }
 int
 goodix_tls_server_read (GoodixTlsServer *self, guint8 *data,
@@ -141,10 +155,17 @@ goodix_tls_server_read (GoodixTlsServer *self, guint8 *data,
       return -1;
     }
 
+  ERR_clear_error ();
   int retr = SSL_read (self->ssl_layer, data, length * sizeof (guint8));
 
   if (retr <= 0 && error && !*error)
-    *error = err_from_ssl ();
+    {
+      int ssl_err = SSL_get_error (self->ssl_layer, retr);
+      if (ssl_err == SSL_ERROR_ZERO_RETURN)
+        *error = g_error_new (G_IO_ERROR, G_IO_ERROR_CLOSED, "TLS connection closed cleanly by peer");
+      else
+        *error = err_from_ssl ();
+    }
   return retr;
 }
 
@@ -167,6 +188,9 @@ goodix_tls_init_serve (void *me)
                      ERR_error_string (err_code, NULL), err_code,
                      SSL_get_cipher_name (self->ssl_layer));
         }
+      /* Unblock client_fd reader so it does not hang indefinitely on failed accept */
+      if (self->sock_fd >= 0)
+        shutdown (self->sock_fd, SHUT_RDWR);
     }
   else
     {
@@ -197,7 +221,14 @@ goodix_tls_server_deinit (GoodixTlsServer *self, GError **error)
       self->serve_thread = 0;
     }
 
-  /* Close file descriptors after the worker thread has safely exited */
+  if (self->ssl_layer)
+    {
+      SSL_shutdown (self->ssl_layer);
+      SSL_free (self->ssl_layer);
+      self->ssl_layer = NULL;
+    }
+
+  /* Close file descriptors after the worker thread has safely exited and SSL layer is freed */
   if (self->client_fd >= 0)
     {
       close (self->client_fd);
@@ -207,13 +238,6 @@ goodix_tls_server_deinit (GoodixTlsServer *self, GError **error)
     {
       close (self->sock_fd);
       self->sock_fd = -1;
-    }
-
-  if (self->ssl_layer)
-    {
-      SSL_shutdown (self->ssl_layer);
-      SSL_free (self->ssl_layer);
-      self->ssl_layer = NULL;
     }
 
   if (self->ssl_ctx)

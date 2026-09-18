@@ -236,8 +236,10 @@ goodix_receive_reset (FpDevice *dev, guint8 *data, guint16 length,
       return;
     }
 
+  guint16 reset_val;
+  memcpy (&reset_val, data + sizeof (guint8), sizeof (guint16));
   callback (dev, data[0] == 0x00 ? FALSE : TRUE,
-            GUINT16_FROM_LE (*(guint16 *) (data + sizeof (guint8))), // TODO
+            GUINT16_FROM_LE (reset_val),
             cb_info->user_data, NULL);
 }
 
@@ -246,6 +248,7 @@ goodix_receive_preset_psk_read (FpDevice *dev, guint8 *data, guint16 length,
                                 gpointer user_data, GError *error)
 {
   guint32 psk_len;
+  GoodixPresetPsk psk_hdr;
   g_autofree GoodixCallbackInfo *cb_info = user_data;
   GoodixPresetPskReadCallback callback =
     (GoodixPresetPskReadCallback) cb_info->callback;
@@ -278,8 +281,8 @@ goodix_receive_preset_psk_read (FpDevice *dev, guint8 *data, guint16 length,
       return;
     }
 
-  psk_len =
-    GUINT32_FROM_LE (((GoodixPresetPsk *) (data + sizeof (guint8)))->length);
+  memcpy (&psk_hdr, data + sizeof (guint8), sizeof (GoodixPresetPsk));
+  psk_len = GUINT32_FROM_LE (psk_hdr.length);
 
   if (length < psk_len + sizeof (guint8) + sizeof (GoodixPresetPsk))
     {
@@ -290,7 +293,7 @@ goodix_receive_preset_psk_read (FpDevice *dev, guint8 *data, guint16 length,
     }
 
   callback (dev, TRUE,
-            GUINT32_FROM_LE (((GoodixPresetPsk *) (data + sizeof (guint8)))->flags),
+            GUINT32_FROM_LE (psk_hdr.flags),
             data + sizeof (guint8) + sizeof (GoodixPresetPsk), psk_len,
             cb_info->user_data, NULL);
 }
@@ -430,17 +433,23 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
   guint16 payload_len;
   gboolean valid_checksum;
 
-  /* Cap accumulator to prevent unbounded allocation on corrupt streams */
-  if (priv->length + length > GOODIX_EP_IN_MAX_BUF_SIZE * 2)
+  if (data && length > 0)
     {
-      fp_warn ("Receive buffer exceeded frame cap; resetting accumulator");
-      g_clear_pointer (&priv->data, g_free);
-      priv->length = 0;
+      /* Cap accumulator to prevent unbounded allocation on corrupt streams */
+      if (priv->length + length > GOODIX_EP_IN_MAX_BUF_SIZE * 2)
+        {
+          fp_warn ("Receive buffer exceeded frame cap; resetting accumulator");
+          g_clear_pointer (&priv->data, g_free);
+          priv->length = 0;
+        }
+
+      priv->data = g_realloc (priv->data, priv->length + length);
+      memcpy (priv->data + priv->length, data, length);
+      priv->length += length;
     }
 
-  priv->data = g_realloc (priv->data, priv->length + length);
-  memcpy (priv->data + priv->length, data, length);
-  priv->length += length;
+  if (!priv->data || priv->length == 0)
+    return;
 
   if (!goodix_decode_pack (priv->data, priv->length, &flags, &payload,
                            &payload_len, &valid_checksum))
@@ -449,6 +458,8 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
       fp_dbg ("not full packet");
       return;
     }
+
+  guint32 consumed = (guint32) payload_len + sizeof (GoodixPack) + sizeof (guint8);
 
   /* Ticket 52: maintain log-only tolerance for pack checksums against hardware quirks. */
   if (!valid_checksum)
@@ -478,8 +489,17 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
       break;
     }
 
-  g_clear_pointer (&priv->data, g_free);
-  priv->length = 0;
+  if (priv->data && priv->length > consumed)
+    {
+      memmove (priv->data, priv->data + consumed, priv->length - consumed);
+      priv->length -= consumed;
+      goodix_receive_pack (dev, NULL, 0);
+    }
+  else
+    {
+      g_clear_pointer (&priv->data, g_free);
+      priv->length = 0;
+    }
 }
 
 static void
@@ -491,21 +511,22 @@ goodix_receive_data_cb (FpiUsbTransfer *transfer, FpDevice *dev,
     fpi_device_goodixtls_get_instance_private (self);
 
   if (g_cancellable_is_cancelled (priv->transfer_cancel_tkn) ||
-      g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+      g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED) || !priv->inited)
     {
       fp_dbg ("transfer cancelled, aborting read loop...");
       if (error)
         g_error_free (error);
       return;
     }
+
   if (error)
     {
-      // Warn about error and free it.
       fp_warn ("Receive data error: %s", error->message);
       g_error_free (error);
 
       // Retry receiving data and return.
-      goodix_receive_data (dev);
+      if (priv->inited)
+        goodix_receive_data (dev);
       return;
     }
 
@@ -521,6 +542,8 @@ goodix_receive_timeout_cb (FpDevice *dev, gpointer user_data)
   FpiDeviceGoodixTlsPrivate *priv =
     fpi_device_goodixtls_get_instance_private (self);
   GError *error = NULL;
+
+  priv->timeout = NULL;
 
   g_set_error (&error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT,
                "Command timed out: 0x%02x", priv->cmd);
@@ -597,10 +620,11 @@ goodix_send_data (FpDevice *dev, guint8 *data, guint32 length,
   for (guint32 i = 0; i < length; i += GOODIX_EP_OUT_MAX_BUF_SIZE)
     {
       FpiUsbTransfer *transfer = fpi_usb_transfer_new (dev);
+      guint32 chunk_len = MIN ((guint32) GOODIX_EP_OUT_MAX_BUF_SIZE, length - i);
       transfer->short_is_error = TRUE;
 
       fpi_usb_transfer_fill_bulk_full (transfer, class->ep_out, data + i,
-                                       GOODIX_EP_OUT_MAX_BUF_SIZE, NULL);
+                                       chunk_len, NULL);
 
       if (!fpi_usb_transfer_submit_sync (transfer, GOODIX_TIMEOUT,
                                          error))
@@ -1708,6 +1732,13 @@ tls_handshake_run (FpiSsm *ssm, FpDevice *dev)
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
   FpiDeviceGoodixTlsPrivate *priv =
     fpi_device_goodixtls_get_instance_private (self);
+
+  if (!priv->tls_hop)
+    {
+      fpi_ssm_mark_failed (ssm, g_error_new (G_IO_ERROR, G_IO_ERROR_CANCELLED,
+                                             "TLS session context missing"));
+      return;
+    }
 
   int stage = fpi_ssm_get_cur_state (ssm);
 

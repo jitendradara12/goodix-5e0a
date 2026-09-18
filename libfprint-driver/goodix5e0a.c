@@ -296,6 +296,14 @@ on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 
+  if (user_data && GPOINTER_TO_UINT (user_data) != goodix_activation_gen_get (dev))
+    {
+      fp_dbg ("dropping stale on_chip_enabled completion");
+      if (error)
+        g_error_free (error);
+      return;
+    }
+
   if (error)
     {
       /* Ticket 40: a dead enable poisons recency — the next claim ladder-checks. */
@@ -457,6 +465,14 @@ static void
 on_post_tls_config_uploaded (FpDevice *dev, gboolean success,
                              gpointer user_data, GError *error)
 {
+  if (user_data && GPOINTER_TO_UINT (user_data) != goodix_activation_gen_get (dev))
+    {
+      fp_dbg ("dropping stale on_post_tls_config_uploaded completion");
+      if (error)
+        g_error_free (error);
+      return;
+    }
+
   if (error)
     {
       fp_err ("failed to upload config after TLS: %s", error->message);
@@ -473,7 +489,8 @@ on_post_tls_config_uploaded (FpDevice *dev, gboolean success,
       return;
     }
   fp_dbg ("Config uploaded after TLS, enabling chip...");
-  goodix_send_enable_chip (dev, TRUE, on_chip_enabled, NULL);
+  goodix_send_enable_chip (dev, TRUE, on_chip_enabled,
+                           GUINT_TO_POINTER (goodix_activation_gen_get (dev)));
 }
 
 static void
@@ -529,14 +546,16 @@ on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
   if (self->warm_attempted)
     {
       fp_dbg ("Warm path — config already loaded, enabling chip...");
-      goodix_send_enable_chip (dev, TRUE, on_chip_enabled, NULL);
+      goodix_send_enable_chip (dev, TRUE, on_chip_enabled,
+                               GUINT_TO_POINTER (goodix_activation_gen_get (dev)));
     }
   else
     {
       fp_dbg ("Cold path — uploading config after TLS...");
       goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config,
                                      sizeof (goodix_5e0a_config), NULL,
-                                     on_post_tls_config_uploaded, NULL);
+                                     on_post_tls_config_uploaded,
+                                     GUINT_TO_POINTER (goodix_activation_gen_get (dev)));
     }
 }
 
@@ -752,7 +771,15 @@ send_cmd_reply (FpDevice *dev, guint8 cmd, const guint8 *payload, guint16 len,
 static void
 goodix5e0a_step_cb (FpDevice *dev, gpointer user_data, GError *error)
 {
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
   FpiSsm *ssm = user_data;
+
+  if (self->scan_ssm != ssm)
+    {
+      if (error)
+        g_error_free (error);
+      return;
+    }
 
   if (error)
     {
@@ -766,6 +793,15 @@ static void
 goodix5e0a_on_d6_reply (FpDevice *dev, guint8 *data, guint16 len,
                         gpointer ssm, GError *err)
 {
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
+  if (self->scan_ssm != ssm)
+    {
+      if (err)
+        g_error_free (err);
+      return;
+    }
+
   if (err)
     {
       fp_warn ("5e0a session d6 reply error: %s", err->message);
@@ -775,7 +811,6 @@ goodix5e0a_on_d6_reply (FpDevice *dev, guint8 *data, guint16 len,
     {
       fp_dbg ("5e0a session d6 replied successfully (len=%u)", len);
     }
-  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
   self->session_started = TRUE;
   if (self->retry_guard)
     fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_UP_1);
@@ -812,6 +847,13 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
                               gpointer ssm, GError *err)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
+  if (self->scan_ssm != ssm)
+    {
+      if (err)
+        g_error_free (err);
+      return;
+    }
 
   if (err)
     {
@@ -907,7 +949,11 @@ goodix5e0a_normalize_raw_frame (const GoodixTls5xxPix *pix, guint8 *out_norm,
       active++;
 
   if (active < 64)
-    return FALSE;
+    {
+      if (out_norm)
+        memset (out_norm, 0, GOODIX_5E0A_FRAME_SIZE);
+      return FALSE;
+    }
 
   g_autofree float *residual = g_new (float, GOODIX_5E0A_FRAME_SIZE);
   float residual_min = G_MAXFLOAT;
@@ -940,7 +986,11 @@ goodix5e0a_normalize_raw_frame (const GoodixTls5xxPix *pix, guint8 *out_norm,
     *out_max = residual_max;
 
   if (residual_range < 1.0f)
-    return FALSE;
+    {
+      if (out_norm)
+        memset (out_norm, 0, GOODIX_5E0A_FRAME_SIZE);
+      return FALSE;
+    }
 
   for (guint i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
     {
@@ -1482,6 +1532,13 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
                             gpointer ssm, GError *err)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
+  if (self->scan_ssm != ssm)
+    {
+      if (err)
+        g_error_free (err);
+      return;
+    }
 
   if (err)
     {
