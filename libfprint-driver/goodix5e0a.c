@@ -318,11 +318,10 @@ goodix5e0a_warm_fresh (FpDevice *dev)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
   gint64 now_boot = goodix_get_boottime_us ();
-  gint64 now_mono = g_get_monotonic_time ();
 
   if (self->last_clean_boot > 0)
     {
-      gint64 sleep_time = (now_boot - self->last_clean_boot) - (now_mono - self->last_clean_mono);
+      gint64 sleep_time = goodix_sleep_us (self->last_clean_boot, self->last_clean_mono);
       if (sleep_time > 500000)
         {
           self->warm_ok = FALSE;
@@ -594,7 +593,6 @@ dev_activate (FpImageDevice *img_dev)
    * deactivate/teardown raced between park and this claim. */
   guint pre_gen = goodix_activation_gen_get (dev);
   guint new_gen = goodix_activation_gen_bump (dev);
-  gint64 now_mono = g_get_monotonic_time ();
   gint64 now_boot = goodix_get_boottime_us ();
   gboolean park_suspended = FALSE;
 
@@ -606,7 +604,7 @@ dev_activate (FpImageDevice *img_dev)
 
   if (self->tls_parked && self->tls_parked_boot > 0)
     {
-      gint64 sleep_time = (now_boot - self->tls_parked_boot) - (now_mono - self->tls_parked_at);
+      gint64 sleep_time = goodix_sleep_us (self->tls_parked_boot, self->tls_parked_at);
       if (sleep_time > 500000 || (now_boot - self->tls_parked_boot) >= GOODIX_5E0A_TLS_PARK_TTL_US)
         park_suspended = TRUE;
     }
@@ -770,18 +768,26 @@ send_cmd_reply (FpDevice *dev, guint8 cmd, const guint8 *payload, guint16 len,
                         TRUE, callback, cb_info);
 }
 
+static gboolean
+drop_stale_ssm (FpiDeviceGoodixTls5e0a *self, gpointer ssm, GError *err)
+{
+  if (self->scan_ssm != (FpiSsm *) ssm)
+    {
+      if (err)
+        g_error_free (err);
+      return TRUE;
+    }
+  return FALSE;
+}
+
 static void
 goodix5e0a_step_cb (FpDevice *dev, gpointer user_data, GError *error)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
   FpiSsm *ssm = user_data;
 
-  if (self->scan_ssm != ssm)
-    {
-      if (error)
-        g_error_free (error);
-      return;
-    }
+  if (drop_stale_ssm (self, ssm, error))
+    return;
 
   if (error)
     {
@@ -797,12 +803,8 @@ goodix5e0a_on_d6_reply (FpDevice *dev, guint8 *data, guint16 len,
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 
-  if (self->scan_ssm != ssm)
-    {
-      if (err)
-        g_error_free (err);
-      return;
-    }
+  if (drop_stale_ssm (self, ssm, err))
+    return;
 
   if (err)
     {
@@ -850,12 +852,8 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 
-  if (self->scan_ssm != ssm)
-    {
-      if (err)
-        g_error_free (err);
-      return;
-    }
+  if (drop_stale_ssm (self, ssm, err))
+    return;
 
   if (err)
     {
@@ -1544,12 +1542,8 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 
-  if (self->scan_ssm != ssm)
-    {
-      if (err)
-        g_error_free (err);
-      return;
-    }
+  if (drop_stale_ssm (self, ssm, err))
+    return;
 
   if (err)
     {

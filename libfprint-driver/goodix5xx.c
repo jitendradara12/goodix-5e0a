@@ -193,8 +193,7 @@ goodixtls5xx_check_preset_psk_read (FpDevice *dev, gboolean success,
                                     guint32 flags, guint8 *psk, guint16 length,
                                     gpointer user_data, GError *error)
 {
-  g_autofree gchar *psk_str = data_to_str (psk, length);
-
+  /* ponytail: never log or return key bytes; length + flags only. */
   if (error)
     {
       fpi_ssm_mark_failed (user_data, error);
@@ -209,8 +208,7 @@ goodixtls5xx_check_preset_psk_read (FpDevice *dev, gboolean success,
       return;
     }
 
-  fp_dbg ("Device PSK: 0x%s", psk_str);
-  fp_dbg ("Device PSK flags: 0x%08x", flags);
+  fp_dbg ("Device PSK read: len %u, flags 0x%08x", length, flags);
 
   FpiDeviceGoodixTls5xxClass * cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
 
@@ -225,7 +223,7 @@ goodixtls5xx_check_preset_psk_read (FpDevice *dev, gboolean success,
   if (length != cls->psk_len)
     {
       g_set_error (&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                   "Invalid device PSK: 0x%s", psk_str);
+                   "Invalid device PSK (len %u)", length);
       fpi_ssm_mark_failed (user_data, error);
       return;
     }
@@ -233,7 +231,7 @@ goodixtls5xx_check_preset_psk_read (FpDevice *dev, gboolean success,
   if (memcmp (psk, cls->psk, cls->psk_len))
     {
       g_set_error (&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                   "Invalid device PSK: 0x%s", psk_str);
+                   "Invalid device PSK (len %u)", length);
       fpi_ssm_mark_failed (user_data, error);
       return;
     }

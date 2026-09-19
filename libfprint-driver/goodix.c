@@ -326,6 +326,25 @@ goodix_receive_firmware_version (FpDevice *dev, guint8 *data,
   callback (dev, payload, cb_info->user_data, NULL);
 }
 
+/* ponytail: safety-critical cmds must never act on a bad-checksum frame;
+ * image/stream traffic keeps ticket-52 log-only tolerance. */
+static gboolean
+goodix_cmd_is_safety_critical (guint8 cmd)
+{
+  switch (cmd)
+    {
+    case GOODIX_CMD_UPLOAD_CONFIG_MCU:
+    case GOODIX_CMD_ENABLE_CHIP:
+    case GOODIX_CMD_RESET:
+    case GOODIX_CMD_REQUEST_TLS_CONNECTION:
+    case GOODIX_CMD_PRESET_PSK_WRITE:
+    case GOODIX_CMD_PRESET_PSK_READ:
+      return TRUE;
+    default:
+      return FALSE;
+    }
+}
+
 static void
 goodix_receive_ack (FpDevice *dev, guint8 *data, guint16 length,
                     gpointer user_data, GError *error)
@@ -397,9 +416,17 @@ goodix_receive_protocol (FpDevice *dev, guint8 *data, guint32 length)
     }
 
   /* Ticket 52: Goodix firmware emits null-checksum (0x88) and MCU quirks;
-   * strict drops cause timeouts. Maintain log-only tolerance while delivering. */
+   * strict drops cause timeouts. Maintain log-only tolerance while delivering,
+   * except safety-critical cmds which are dropped below. */
   if (!valid_checksum && !valid_null_checksum)
     fp_dbg ("Protocol checksum mismatch for cmd 0x%02x; tolerated per ticket 52", cmd);
+
+  if (!valid_checksum && !valid_null_checksum
+      && goodix_cmd_is_safety_critical (cmd))
+    {
+      fp_warn ("Dropping bad-checksum safety-critical cmd 0x%02x", cmd);
+      return;
+    }
 
   if (cmd == GOODIX_CMD_ACK)
     {
@@ -465,13 +492,24 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
 
   guint32 consumed = (guint32) payload_len + sizeof (GoodixPack) + sizeof (guint8);
 
-  /* Ticket 52: maintain log-only tolerance for pack checksums against hardware quirks. */
+  /* Ticket 52: maintain log-only tolerance for pack checksums against hardware
+   * quirks; safety-critical control frames are dropped (consumed, not dispatched). */
   if (!valid_checksum)
     fp_dbg ("Pack checksum mismatch for flags 0x%02x; tolerated per ticket 52", flags);
+
+  /* ponytail: outer-frame gate (GoodixProtocol.cmd is payload[0]); the inner
+   * checksum gate lives in goodix_receive_protocol. */
+  gboolean drop = !valid_checksum && flags == GOODIX_FLAGS_MSG_PROTOCOL
+    && payload_len >= 1 && payload != NULL
+    && goodix_cmd_is_safety_critical (payload[0]);
+  if (drop)
+    fp_warn ("Dropping bad-checksum safety-critical pack cmd 0x%02x", payload[0]);
 
   switch (flags)
     {
     case GOODIX_FLAGS_MSG_PROTOCOL:
+      if (drop)
+        break;
       fp_dbg ("Got protocol msg");
       goodix_receive_protocol (dev, payload, payload_len);
       break;
@@ -658,6 +696,14 @@ goodix_send_pack (FpDevice *dev, guint8 flags, guint8 *payload,
   if (free_func)
     free_func (payload);
 
+  /* ponytail: fail loudly on encode failure instead of sending an empty pack. */
+  if (data == NULL)
+    {
+      g_set_error (error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                   "Failed to encode pack (flags 0x%02x)", flags);
+      return FALSE;
+    }
+
   return goodix_send_data (dev, data, data_len, g_free, error);
 }
 
@@ -714,6 +760,16 @@ goodix_send_protocol (
                           &data, &data_len);
   if (free_func)
     free_func ((void *) payload);
+
+  /* ponytail: encode overflow yields NULL/0; fail loudly, don't send empty pack. */
+  if (data == NULL)
+    {
+      GError *encode_error =
+        g_error_new (G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                     "Failed to encode protocol command: 0x%02x", cmd);
+      goodix_receive_done (dev, NULL, 0, encode_error);
+      return;
+    }
 
   if (!goodix_send_pack (dev, GOODIX_FLAGS_MSG_PROTOCOL, data, data_len,
                          g_free, &error))
@@ -1366,9 +1422,7 @@ goodix_dev_init (FpDevice *dev, GError **error)
       }
     if (priv->last_close_boot > 0)
       {
-        gint64 now_boot = goodix_get_boottime_us ();
-        gint64 now_mono = g_get_monotonic_time ();
-        gint64 sleep_time = (now_boot - priv->last_close_boot) - (now_mono - priv->last_close_mono);
+        gint64 sleep_time = goodix_sleep_us (priv->last_close_boot, priv->last_close_mono);
         if (sleep_time > 500000)
           {
             reenumerated = TRUE;
@@ -1416,6 +1470,10 @@ goodix_reset_state (FpDevice *dev)
   priv->ack = FALSE;
   priv->reply = FALSE;
   priv->cmd = 0;
+  /* Ownership invariant: only the allowlisted callbacks below own
+   * priv->user_data as a heap GoodixCallbackInfo freed with g_free;
+   * all other callbacks store a raw borrowed FpiSsm* that must NOT be
+   * freed here. Any new heap-owned callback must extend this list. */
   if (priv->callback == goodix_receive_none ||
       priv->callback == goodix_receive_none_tolerant ||
       priv->callback == goodix_receive_default ||

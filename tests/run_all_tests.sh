@@ -55,11 +55,16 @@ run_tier() {
 }
 
 TOTAL_EXECUTED=0
-run_tier 'Tier 1 (Feature Coverage)' tests/tier1_feature
-run_tier 'Tier 4 (Application Scenarios)' tests/tier4_realworld
-run_tier 'Tier 5 (Adversarial Tests)' tests/tier5_adversarial
+TOTAL_FAILED=0
+run_tier 'Tier 1 (Feature Coverage)' tests/tier1_feature || TOTAL_FAILED=$((TOTAL_FAILED + 1))
+run_tier 'Tier 4 (Application Scenarios)' tests/tier4_realworld || TOTAL_FAILED=$((TOTAL_FAILED + 1))
+run_tier 'Tier 5 (Adversarial Tests)' tests/tier5_adversarial || TOTAL_FAILED=$((TOTAL_FAILED + 1))
 
 printf '\nTotal Tests Executed: %d\nTotal Tests Passed: %d\nTotal Tests Skipped: %d\n' \
     "$TOTAL_EXECUTED" "$TOTAL_PASSED" "$TOTAL_SKIPPED"
+if [[ $TOTAL_FAILED -gt 0 ]]; then
+    echo "$TOTAL_FAILED tier(s) failed." >&2
+    exit 1
+fi
 echo 'Software test suite completed without failures. See skipped count above.'
 echo 'Hardware verification and release readiness are not established by this suite.'

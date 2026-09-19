@@ -164,7 +164,7 @@ static void* MS sh_PushEntrySList(void *h, void *e) { return NULL; }
 
 static u32 g_tls_next = 1;
 static void *g_tls_vals[1088];
-static u32  MS sh_TlsAlloc(void) { return g_tls_next++; }
+static u32  MS sh_TlsAlloc(void) { if (g_tls_next >= 1088) return 0xFFFFFFFF; return g_tls_next++; }
 static int  MS sh_TlsFree(u32 i) { return 1; }
 static void* MS sh_TlsGetValue(u32 i) { g_lasterr = 0; return (i < 1088) ? g_tls_vals[i] : NULL; }
 static int  MS sh_TlsSetValue(u32 i, void *v) { if (i < 1088) g_tls_vals[i] = v; return 1; }
@@ -319,6 +319,7 @@ static int MS sh_CoSetProxyBlanket(void *p, u32 a, u32 b, void *c, u32 d, u32 e,
 static int MS sh_CoInitializeSecurity(void *p, long c, void *as, void *r1, u32 l, u32 il, void *r2, u32 cap, void *r3) { return 0; }
 
 static void* MS sh_SysAllocStringLen(const u16 *s, u32 l) {
+    if (l >= 0x40000000) return NULL;
     u32 byte_len = l * sizeof(u16);
     u8 *buf = malloc(sizeof(u32) + byte_len + sizeof(u16));
     if (!buf) return NULL;
@@ -337,6 +338,8 @@ static void* MS sh_SysAllocString(const u16 *s) {
 static void  MS sh_SysFreeString(void *s) {
     if (s) free((u8*)s - sizeof(u32));
 }
+/* ponytail: s-4 prefix read cannot be validated without BSTR allocation
+ * tracking; only engine-supplied BSTRs reach here, leave as-is. */
 static u32   MS sh_SysStringByteLen(const u16 *s) {
     if (!s) return 0;
     return *(const u32*)((const u8*)s - sizeof(u32));
@@ -733,6 +736,10 @@ static void register_all_shims(void) {
 
 static u32 g_sizeofimage = 0;
 
+static inline int rva_ok(u32 rva, u32 need) {
+    return need <= g_sizeofimage && rva <= g_sizeofimage - need;
+}
+
 static void* get_export(const char *want) {
     if (!g_image || !g_sizeofimage) return NULL;
     u32 e = *(u32*)(g_image + 0x3c);
@@ -818,21 +825,31 @@ static int load_pe_file(const char *path) {
     }
 
     u32 imprva = f32(e + 24 + 112 + 8 * 1);
+    step = "PE imports";
     for (u64 d = imprva; ; d += 20) {
+        if (d + 20 > sizeofimage) { errno = ENOEXEC; goto fail; }
         u32 orig = *(u32*)(img + d), namer = *(u32*)(img + d + 12), fthunk = *(u32*)(img + d + 16);
         if (namer == 0) break;
+        if (!rva_ok(namer, 1) ||
+            strnlen((char*)(img + namer), sizeofimage - namer) >= sizeofimage - namer) { errno = ENOEXEC; goto fail; }
         const char *dllname = (char*)(img + namer);
         u64 rt = orig ? orig : fthunk;
+        if (!rt || rt >= sizeofimage) { errno = ENOEXEC; goto fail; }
         for (int j = 0; ; j++) {
-            u64 ent = *(u64*)(img + rt + j * 8);
+            u64 off = rt + (u64)j * 8, soff = (u64)fthunk + (u64)j * 8;
+            if (off + 8 > sizeofimage || soff + 8 > sizeofimage) { errno = ENOEXEC; goto fail; }
+            u64 ent = *(u64*)(img + off);
             if (!ent) break;
-            u64 *slot = (u64*)(img + fthunk + j * 8);
+            u64 *slot = (u64*)(img + soff);
             void *sh = NULL;
             if (ent >> 63) {
                 u32 ord = (u32)(ent & 0xffff);
                 sh = find_shim_ordinal(dllname, ord);
             } else {
-                const char *fn = (char*)(img + (ent & 0x7fffffff) + 2);
+                u32 nrva = (u32)(ent & 0x7fffffff);
+                if (!rva_ok(nrva, 3) ||
+                    strnlen((char*)(img + nrva + 2), sizeofimage - nrva - 2) >= sizeofimage - nrva - 2) { errno = ENOEXEC; goto fail; }
+                const char *fn = (char*)(img + nrva + 2);
                 sh = find_shim(fn);
             }
             *slot = (u64)sh;
@@ -1030,6 +1047,8 @@ gboolean goodix_milan_init (const char *dll_path) {
         !m_templateGetPackedSize || !m_templatePack || !m_templateUnPack ||
         !m_templateDelete || !m_identifyImage) {
         g_warning("5e0a: required Milan engine exports missing");
+        if (g_image) { munmap(g_image, g_sizeofimage); g_image = NULL; }
+        g_sizeofimage = 0;
         g_rec_mutex_unlock (&g_milan_mutex);
         return FALSE;
     }

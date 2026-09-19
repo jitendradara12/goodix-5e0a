@@ -279,8 +279,9 @@ goodix_tls_server_init (GoodixTlsServer *self, GError **error)
   int socks[2] = {-1, -1};
   if (socketpair (AF_UNIX, SOCK_STREAM, 0, socks) != 0)
     {
-      g_set_error (error, G_FILE_ERROR, errno,
-                   "failed to create socket pair: %s", strerror (errno));
+      if (error)
+        g_set_error (error, G_FILE_ERROR, errno,
+                     "failed to create socket pair: %s", strerror (errno));
       SSL_CTX_free (self->ssl_ctx);
       self->ssl_ctx = NULL;
       return FALSE;

@@ -32,6 +32,14 @@ goodix_get_boottime_us (void)
   return g_get_monotonic_time ();
 }
 
+static inline gint64
+goodix_sleep_us (gint64 boot_start, gint64 mono_start)
+{
+  gint64 now_boot = goodix_get_boottime_us ();
+  gint64 now_mono = g_get_monotonic_time ();
+  return (now_boot - boot_start) - (now_mono - mono_start);
+}
+
 // 1 seconds USB timeout
 #define GOODIX_TIMEOUT (1000)
 

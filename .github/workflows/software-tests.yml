@@ -13,6 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Record tested SHA and assert clean tree
+        run: |
+          git rev-parse HEAD
+          test -z "$(git status --porcelain)" || { echo 'Dirty tree; refusing to test' >&2; git status --short >&2; exit 1; }
       - uses: cachix/install-nix-action@v31
         with:
           nix_path: nixpkgs=https://github.com/NixOS/nixpkgs/archive/b1b875982b17dabde9b4a37f3e229e74913e6db3.tar.gz
