@@ -208,7 +208,7 @@ goodix_receive_success (FpDevice *dev, guint8 *data, guint16 length,
       return;
     }
 
-  if (length != sizeof (guint8) * 2)
+  if (!data || length != sizeof (guint8) * 2)
     {
       g_set_error (&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
                    "Invalid success reply length: %d", length);
@@ -232,7 +232,7 @@ goodix_receive_reset (FpDevice *dev, guint8 *data, guint16 length,
       return;
     }
 
-  if (length != sizeof (guint8) + sizeof (guint16))
+  if (!data || length != sizeof (guint8) + sizeof (guint16))
     {
       g_set_error (&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
                    "Invalid reset reply length: %d", length);
@@ -263,7 +263,8 @@ goodix_receive_preset_psk_read (FpDevice *dev, guint8 *data, guint16 length,
       return;
     }
 
-  if (length < sizeof (guint8))
+  /* Zero-length decodes deliver NULL (see goodix_proto.h contract). */
+  if (!data || length < sizeof (guint8))
     {
       g_set_error (&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
                    "Invalid preset PSK read reply length: %d", length);
@@ -318,7 +319,17 @@ goodix_receive_firmware_version (FpDevice *dev, guint8 *data,
       return;
     }
 
-  memcpy (payload, data, length);
+  /* Zero-length decodes deliver NULL; a NULL payload with nonzero length
+   * is a broken reply, while NULL/0 is an empty (unterminated) version. */
+  if (!data && length > 0)
+    {
+      callback (dev, NULL, cb_info->user_data,
+                g_error_new (G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                             "Invalid firmware version reply length: %d", length));
+      return;
+    }
+  if (length > 0)
+    memcpy (payload, data, length);
 
   // Some device send the firmware without the null terminator
   payload[length] = 0x00;
@@ -355,7 +366,8 @@ goodix_receive_ack (FpDevice *dev, guint8 *data, guint16 length,
   GoodixAck *ack = (GoodixAck *) data;
   guint8 cmd;
 
-  if (length != sizeof (GoodixAck))
+  /* Zero-length decodes deliver NULL; never deref before this gate. */
+  if (!data || length != sizeof (GoodixAck))
     {
       fp_warn ("Invalid ACK length: %d", length);
       return;
@@ -425,6 +437,16 @@ goodix_receive_protocol (FpDevice *dev, guint8 *data, guint32 length)
       && goodix_cmd_is_safety_critical (cmd))
     {
       fp_warn ("Dropping bad-checksum safety-critical cmd 0x%02x", cmd);
+      /* Fail fast when the dropped frame answers the pending command;
+       * otherwise the waiter stays armed until the 1s timeout. A corrupt
+       * frame for any other cmd is stray traffic: leave the waiter armed. */
+      if ((priv->ack || priv->reply) && priv->cmd == cmd)
+        {
+          GError *checksum_error =
+            g_error_new (G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
+                         "Bad checksum on safety-critical cmd 0x%02x", cmd);
+          goodix_receive_done (dev, NULL, 0, checksum_error);
+        }
       return;
     }
 
@@ -435,6 +457,10 @@ goodix_receive_protocol (FpDevice *dev, guint8 *data, guint32 length)
       return;
     }
 
+  /* Stray-frame tolerance (intentional no-fail): a mismatched or
+   * unsolicited frame must not kill the pending command's waiter — one
+   * spurious frame would otherwise abort a legitimate wait. The timeout
+   * remains the backstop for a reply that never arrives. */
   if (priv->cmd != cmd)
     {
       fp_warn ("Invalid protocol command: 0x%02x", cmd);
@@ -459,10 +485,6 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
   FpiDeviceGoodixTlsPrivate *priv =
     fpi_device_goodixtls_get_instance_private (self);
-  guint8 flags;
-  g_autofree guint8 *payload = NULL;
-  guint16 payload_len;
-  gboolean valid_checksum;
 
   if (data && length > 0)
     {
@@ -479,68 +501,145 @@ goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length)
       priv->length += length;
     }
 
-  if (!priv->data || priv->length == 0)
-    return;
-
-  if (!goodix_decode_pack (priv->data, priv->length, &flags, &payload,
-                           &payload_len, &valid_checksum))
+  /* Iterative drain: decode + dispatch frames until the accumulator holds
+   * an incomplete frame or is empty. (A recursive self-call here reached
+   * ~32k stack depth on corrupt tiny-header streams: min consumed 4B
+   * against a 128KiB accumulator cap.) */
+  while (priv->data && priv->length > 0)
     {
-      // Packet is not full, we still need data.
-      fp_dbg ("not full packet");
-      return;
-    }
+      guint8 flags;
+      guint8 *payload = NULL;
+      guint16 payload_len;
+      gboolean valid_checksum;
+      guint32 consumed;
+      gboolean drop;
+      guint8 drop_cmd = 0;
 
-  guint32 consumed = (guint32) payload_len + sizeof (GoodixPack) + sizeof (guint8);
+      if (!goodix_decode_pack (priv->data, priv->length, &flags, &payload,
+                               &payload_len, &valid_checksum))
+        {
+          /* Framing gate: the pack checksum covers the header only, so a
+           * corrupt length byte would otherwise stall the pending command
+           * here until timeout while the accumulator fills with bytes that
+           * form no legit frame. A claim above GOODIX_PACK_MAX_PAYLOAD is
+           * impossible (image frames are ~10.6KiB, TLS flights a few KiB),
+           * so drop the accumulator and fail the waiter fast. Anything at
+           * or below the cap keeps ticket-52 tolerance: wait for more data
+           * and let the inner checksum gate judge the payload. */
+          if (priv->length >= sizeof (GoodixPack) + sizeof (guint8))
+            {
+              guint16 claimed_le;
+              guint16 claimed;
+              memcpy (&claimed_le, priv->data + sizeof (guint8),
+                      sizeof (claimed_le));
+              claimed = GUINT16_FROM_LE (claimed_le);
+              if (claimed > GOODIX_PACK_MAX_PAYLOAD)
+                {
+                  fp_warn ("Impossible pack payload length %u; dropping %u buffered bytes",
+                           claimed, priv->length);
+                  if (priv->ack || priv->reply)
+                    goodix_receive_done (dev, NULL, 0,
+                                         g_error_new (G_IO_ERROR,
+                                                      G_IO_ERROR_INVALID_DATA,
+                                                      "Impossible pack payload length: %u",
+                                                      claimed));
+                  g_clear_pointer (&priv->data, g_free);
+                  priv->length = 0;
+                  break;
+                }
+            }
+          // Packet is not full, we still need data.
+          fp_dbg ("not full packet");
+          return;
+        }
 
-  /* Ticket 52: maintain log-only tolerance for pack checksums against hardware
-   * quirks; safety-critical control frames are dropped (consumed, not dispatched). */
-  if (!valid_checksum)
-    fp_dbg ("Pack checksum mismatch for flags 0x%02x; tolerated per ticket 52", flags);
+      /* Decode guarantees consumed <= priv->length, so this corrupt length
+       * can no longer drive the memmove below or dispatch past the buffer. */
+      consumed = (guint32) payload_len + sizeof (GoodixPack) + sizeof (guint8);
 
-  /* ponytail: outer-frame gate (GoodixProtocol.cmd is payload[0]); the inner
-   * checksum gate lives in goodix_receive_protocol. */
-  gboolean drop = !valid_checksum && flags == GOODIX_FLAGS_MSG_PROTOCOL
-    && payload_len >= 1 && payload != NULL
-    && goodix_cmd_is_safety_critical (payload[0]);
-  if (drop)
-    fp_warn ("Dropping bad-checksum safety-critical pack cmd 0x%02x", payload[0]);
+      /* Ticket 52: maintain log-only tolerance for pack checksums against hardware
+       * quirks; safety-critical control frames are dropped (consumed, not dispatched). */
+      if (!valid_checksum)
+        fp_dbg ("Pack checksum mismatch for flags 0x%02x; tolerated per ticket 52", flags);
 
-  switch (flags)
-    {
-    case GOODIX_FLAGS_MSG_PROTOCOL:
+      /* ponytail: outer-frame gate (GoodixProtocol.cmd is payload[0]); the inner
+       * checksum gate lives in goodix_receive_protocol. */
+      drop = !valid_checksum && flags == GOODIX_FLAGS_MSG_PROTOCOL
+        && payload_len >= 1 && payload != NULL
+        && goodix_cmd_is_safety_critical (payload[0]);
       if (drop)
-        break;
-      fp_dbg ("Got protocol msg");
-      goodix_receive_protocol (dev, payload, payload_len);
-      break;
+        drop_cmd = payload[0];
 
-    case GOODIX_FLAGS_TLS:
-    case GOODIX_FLAGS_TLS_DATA:
-      fp_dbg ("Got TLS msg (0x%02x, %u bytes)", flags, payload_len);
-      if (priv->cmd == GOODIX_CMD_MCU_GET_IMAGE ||
-          priv->cmd == GOODIX_CMD_REQUEST_TLS_CONNECTION ||
-          (priv->reply && priv->callback != NULL && priv->cmd == 0))
-        goodix_receive_done (dev, payload, payload_len, NULL);
+      if (drop)
+        {
+          fp_warn ("Dropping bad-checksum safety-critical pack cmd 0x%02x", drop_cmd);
+          /* Fail fast when the dropped frame answers the pending command
+           * (same goodix_receive_done idiom as the timeout path); stray
+           * corrupt frames are only consumed. */
+          if ((priv->ack || priv->reply) && priv->cmd == drop_cmd)
+            goodix_receive_done (dev, NULL, 0,
+                                 g_error_new (G_IO_ERROR,
+                                              G_IO_ERROR_INVALID_DATA,
+                                              "Bad pack checksum on safety-critical cmd 0x%02x",
+                                              drop_cmd));
+        }
       else
-        fp_dbg ("Discarding stale TLS msg (0x%02x, len %u) while waiting for cmd 0x%02x",
-                flags, payload_len, priv->cmd);
-      break;
+        {
+          switch (flags)
+            {
+            case GOODIX_FLAGS_MSG_PROTOCOL:
+              fp_dbg ("Got protocol msg");
+              goodix_receive_protocol (dev, payload, payload_len);
+              break;
 
-    default:
-      fp_warn ("Unknown flags: 0x%02x", flags);
-      break;
-    }
+            case GOODIX_FLAGS_TLS:
+            case GOODIX_FLAGS_TLS_DATA:
+              fp_dbg ("Got TLS msg (0x%02x, %u bytes)", flags, payload_len);
+              if (priv->cmd == GOODIX_CMD_MCU_GET_IMAGE ||
+                  priv->cmd == GOODIX_CMD_REQUEST_TLS_CONNECTION ||
+                  (priv->reply && priv->callback != NULL && priv->cmd == 0))
+                goodix_receive_done (dev, payload, payload_len, NULL);
+              else
+                fp_dbg ("Discarding stale TLS msg (0x%02x, len %u) while waiting for cmd 0x%02x",
+                        flags, payload_len, priv->cmd);
+              break;
 
-  if (priv->data && priv->length > consumed)
-    {
-      memmove (priv->data, priv->data + consumed, priv->length - consumed);
-      priv->length -= consumed;
-      goodix_receive_pack (dev, NULL, 0);
-    }
-  else
-    {
-      g_clear_pointer (&priv->data, g_free);
-      priv->length = 0;
+            default:
+              fp_warn ("Unknown flags: 0x%02x", flags);
+              break;
+            }
+        }
+
+      g_free (payload);
+
+      /* Dispatch may have completed the waiter (goodix_receive_done clears
+       * the accumulator via goodix_reset_state); re-check before advancing. */
+      if (!priv->data || priv->length <= consumed)
+        {
+          g_clear_pointer (&priv->data, g_free);
+          priv->length = 0;
+          break;
+        }
+      /* Advance past the frame, then skip send-path zero padding (every
+       * pack is padded to a 0x40 multiple). Padding must never be parsed
+       * as the next header: flags 0x00/len 0 would dispatch a bogus empty
+       * frame and desync the stream. A real header never opens with 0x00
+       * (0xa0/0xb0/0xb2), so leading zeros are padding by construction. */
+      {
+        guint32 skip = consumed;
+        while (skip < priv->length && priv->data[skip] == 0x00)
+          skip++;
+        if (skip >= priv->length)
+          {
+            g_clear_pointer (&priv->data, g_free);
+            priv->length = 0;
+            break;
+          }
+        if (skip != consumed)
+          fp_dbg ("Skipped %u zero-padding bytes between packs", skip - consumed);
+        memmove (priv->data, priv->data + skip, priv->length - skip);
+        priv->length -= skip;
+      }
     }
 }
 
@@ -1464,28 +1563,35 @@ goodix_reset_state (FpDevice *dev)
   FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
   FpiDeviceGoodixTlsPrivate *priv =
     fpi_device_goodixtls_get_instance_private (self);
+  GoodixCmdCallback callback = priv->callback;
+  gpointer user_data = priv->user_data;
 
   if (priv->timeout)
     g_clear_pointer (&priv->timeout, g_source_destroy);
   priv->ack = FALSE;
   priv->reply = FALSE;
   priv->cmd = 0;
-  /* Ownership invariant: only the allowlisted callbacks below own
-   * priv->user_data as a heap GoodixCallbackInfo freed with g_free;
-   * all other callbacks store a raw borrowed FpiSsm* that must NOT be
-   * freed here. Any new heap-owned callback must extend this list. */
-  if (priv->callback == goodix_receive_none ||
-      priv->callback == goodix_receive_none_tolerant ||
-      priv->callback == goodix_receive_default ||
-      priv->callback == goodix_receive_firmware_version ||
-      priv->callback == (GoodixCmdCallback) goodix_receive_success ||
-      priv->callback == (GoodixCmdCallback) goodix_receive_reset ||
-      priv->callback == (GoodixCmdCallback) goodix_receive_preset_psk_read)
-    g_clear_pointer (&priv->user_data, g_free);
   priv->callback = NULL;
   priv->user_data = NULL;
   g_clear_pointer (&priv->data, g_free);
   priv->length = 0;
+
+  /* Never strand an armed waiter: suspend/deactivate/teardown call this
+   * directly, bypassing goodix_receive_done. Snapshot + clear above (the
+   * completion may re-arm a new command), then fail the waiter with
+   * CANCELLED — the same goodix_receive_done completion idiom the timeout
+   * path uses. Ownership invariant: the completion owns user_data (the
+   * receive_* wrappers free a heap GoodixCallbackInfo; raw waiters such as
+   * the goodix_read_tls SSM pointer are borrowed), so it is NOT freed here.
+   * No recursion via goodix_receive_done: it clears callback before calling
+   * here, so this is a no-op on that path. */
+  if (callback)
+    {
+      GError *cancel_error =
+        g_error_new (G_IO_ERROR, G_IO_ERROR_CANCELLED,
+                     "Command cancelled by state reset");
+      callback (dev, NULL, 0, user_data, cancel_error);
+    }
 }
 
 /* Ticket 34 stale-activation guard (single shared counter; live paths untouched). */
@@ -2031,12 +2137,12 @@ goodix_tls_ready_image_handler (FpDevice *dev, guint8 *data,
   guint8 *tls_data = data;
   guint16 tls_len = length;
 
-  if (length > 9 && data[0] == 0x00 && data[1] == 0x20)
+  if (data && length > 9 && data[0] == 0x00 && data[1] == 0x20)
     {
       tls_data = data + 9;
       tls_len = length - 9;
     }
-  else if (length > 5 && data[0] != 0x17)
+  else if (data && length > 5 && data[0] != 0x17)
     {
       for (guint16 i = 0; i + 5 < length; i++)
         {

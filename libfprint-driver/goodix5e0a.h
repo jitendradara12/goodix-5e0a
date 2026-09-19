@@ -51,6 +51,12 @@
  * inside SCAN_5E0A_GET_IMAGE and submit the highest Milan quality / contrast frame. */
 #define GOODIX_5E0A_FRAMES_PER_TOUCH (4)
 
+/* FDT_DOWN empty-poll stop-loss: a zero-length reply is retried after 50ms
+ * (transient empties happen), but a device answering empty forever is dead.
+ * 200 consecutive empties (~10s+ of polling) fail the scan SSM instead of
+ * looping until the client gives up. Valid replies reset the count. */
+#define GOODIX_5E0A_DOWN_EMPTY_POLL_MAX (200)
+
 
 /* Host TLS PSK for TLS_PSK_WITH_AES_128_CBC_SHA256 (flags 0xbb020001).
  * Captured once from the Windows driver stack (DPAPI-decrypted material);

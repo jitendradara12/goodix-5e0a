@@ -59,13 +59,17 @@ class TestF90SuspendRecovery(unittest.TestCase):
 
     def test_suspend_recovery_lifecycle(self):
         """Parked TLS dies on suspend; stale callbacks drop; fresh activation after resume."""
-        out = self.run_harness(self.suspend, "1..6")
-        self.assertIn("ok 6 /goodix/frame/normalization", out)
+        out = self.run_harness(self.suspend, "1..9")
+        self.assertIn("ok 9 /goodix/frame/normalization", out)
         self.assertNotIn("not ok", out)
         for i, case in enumerate(("park-suspend-resume", "late-tls-after-cancel",
                                   "late-probe-after-suspend", "active-scan-cancel",
                                   "public-idle-suspend"), start=1):
             self.assertIn(f"ok {i} /goodix/lifecycle/{case}", out)
+        # Real-priv teardown: armed waiter drops stale, single completion.
+        self.assertIn("ok 6 /goodix/lifecycle/deactivate-mid-command-real-priv", out)
+        self.assertIn("ok 7 /goodix/lifecycle/suspend-mid-command-real-priv", out)
+        self.assertIn("ok 8 /goodix/lifecycle/step-cb-cancelled-fails-fast", out)
 
     def test_idle_suspend_dispatch_contract(self):
         """Upstream contract: idle suspend/resume completes without driver hooks."""

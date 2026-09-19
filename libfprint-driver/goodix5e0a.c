@@ -79,6 +79,9 @@ struct _FpiDeviceGoodixTls5e0a
   guint                 scan_gen;
   guint                 scan_timeout_gen;
   GSource              *down_timeout;
+  /* Consecutive zero-length FDT_DOWN replies (bounded by
+   * GOODIX_5E0A_DOWN_EMPTY_POLL_MAX); reset by any valid reply. */
+  guint                 down_empty_polls;
 
   /* Ticket 38 parked TLS session */
   gboolean              tls_parked;
@@ -791,6 +794,16 @@ goodix5e0a_step_cb (FpDevice *dev, gpointer user_data, GError *error)
 
   if (error)
     {
+      /* Teardown CANCELLED (goodix_reset_state failing the armed priv
+       * waiter synchronously inside deactivate/suspend) must fail fast:
+       * swallowing it and calling next_state would resurrect the scan
+       * mid-teardown and re-arm priv via send_cmd after the teardown
+       * clear. Only non-CANCELLED transients stay tolerant. */
+      if (g_error_matches (error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        {
+          fpi_ssm_mark_failed (ssm, error);
+          return;
+        }
       fp_dbg ("5e0a step cb tolerant error: %s", error->message);
       g_error_free (error);
     }
@@ -863,12 +876,28 @@ goodix5e0a_on_fdt_down_reply (FpDevice *dev, guint8 *data, guint16 len,
 
   if (!data || len == 0)
     {
+      /* Transient empties are retried (same 50ms pace + scan_timeout_gen
+       * idiom as the no-touch path below), but a device answering empty
+       * forever is dead: bound the loop and fail the SSM with a clear
+       * error instead of polling until the client gives up. */
+      if (++self->down_empty_polls >= GOODIX_5E0A_DOWN_EMPTY_POLL_MAX)
+        {
+          self->down_empty_polls = 0;
+          g_clear_pointer (&self->down_timeout, g_source_destroy);
+          fpi_ssm_mark_failed (ssm,
+                               g_error_new (G_IO_ERROR,
+                                            G_IO_ERROR_INVALID_DATA,
+                                            "5e0a FDT DOWN: %u consecutive empty replies, aborting wait for finger",
+                                            GOODIX_5E0A_DOWN_EMPTY_POLL_MAX));
+          return;
+        }
       g_clear_pointer (&self->down_timeout, g_source_destroy);
       self->scan_timeout_gen = self->scan_gen;
       self->down_timeout = fpi_device_add_timeout (dev, 50, goodix5e0a_on_down_poll_timeout,
                                                    ssm, NULL);
       return;
     }
+  self->down_empty_polls = 0;
 
   guint8 status = data[0];
 
@@ -1637,6 +1666,7 @@ goodix5e0a_scan_run_state (FpiSsm *ssm, FpDevice *dev)
       break;
 
     case SCAN_5E0A_FDT_DOWN:
+      self->down_empty_polls = 0;
       send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN,
                       goodix_5e0a_down_s12, sizeof (goodix_5e0a_down_s12),
                       0, goodix5e0a_on_fdt_down_reply, ssm);
@@ -1675,6 +1705,7 @@ goodix5e0a_scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
   self->scan_ssm = NULL;
   /* Ticket 39: never carry a burst winner past SSM completion. */
   goodix5e0a_reset_touch_frames (self);
+  self->down_empty_polls = 0;
   if (self->down_timeout)
     {
       g_source_destroy (self->down_timeout);
@@ -1722,6 +1753,7 @@ goodix5e0a_scan_start (FpDevice *dev)
 
   /* Ticket 39: each touch starts with an empty burst. */
   goodix5e0a_reset_touch_frames (self);
+  self->down_empty_polls = 0;
 
   self->scan_gen++;
   self->scan_ssm = fpi_ssm_new (dev, goodix5e0a_scan_run_state, SCAN_5E0A_NUM_STATES);
@@ -1742,24 +1774,31 @@ goodix5e0a_deactivate (FpImageDevice *img_dev)
 
   self->session_started = FALSE;
   self->scan_gen++;
+  self->down_empty_polls = 0;
   if (self->down_timeout)
     {
       g_source_destroy (self->down_timeout);
       self->down_timeout = NULL;
     }
 
-  goodix_reset_state (dev);
   /* Ticket 46: a deactivate arriving with a scan SSM in-flight (notably
    * FDT_DOWN wait) leaves the MCU in FDT mode with dangling ACKs that
    * poison the next parked reuse (Invalid ACK 0xae, timeout 0x96/0x32).
    * Pin park eligibility to idle deactivation; a non-idle teardown falls
-   * through to the destroy branch for a clean bring-up. */
+   * through to the destroy branch for a clean bring-up. Capture and free
+   * BEFORE goodix_reset_state: the reset fails the armed priv waiter with
+   * CANCELLED synchronously, and a still-current waiter would complete
+   * (clearing scan_ssm, re-arming priv, reporting session_error). Freed
+   * first, the SSM is abandoned with no completion and its waiter drops
+   * as stale inside the reset — park sees the true state, single report. */
   gboolean scan_was_active = (self->scan_ssm != NULL);
   if (self->scan_ssm != NULL)
     {
       fpi_ssm_free (self->scan_ssm);
       self->scan_ssm = NULL;
     }
+
+  goodix_reset_state (dev);
 
   /* Ticket 38 park branch: the negotiated TLS session (and chip-enabled
    * state) survives across claims while its context is alive — stop the
@@ -1801,6 +1840,7 @@ fpi_device_goodixtls5e0a_init (FpiDeviceGoodixTls5e0a *self)
   self->scan_ssm = NULL;
   self->scan_gen = 0;
   self->down_timeout = NULL;
+  self->down_empty_polls = 0;
   self->tls_parked = FALSE;
   self->tls_parked_at = 0;
   self->tls_parked_gen = 0;
@@ -2005,17 +2045,22 @@ goodix5e0a_suspend (FpDevice *dev)
   self->tmpl_len = 0;
   g_clear_pointer (&self->milan_enrol_ctx, goodix_milan_enroll_finish);
   self->scan_gen++;
+  self->down_empty_polls = 0;
   g_clear_pointer (&self->down_timeout, g_source_destroy);
 
-  /* Reset in-flight protocol commands and timeout */
-  goodix_reset_state (dev);
-
-  /* Free in-flight scan state machine */
+  /* Abandon the scan SSM BEFORE failing the armed priv waiter (same
+   * ordering as deactivate): the reset below delivers CANCELLED
+   * synchronously, and a still-current SSM would complete with
+   * session_error alongside suspend_complete. Freed first, the waiter
+   * drops as stale and the teardown reports exactly once. */
   if (self->scan_ssm != NULL)
     {
       fpi_ssm_free (self->scan_ssm);
       self->scan_ssm = NULL;
     }
+
+  /* Reset in-flight protocol commands and timeout */
+  goodix_reset_state (dev);
 
   /* Terminate background read loop and cancel transfers */
   goodix_stop_read_loop (dev);

@@ -113,6 +113,8 @@ goodix_decode_pack (guint8 *data, guint32 data_len, guint8 *flags,
 
   if (flags)
     *flags = pack->flags;
+  /* Zero-length payloads decode to NULL (never a valid empty pointer to
+   * index); see the header contract. */
   if (payload)
     *payload = length > 0 ? g_memdup2 (data + sizeof (GoodixPack) + sizeof (guint8), length) : NULL;
   if (payload_len)
@@ -149,6 +151,8 @@ goodix_decode_protocol (guint8 *data, guint32 data_len, guint8 *cmd,
 
   if (cmd)
     *cmd = protocol->cmd;
+  /* Zero-length payloads decode to NULL (never a valid empty pointer to
+   * index); see the header contract. */
   if (payload)
     *payload = length > 0 ? g_memdup2 (data + sizeof (GoodixProtocol), length) : NULL;
   if (payload_len)

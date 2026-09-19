@@ -318,6 +318,44 @@ static int MS sh_CoCreateGuid(void *guid) { if (guid) memset(guid, 0x42, 16); re
 static int MS sh_CoSetProxyBlanket(void *p, u32 a, u32 b, void *c, u32 d, u32 e, void *f, u32 g) { return 0; }
 static int MS sh_CoInitializeSecurity(void *p, long c, void *as, void *r1, u32 l, u32 il, void *r2, u32 cap, void *r3) { return 0; }
 
+/* Live-BSTR tracker for sh_SysStringByteLen validation.
+ * Every BSTR handed out by sh_SysAllocStringLen is recorded here and removed
+ * by sh_SysFreeString. ByteLen only trusts the 4-byte length prefix for a
+ * tracked (known-live) pointer; anything else — static, stack, or foreign
+ * buffers — falls back to a bounded NUL scan so a non-BSTR pointer can never
+ * cause an OOB read below the pointer. All engine calls are serialized by
+ * g_milan_mutex, so no extra locking is needed. */
+#define BSTR_TRACK_MAX 512
+#define BSTR_FALLBACK_MAX_CHARS 0x100000u
+static const u16 *g_bstr_live[BSTR_TRACK_MAX];
+static u32 g_bstr_bytes[BSTR_TRACK_MAX];
+static int g_bstr_nlive = 0;
+
+static void bstr_track_add(const u16 *s, u32 byte_len) {
+    if (g_bstr_nlive >= BSTR_TRACK_MAX) return;
+    g_bstr_live[g_bstr_nlive] = s;
+    g_bstr_bytes[g_bstr_nlive] = byte_len;
+    g_bstr_nlive++;
+}
+
+static int bstr_tracked(const u16 *s) {
+    for (int i = 0; i < g_bstr_nlive; i++) {
+        if (g_bstr_live[i] == s) return 1;
+    }
+    return 0;
+}
+
+static void bstr_track_remove(const u16 *s) {
+    for (int i = 0; i < g_bstr_nlive; i++) {
+        if (g_bstr_live[i] == s) {
+            g_bstr_nlive--;
+            g_bstr_live[i] = g_bstr_live[g_bstr_nlive];
+            g_bstr_bytes[i] = g_bstr_bytes[g_bstr_nlive];
+            return;
+        }
+    }
+}
+
 static void* MS sh_SysAllocStringLen(const u16 *s, u32 l) {
     if (l >= 0x40000000) return NULL;
     u32 byte_len = l * sizeof(u16);
@@ -327,6 +365,7 @@ static void* MS sh_SysAllocStringLen(const u16 *s, u32 l) {
     u16 *str = (u16*)(buf + sizeof(u32));
     if (s) memcpy(str, s, byte_len);
     str[l] = 0;
+    bstr_track_add(str, byte_len);
     return (void*)str;
 }
 static void* MS sh_SysAllocString(const u16 *s) {
@@ -336,13 +375,23 @@ static void* MS sh_SysAllocString(const u16 *s) {
     return sh_SysAllocStringLen(s, l);
 }
 static void  MS sh_SysFreeString(void *s) {
-    if (s) free((u8*)s - sizeof(u32));
+    if (!s) return;
+    if (!bstr_tracked((const u16*)s)) return; /* static/stack/foreign: not ours, never free s-4 */
+    bstr_track_remove((const u16*)s);
+    free((u8*)s - sizeof(u32));
 }
-/* ponytail: s-4 prefix read cannot be validated without BSTR allocation
- * tracking; only engine-supplied BSTRs reach here, leave as-is. */
 static u32   MS sh_SysStringByteLen(const u16 *s) {
     if (!s) return 0;
-    return *(const u32*)((const u8*)s - sizeof(u32));
+    /* Fast path: engine-supplied BSTRs were allocated by
+     * sh_SysAllocStringLen above, so only a tracked live pointer may trust
+     * the length prefix. */
+    if (bstr_tracked(s))
+        return *(const u32*)((const u8*)s - sizeof(u32));
+    /* Unknown pointer: the prefix may be unmapped, so fall back to a
+     * bounded NUL scan instead of an OOB read. */
+    u32 l = 0;
+    while (l < BSTR_FALLBACK_MAX_CHARS && s[l]) l++;
+    return l * sizeof(u16);
 }
 static u32   MS sh_SysStringLen(const u16 *s) {
     return sh_SysStringByteLen(s) / sizeof(u16);
@@ -755,6 +804,9 @@ static void* get_export(const char *want) {
     for (u32 i = 0; i < nnames; i++) {
         u32 nrva = *(u32*)(g_image + names + i * 4);
         if (nrva >= g_sizeofimage) continue;
+        /* Bound the export-name read to the mapped image, like the
+         * import-name checks in load_pe_file: skip unterminated names. */
+        if (strnlen((char*)(g_image + nrva), g_sizeofimage - nrva) >= g_sizeofimage - nrva) continue;
         if (strcmp((char*)(g_image + nrva), want) == 0) {
             u16 ord = *(u16*)(g_image + ords + i * 2);
             if (fns + (u32)ord * 4 + 4 > g_sizeofimage) return NULL;
@@ -983,6 +1035,12 @@ static int (MS *m_getQuality)(GoodixImage*, u32*) = NULL;
 static gboolean g_milan_available = FALSE;
 static char g_milan_version[128] = "Unknown";
 static GRecMutex g_milan_mutex;
+
+/* This GLib version provides no G_REC_MUTEX_INIT static initializer, so the
+ * mutex is initialized in a constructor before any wrapper can lock it. */
+__attribute__((constructor)) static void goodix_milan_mutex_init(void) {
+    g_rec_mutex_init(&g_milan_mutex);
+}
 
 static const char *default_search_paths[] = {
     "/var/lib/fprint/GoodixEngineAdapter.dll",
