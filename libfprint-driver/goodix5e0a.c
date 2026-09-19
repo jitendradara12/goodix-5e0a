@@ -1418,12 +1418,14 @@ choose_best:
         }
     }
 
-  /* In verify mode (and all non-enroll actions), deliver the winner directly.
-   * Complete the scan SSM and report finger release immediately so that libfprint can
-   * finish authentication and deactivate without waiting 2-5 seconds for finger lift
-   * polls (Ticket 20 latency fix for the first claim; a retry claim within the guard
-   * window instead parks in FDT_UP until genuine release, ticket 47). */
+  /* image_captured first: it consumes best_pixels and bumps enroll_stage,
+   * so the SSM check below sees the post-increment stage (12th completes). */
 deliver:
+  fpi_image_device_image_captured (dev);
+
+  if (self->scan_ssm != ssm)
+    return;
+
   if (action != FPI_DEVICE_ACTION_ENROLL || self->enroll_stage >= FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
     {
       self->scan_ssm = NULL;
@@ -1436,8 +1438,6 @@ deliver:
     {
       fpi_ssm_next_state (ssm);
     }
-
-  fpi_image_device_image_captured (dev);
 }
 
 /* Ticket 39 + 76: best-of-N judging for one burst frame. Evaluates the candidate directly from
