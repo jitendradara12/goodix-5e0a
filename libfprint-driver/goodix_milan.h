@@ -25,9 +25,6 @@ G_BEGIN_DECLS
  * Returns TRUE on success, FALSE on failure. */
 gboolean goodix_milan_init (const char *dll_path);
 
-/* Check if the Milan engine is loaded and available. */
-gboolean goodix_milan_is_available (void);
-
 /* Get engine version string (e.g. "Milan_v_3.02.00.20"). */
 const char *goodix_milan_get_version (void);
 
@@ -86,15 +83,12 @@ int goodix_milan_identify_image (const uint8_t *pixels,
  * Outputs quality/overlap (0-255 each); returns the combined ranking proxy
  * (quality << 8 | overlap) so quality is primary and overlap breaks ties.
  * Returns 0 with outputs zeroed when the engine or export is unavailable or
- * the geometry is not 64x80 — callers fall back to the legacy minutiae
- * tiebreak and never fail the touch. */
+ * the geometry is not 64x80 — callers break ties by residual range, then
+ * active area. Missing quality alone does not reject a touch. */
 guint goodix_milan_frame_quality (const uint8_t *pixels,
                                   int width,
                                   int height,
                                   guint *out_quality,
                                   guint *out_overlap);
-
-/* Teardown and close the Milan engine. */
-void goodix_milan_close (void);
 
 G_END_DECLS

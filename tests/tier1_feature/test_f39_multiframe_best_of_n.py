@@ -16,8 +16,8 @@ Verifies without hardware (hermetic static & structural validation):
 (f) exactly one image_captured call site and one mark_completed site are
     preserved; the error fallback (mark_failed with zero frames,
     best-so-far submit otherwise) is intact;
-(g) no scope creep: bz3_threshold stays 12 and the ticket-38 park symbols
-    are still present.
+(g) no scope creep: the NBIS bz3_threshold stays gone and the ticket-38
+    park symbols are still present.
 """
 
 import os
@@ -152,7 +152,7 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
         src = _read(GOODIX5E0A_C)
         pairs = (
             ("goodix5e0a_scan_start (FpDevice *dev)",
-             "goodix5e0a_change_state"),
+             "goodix5e0a_deactivate (FpImageDevice *img_dev)"),
             ("dev_activate (FpImageDevice *img_dev)",
              "// ---- ACTIVATE SECTION END ----"),
             ("goodix5e0a_scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)",
@@ -168,9 +168,9 @@ class TestF39MultiframeBestOfN(unittest.TestCase):
                 self.assertIn("goodix5e0a_reset_touch_frames (self);", body)
 
     def test_h_no_scope_creep(self):
-        """Ticket-38 park symbols are untouched and bz3_threshold is 14 (Ticket 43)."""
+        """Ticket-38 park symbols are untouched; NBIS bz3_threshold stays gone."""
         src = _read(GOODIX5E0A_C)
-        self.assertIn("img_dev_class->bz3_threshold = 14;", src)
+        self.assertNotIn("bz3_threshold", src)
         for sym in ("tls_parked", "on_parked_health_reply", "goodix_tls_is_alive"):
             self.assertIn(sym, src)
         for state in ("SCAN_5E0A_SESSION_AE", "SCAN_5E0A_SESSION_D6",

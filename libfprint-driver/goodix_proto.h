@@ -29,6 +29,13 @@
 #define GOODIX_FLAGS_TLS (0xb0)
 #define GOODIX_FLAGS_TLS_DATA (0xb2)
 
+/* Largest plausible pack payload on the wire: image frames are ~10.6KiB
+ * and TLS flights a few KiB. A header claiming more than this (near the
+ * uint16 ceiling) is corruption, not a jumbo frame: fail fast instead of
+ * stalling the pending command while the accumulator fills. */
+#define GOODIX_PACK_MAX_PAYLOAD \
+  (GOODIX_EP_IN_MAX_BUF_SIZE - sizeof (GoodixPack) - sizeof (guint8))
+
 #define GOODIX_CMD_NOP (0x00)
 #define GOODIX_CMD_MCU_GET_IMAGE (0x20)
 #define GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN (0x32)
@@ -159,6 +166,9 @@ void goodix_encode_protocol (guint8        cmd,
                              guint8      **data,
                              guint32      *data_len);
 
+/* Contract: on success with a zero-length payload, *payload is set to
+ * NULL. Callers must NULL-check before touching data[0], even when the
+ * length out-param reads 0. */
 gboolean goodix_decode_pack (guint8   *data,
                              guint32   data_len,
                              guint8   *flags,
@@ -166,6 +176,7 @@ gboolean goodix_decode_pack (guint8   *data,
                              guint16  *payload_len,
                              gboolean *valid_checksum);
 
+/* Contract: same NULL-on-empty rule as goodix_decode_pack. */
 gboolean goodix_decode_protocol (guint8   *data,
                                  guint32   data_len,
                                  guint8   *cmd,

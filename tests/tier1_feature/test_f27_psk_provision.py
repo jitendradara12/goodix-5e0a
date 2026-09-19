@@ -10,14 +10,14 @@ directly with the static host key:
 (b) activation orders CHECK_FW_VER -> UPLOAD_CONFIG with no PSK states,
     callbacks, or slice dispatch in between;
 (c) no factory-default key table ships in the tree;
-(d) the 5e0a-only sliced 0xe4 helper is gone while the shared 511
-    read/write transport helpers remain.
+(d) the sliced 0xe4 and unused 0xe0 write helpers are gone while the
+    shared 511 read transport remains.
 
 Context: ticket 26 closed as could-not-reproduce (single cold-boot
 bad-record-MAC event, true-poweroff boot clean); Exp 26.4 falsified the
 bb020001 slot as the TLS slot and Exp 26.5 proved 0xe0 rejected in both
 encodings. The strip removes two per-activation USB round-trips plus
-journal noise and the factory secret (docs/UPSTREAM.md section 6).
+journal noise and the factory secret (see the ticket-26 provenance notes).
 
 Not covered here: live activation sequencing (needs hardware/fprintd).
 """
@@ -104,16 +104,16 @@ class TestF27UpstreamCleanNoPskReconciliation(unittest.TestCase):
             # Factory bytes 68776fdc...ff1c9 must not appear in any driver file.
             self.assertNotIn("0x68, 0x77, 0x6f, 0xdc", content, path)
 
-    def test_e_shared_psk_helpers_preserved_for_511(self):
-        """Generic 0xe4/0xe0 transport stays for 511; 5e0a-only slice helper is gone."""
+    def test_e_shared_psk_read_preserved_for_511(self):
+        """Keep 511's PSK read transport, not unused write or sliced helpers."""
         with open(GOODIX_C_PATH, "r", encoding="utf-8") as f:
             gsrc = f.read()
         with open(GOODIX_H_PATH, "r", encoding="utf-8") as f:
             ghdr = f.read()
         self.assertIn("goodix_send_preset_psk_read (FpDevice", gsrc)
-        self.assertIn("goodix_send_preset_psk_write (FpDevice", gsrc)
+        self.assertNotIn("goodix_send_preset_psk_write", gsrc)
         self.assertIn("goodix_send_preset_psk_read (FpDevice", ghdr)
-        self.assertIn("goodix_send_preset_psk_write (FpDevice", ghdr)
+        self.assertNotIn("goodix_send_preset_psk_write", ghdr)
         self.assertNotIn("goodix_send_preset_psk_read_slice", gsrc)
         self.assertNotIn("goodix_send_preset_psk_read_slice", ghdr)
 

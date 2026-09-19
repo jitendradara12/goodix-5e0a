@@ -18,25 +18,20 @@
 // License along with this library; if not, write to the Free Software
 // Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 
-#include <arpa/inet.h>
 #include <errno.h>
 #include <glib.h>
-#include <netinet/in.h>
-#include <openssl/crypto.h>
+#include <pthread.h>
+#include <string.h>
+#include <sys/socket.h>
+
 #include <openssl/err.h>
 #include <openssl/rand.h>
 #include <openssl/ssl.h>
 #include <openssl/tls1.h>
-#include <poll.h>
-#include <pthread.h>
-#include <signal.h>
-#include <string.h>
-#include <sys/socket.h>
 
 #include "drivers_api.h"
 #include "fp-device.h"
 #include "fpi-device.h"
-#include "glibconfig.h"
 #include "goodix.h"
 #include "goodixtls.h"
 
@@ -130,22 +125,47 @@ tls_server_config_ctx (SSL_CTX *ctx)
 int
 goodix_tls_client_write (GoodixTlsServer *self, guint8 *data, guint16 length)
 {
-  return write (self->client_fd, data, length * sizeof (guint8));
-}
-int
-goodix_tls_client_read (GoodixTlsServer *self, guint8 *data, guint16 length)
-{
-  return read (self->client_fd, data, length * sizeof (guint8));
-}
+  if (!self || self->client_fd < 0 || !data)
+    return -1;
 
+  guint16 written = 0;
+  while (written < length)
+    {
+      ssize_t n = send (self->client_fd, data + written, length - written, MSG_NOSIGNAL);
+      if (n < 0)
+        {
+          if (errno == EINTR)
+            continue;
+          return -1;
+        }
+      if (n == 0)
+        break;
+      written += (guint16) n;
+    }
+  return written;
+}
 int
 goodix_tls_server_read (GoodixTlsServer *self, guint8 *data,
                         guint32 length, GError **error)
 {
+  if (!self || !self->ssl_layer || !data)
+    {
+      if (error && !*error)
+        *error = fpi_device_error_new (FP_DEVICE_ERROR_GENERAL);
+      return -1;
+    }
+
+  ERR_clear_error ();
   int retr = SSL_read (self->ssl_layer, data, length * sizeof (guint8));
 
-  if (retr <= 0)
-    *error = err_from_ssl ();
+  if (retr <= 0 && error && !*error)
+    {
+      int ssl_err = SSL_get_error (self->ssl_layer, retr);
+      if (ssl_err == SSL_ERROR_ZERO_RETURN)
+        *error = g_error_new (G_IO_ERROR, G_IO_ERROR_CLOSED, "TLS connection closed cleanly by peer");
+      else
+        *error = err_from_ssl ();
+    }
   return retr;
 }
 
@@ -168,6 +188,9 @@ goodix_tls_init_serve (void *me)
                      ERR_error_string (err_code, NULL), err_code,
                      SSL_get_cipher_name (self->ssl_layer));
         }
+      /* Unblock client_fd reader so it does not hang indefinitely on failed accept */
+      if (self->sock_fd >= 0)
+        shutdown (self->sock_fd, SHUT_RDWR);
     }
   else
     {
@@ -198,7 +221,13 @@ goodix_tls_server_deinit (GoodixTlsServer *self, GError **error)
       self->serve_thread = 0;
     }
 
-  /* Close file descriptors after the worker thread has safely exited */
+  if (self->ssl_layer)
+    {
+      SSL_free (self->ssl_layer);
+      self->ssl_layer = NULL;
+    }
+
+  /* Close file descriptors after the worker thread has safely exited and SSL layer is freed */
   if (self->client_fd >= 0)
     {
       close (self->client_fd);
@@ -208,13 +237,6 @@ goodix_tls_server_deinit (GoodixTlsServer *self, GError **error)
     {
       close (self->sock_fd);
       self->sock_fd = -1;
-    }
-
-  if (self->ssl_layer)
-    {
-      SSL_shutdown (self->ssl_layer);
-      SSL_free (self->ssl_layer);
-      self->ssl_layer = NULL;
     }
 
   if (self->ssl_ctx)
@@ -245,10 +267,11 @@ goodix_tls_server_init (GoodixTlsServer *self, GError **error)
   if (self->ssl_ctx == NULL)
     {
       fp_dbg ("Unable to create TLS server context\n");
-      *error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL, "Unable to "
-                                                                  "create TLS "
-                                                                  "server "
-                                                                  "context");
+      if (error)
+        *error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL, "Unable to "
+                                                                    "create TLS "
+                                                                    "server "
+                                                                    "context");
       return FALSE;
     }
   tls_server_config_ctx (self->ssl_ctx);
@@ -256,8 +279,9 @@ goodix_tls_server_init (GoodixTlsServer *self, GError **error)
   int socks[2] = {-1, -1};
   if (socketpair (AF_UNIX, SOCK_STREAM, 0, socks) != 0)
     {
-      g_set_error (error, G_FILE_ERROR, errno,
-                   "failed to create socket pair: %s", strerror (errno));
+      if (error)
+        g_set_error (error, G_FILE_ERROR, errno,
+                     "failed to create socket pair: %s", strerror (errno));
       SSL_CTX_free (self->ssl_ctx);
       self->ssl_ctx = NULL;
       return FALSE;
@@ -265,10 +289,17 @@ goodix_tls_server_init (GoodixTlsServer *self, GError **error)
   self->sock_fd = socks[0];
   self->client_fd = socks[1];
 
+  struct timeval tv = { .tv_sec = 2, .tv_usec = 0 };
+  setsockopt (self->sock_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof (tv));
+  setsockopt (self->sock_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof (tv));
+  setsockopt (self->client_fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof (tv));
+  setsockopt (self->client_fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof (tv));
+
   self->ssl_layer = SSL_new (self->ssl_ctx);
   if (!self->ssl_layer)
     {
-      *error = err_from_ssl ();
+      if (error)
+        *error = err_from_ssl ();
       close (self->sock_fd);
       close (self->client_fd);
       self->sock_fd = -1;
@@ -282,8 +313,9 @@ goodix_tls_server_init (GoodixTlsServer *self, GError **error)
 
   if (pthread_create (&self->serve_thread, 0, goodix_tls_init_serve, self) != 0)
     {
-      *error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
-                                         "failed to start TLS serve thread");
+      if (error)
+        *error = fpi_device_error_new_msg (FP_DEVICE_ERROR_GENERAL,
+                                           "failed to start TLS serve thread");
       SSL_free (self->ssl_layer);
       self->ssl_layer = NULL;
       close (self->sock_fd);

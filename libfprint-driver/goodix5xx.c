@@ -193,8 +193,7 @@ goodixtls5xx_check_preset_psk_read (FpDevice *dev, gboolean success,
                                     guint32 flags, guint8 *psk, guint16 length,
                                     gpointer user_data, GError *error)
 {
-  g_autofree gchar *psk_str = data_to_str (psk, length);
-
+  /* ponytail: never log or return key bytes; length + flags only. */
   if (error)
     {
       fpi_ssm_mark_failed (user_data, error);
@@ -209,8 +208,7 @@ goodixtls5xx_check_preset_psk_read (FpDevice *dev, gboolean success,
       return;
     }
 
-  fp_dbg ("Device PSK: 0x%s", psk_str);
-  fp_dbg ("Device PSK flags: 0x%08x", flags);
+  fp_dbg ("Device PSK read: len %u, flags 0x%08x", length, flags);
 
   FpiDeviceGoodixTls5xxClass * cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
 
@@ -225,7 +223,7 @@ goodixtls5xx_check_preset_psk_read (FpDevice *dev, gboolean success,
   if (length != cls->psk_len)
     {
       g_set_error (&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                   "Invalid device PSK: 0x%s", psk_str);
+                   "Invalid device PSK (len %u)", length);
       fpi_ssm_mark_failed (user_data, error);
       return;
     }
@@ -233,7 +231,7 @@ goodixtls5xx_check_preset_psk_read (FpDevice *dev, gboolean success,
   if (memcmp (psk, cls->psk, cls->psk_len))
     {
       g_set_error (&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA,
-                   "Invalid device PSK: 0x%s", psk_str);
+                   "Invalid device PSK (len %u)", length);
       fpi_ssm_mark_failed (user_data, error);
       return;
     }
@@ -548,17 +546,13 @@ goodixtls5xx_decode_frame (GoodixTls5xxPix * frame, guint32 max_pixels, guint32 
     }
 }
 
-static void G_GNUC_UNUSED
-dev_change_state (FpImageDevice * img_dev, FpiImageDeviceState state)
-{
-  if (state == FPI_IMAGE_DEVICE_STATE_AWAIT_FINGER_ON)
-    goodixtls5xx_scan_start (FPI_DEVICE_GOODIXTLS5XX (img_dev));
-}
 static void
 dev_deinit (FpImageDevice * img_dev)
 {
   FpDevice *dev = FP_DEVICE (img_dev);
   GError *error = NULL;
+
+  goodixtls5xx_cleanup (FPI_DEVICE_GOODIXTLS5XX (dev));
 
   if (!goodix_dev_deinit (dev, &error))
     {
@@ -581,28 +575,6 @@ dev_init (FpImageDevice *img_dev)
     }
 
   fpi_device_open_complete (dev, NULL);
-}
-
-static void G_GNUC_UNUSED
-dev_deactivate (FpImageDevice *img_dev)
-{
-  FpDevice *dev = FP_DEVICE (img_dev);
-
-  /* Ticket 34: orphan any in-flight TLS activation; its completion will drop. */
-  goodix_activation_gen_bump (dev);
-
-  goodix_reset_state (dev);
-  GError *error = NULL;
-
-  goodix_shutdown_tls (dev, &error);
-
-  FpiDeviceGoodixTls5xxClass *cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
-  goodixtls5xx_cleanup (FPI_DEVICE_GOODIXTLS5XX (dev));
-
-  if (cls->reset_state)
-    cls->reset_state (dev);
-  goodix_stop_read_loop (dev);
-  fpi_image_device_deactivate_complete (img_dev, error);
 }
 
 static void
@@ -669,6 +641,5 @@ goodixtls5xx_cleanup (FpiDeviceGoodixTls5xx * dev)
 {
   FpiDeviceGoodixTls5xxPrivate * priv = fpi_device_goodixtls5xx_get_instance_private (dev);
 
-  g_free (priv->calibration_img);
-  priv->calibration_img = NULL;
+  g_clear_pointer (&priv->calibration_img, free);
 }

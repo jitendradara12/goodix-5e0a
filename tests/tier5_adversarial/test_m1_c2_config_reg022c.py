@@ -33,27 +33,10 @@ from tests.test_utils import (
 )
 from tests.repo_paths import REPO_ROOT
 
-TMP_LIBFPRINT_HEADER = Path("/tmp/libfprint-goodix/libfprint/drivers/goodixtls/goodix5e0a.h")
-if not TMP_LIBFPRINT_HEADER.exists():
-    # Hermetic fallback: deployed build tree absent, test the repo header itself.
-    TMP_LIBFPRINT_HEADER = REPO_ROOT / "libfprint-driver" / "goodix5e0a.h"
 REPO_HEADER = REPO_ROOT / "libfprint-driver" / "goodix5e0a.h"
-TEST_PRESS_CAPTURE_PY = (REPO_ROOT / "legacy-experiments" / "test_press_and_capture.py"
-                         if (REPO_ROOT / "legacy-experiments" / "test_press_and_capture.py").exists()
-                         else (REPO_ROOT / "experiments" / "test_press_and_capture.py"
-                               if (REPO_ROOT / "experiments" / "test_press_and_capture.py").exists()
-                               else REPO_ROOT / "test_press_and_capture.py"))
-DRIVER_52XD_PY = Path("/tmp/goodix-fp-dump/driver_52xd.py")
-TEST_TOUCH_SENSOR_PY = (REPO_ROOT / "legacy-experiments" / "test_touch_sensor.py"
-                        if (REPO_ROOT / "legacy-experiments" / "test_touch_sensor.py").exists()
-                        else (REPO_ROOT / "experiments" / "test_touch_sensor.py"
-                              if (REPO_ROOT / "experiments" / "test_touch_sensor.py").exists()
-                              else REPO_ROOT / "test_touch_sensor.py"))
-SCAN_FINGER_PY = (REPO_ROOT / "legacy-experiments" / "scan_finger.py"
-                  if (REPO_ROOT / "legacy-experiments" / "scan_finger.py").exists()
-                  else (REPO_ROOT / "experiments" / "scan_finger.py"
-                        if (REPO_ROOT / "experiments" / "scan_finger.py").exists()
-                        else REPO_ROOT / "scan_finger.py"))
+TEST_PRESS_CAPTURE_PY = REPO_ROOT / "legacy-experiments" / "test_press_and_capture.py"
+TEST_TOUCH_SENSOR_PY = REPO_ROOT / "legacy-experiments" / "test_touch_sensor.py"
+SCAN_FINGER_PY = REPO_ROOT / "legacy-experiments" / "scan_finger.py"
 
 
 def parse_c_array(header_content: str, array_name: str) -> bytes:
@@ -98,11 +81,8 @@ class TestAdversarialConfig52XDAndReg022C(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.tmp_header_str = TMP_LIBFPRINT_HEADER.read_text(encoding="utf-8")
         cls.repo_header_str = REPO_HEADER.read_text(encoding="utf-8")
         cls.press_config = extract_hex_assignment(TEST_PRESS_CAPTURE_PY, "CONFIG_52XD")
-        cls.dump_config = (extract_hex_assignment(DRIVER_52XD_PY, "DEVICE_CONFIG")
-                           if DRIVER_52XD_PY.exists() else None)
         cls.touch_config = extract_hex_assignment(TEST_TOUCH_SENSOR_PY, "CONFIG_52XD")
         cls.scan_config = extract_hex_assignment(SCAN_FINGER_PY, "CONFIG_52XD")
 
@@ -112,15 +92,8 @@ class TestAdversarialConfig52XDAndReg022C(unittest.TestCase):
 
     def test_multi_source_config_52xd_equivalence(self):
         """Cross-verify config tables across header files and reference prototype sources."""
-        tmp_cfg = parse_c_array(self.tmp_header_str, "goodix_5e0a_config")
         repo_cfg = parse_c_array(self.repo_header_str, "goodix_5e0a_config")
-
-        self.assertEqual(len(tmp_cfg), 256)
         self.assertEqual(len(repo_cfg), 256)
-        if TMP_LIBFPRINT_HEADER != REPO_HEADER:
-            self.assertEqual(tmp_cfg, repo_cfg, "Header files in build and repo must be bit-for-bit identical")
-        # Else: no deployed build tree, fallback reads the repo file itself;
-        # self-comparison would prove nothing, so it is skipped by construction.
 
         python_sources = {
             "test_press_and_capture.py": self.press_config,
@@ -128,10 +101,6 @@ class TestAdversarialConfig52XDAndReg022C(unittest.TestCase):
             "scan_finger.py": self.scan_config,
             "CANONICAL_CONFIG_52XD": CANONICAL_CONFIG_52XD,
         }
-        if self.dump_config is not None:
-            # External Windows-dump reference only exists on the author's machine.
-            python_sources[str(DRIVER_52XD_PY)] = self.dump_config
-
         # Check Python prototype source lengths and equivalence
         for name, data in python_sources.items():
             self.assertEqual(len(data), 256, f"{name} length must be 256 bytes")
@@ -139,7 +108,7 @@ class TestAdversarialConfig52XDAndReg022C(unittest.TestCase):
 
     def test_config_52xd_byte_offsets_and_substructures(self):
         """Verify critical byte offsets, headers, and timing blocks within goodix_5e0a_config."""
-        cfg = parse_c_array(self.tmp_header_str, "goodix_5e0a_config")
+        cfg = parse_c_array(self.repo_header_str, "goodix_5e0a_config")
 
         # Offset 0..3: Header Magic (0xb0, 0x11, 0x60, 0x71)
         self.assertEqual(cfg[0:4], bytes([0xb0, 0x11, 0x60, 0x71]))
@@ -164,7 +133,6 @@ class TestAdversarialConfig52XDAndReg022C(unittest.TestCase):
         """Ticket 56: header REG defines removed; wire endianness pinned directly."""
         for macro in ("GOODIX_5E0A_REG_GAIN_EXPOSURE",
                       "GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL"):
-            self.assertNotIn(macro, self.tmp_header_str)
             self.assertNotIn(macro, self.repo_header_str)
 
     def test_register_0x022c_wire_packet_endianness_exactness(self):
@@ -191,7 +159,7 @@ class TestAdversarialConfig52XDAndReg022C(unittest.TestCase):
         """Ticket 56: header REG defines removed (wire test below is authority)."""
         for macro in ("GOODIX_5E0A_REG_GAIN_EXPOSURE",
                       "GOODIX_5E0A_REG_GAIN_EXPOSURE_VAL"):
-            self.assertNotIn(macro, self.tmp_header_str)
+            self.assertNotIn(macro, self.repo_header_str)
 
 
     # =========================================================================

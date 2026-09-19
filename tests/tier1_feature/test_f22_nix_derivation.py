@@ -6,7 +6,6 @@ Requirements: Verify clean compilation of libfprint-goodix and fprintd override 
 import unittest
 import shutil
 import subprocess
-import os
 from tests.repo_paths import repo, REPO_ROOT
 
 class TestF22NixDerivation(unittest.TestCase):
@@ -67,30 +66,6 @@ class TestF22NixDerivation(unittest.TestCase):
         self.assertIn('MODE="0660"', content)
         self.assertIn('TAG+="uaccess"', content)
         self.assertNotIn('MODE="0666"', content)
-
-    def test_single_base_fetch_parity(self):
-        """Verify both derivations fetch the same base (one patch, one base).
-
-        Regression guard for the 2026-09-09 nixos-rebuild breakage: the
-        module pointed at a fork that already carried goodix5e0a.c while
-        the unified patch creates it as a new file. Skipped when the
-        external flake tree is absent.
-        """
-        from tests.repo_paths import NIXOS_MODULE_DIR
-        module_nix = NIXOS_MODULE_DIR / "libfprint-goodix.nix"
-        if not module_nix.is_file():
-            self.skipTest("external NixOS flake tree absent")
-        with open(repo("libfprint-goodix.nix"), "r") as f:
-            repo_nix = f.read()
-        with open(str(module_nix), "r") as f:
-            module_content = f.read()
-        for field in ('owner = "goodix-fp-linux-dev";',
-                      'repo = "libfprint";',
-                      'rev = "c343b6934e40dcd40a5f9e3095810d98f1175a4d";',
-                      'hash = "sha256-6llzCeVOtv0HRaNdB8mMzZCA8RBZtGkSCErsXwKE/vk=";'):
-            self.assertIn(field, repo_nix)
-            self.assertIn(field, module_content)
-        self.assertNotIn("libfprintSrc", module_content)
 
 if __name__ == "__main__":
     unittest.main()

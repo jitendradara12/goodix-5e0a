@@ -20,7 +20,25 @@
 
 #pragma once
 
+#include <time.h>
 #include "drivers_api.h"
+
+static inline gint64
+goodix_get_boottime_us (void)
+{
+  struct timespec ts;
+  if (clock_gettime (CLOCK_BOOTTIME, &ts) == 0)
+    return ((gint64) ts.tv_sec * G_USEC_PER_SEC) + (ts.tv_nsec / 1000);
+  return g_get_monotonic_time ();
+}
+
+static inline gint64
+goodix_sleep_us (gint64 boot_start, gint64 mono_start)
+{
+  gint64 now_boot = goodix_get_boottime_us ();
+  gint64 now_mono = g_get_monotonic_time ();
+  return (now_boot - boot_start) - (now_mono - mono_start);
+}
 
 // 1 seconds USB timeout
 #define GOODIX_TIMEOUT (1000)
@@ -386,25 +404,6 @@ void goodix_send_tls_successfully_established (FpDevice          *dev,
                                                GoodixNoneCallback callback,
                                                gpointer           user_data);
 
-
-/**
- * @brief Set the device preset psk. May not work for all device firmware versions
- *
- * @param dev
- * @param flags
- * @param psk
- * @param length
- * @param free_func
- * @param callback
- * @param user_data
- */
-void goodix_send_preset_psk_write (FpDevice             *dev,
-                                   guint32               flags,
-                                   guint8               *psk,
-                                   guint16               length,
-                                   GDestroyNotify        free_func,
-                                   GoodixSuccessCallback callback,
-                                   gpointer              user_data);
 
 /**
  * @brief Ask the device what preset psk it has

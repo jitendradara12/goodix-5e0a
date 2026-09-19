@@ -54,7 +54,8 @@ goodix_encode_pack (guint8 flags, guint8 *payload, guint16 payload_len,
   pack->length = GUINT16_TO_LE (payload_len);
   (*data)[sizeof (GoodixPack)] = goodix_calc_checksum (*data, sizeof (GoodixPack));
 
-  memcpy (*data + sizeof (GoodixPack) + sizeof (guint8), payload, payload_len);
+  if (payload && payload_len > 0)
+    memcpy (*data + sizeof (GoodixPack) + sizeof (guint8), payload, payload_len);
 }
 
 void
@@ -63,6 +64,13 @@ goodix_encode_protocol (guint8 cmd, const guint8 *payload, guint16 payload_len,
                         guint8 **data, guint32 *data_len)
 {
   GoodixProtocol *protocol;
+
+  if (payload_len > G_MAXUINT16 - sizeof (guint8))
+    {
+      *data = NULL;
+      *data_len = 0;
+      return;
+    }
 
   *data_len = sizeof (GoodixProtocol) + payload_len + sizeof (guint8);
 
@@ -76,7 +84,8 @@ goodix_encode_protocol (guint8 cmd, const guint8 *payload, guint16 payload_len,
   protocol->cmd = cmd;
   protocol->length = GUINT16_TO_LE (payload_len + sizeof (guint8));
 
-  memcpy (*data + sizeof (GoodixProtocol), payload, payload_len);
+  if (payload && payload_len > 0)
+    memcpy (*data + sizeof (GoodixProtocol), payload, payload_len);
 
   if (calc_checksum)
     (*data)[sizeof (GoodixProtocol) + payload_len] =
@@ -102,14 +111,23 @@ goodix_decode_pack (guint8 *data, guint32 data_len, guint8 *flags,
   if (data_len < length + sizeof (GoodixPack) + sizeof (guint8))
     return FALSE;
 
-  *flags = pack->flags;
-  *payload = g_memdup2 (data + sizeof (GoodixPack) + sizeof (guint8), length);
-  *payload_len = length;
-  *valid_checksum = goodix_calc_checksum (data, sizeof (GoodixPack)) ==
-                    data[sizeof (GoodixPack)];
+  if (flags)
+    *flags = pack->flags;
+  /* Zero-length payloads decode to NULL (never a valid empty pointer to
+   * index); see the header contract. */
+  if (payload)
+    *payload = length > 0 ? g_memdup2 (data + sizeof (GoodixPack) + sizeof (guint8), length) : NULL;
+  if (payload_len)
+    *payload_len = length;
+  if (valid_checksum)
+    *valid_checksum = goodix_calc_checksum (data, sizeof (GoodixPack)) ==
+                      data[sizeof (GoodixPack)];
 
   return TRUE;
 }
+
+G_STATIC_ASSERT (sizeof (GoodixPack) == 3);
+G_STATIC_ASSERT (sizeof (GoodixProtocol) == 3);
 
 gboolean
 goodix_decode_protocol (guint8 *data, guint32 data_len, guint8 *cmd,
@@ -123,19 +141,29 @@ goodix_decode_protocol (guint8 *data, guint32 data_len, guint8 *cmd,
   if (data_len < sizeof (GoodixProtocol) + sizeof (guint8))
     return FALSE;
 
+  if (GUINT16_FROM_LE (protocol->length) < sizeof (guint8))
+    return FALSE;
+
   length = GUINT16_FROM_LE (protocol->length) - sizeof (guint8);
 
   if (data_len < length + sizeof (GoodixProtocol) + sizeof (guint8))
     return FALSE;
 
-  *cmd = protocol->cmd;
-  *payload = g_memdup2 (data + sizeof (GoodixProtocol), length);
-  *payload_len = length;
-  *valid_checksum =
-    0xaa - goodix_calc_checksum (data, sizeof (GoodixProtocol) + length) ==
-    data[sizeof (GoodixProtocol) + length];
-  *valid_null_checksum =
-    GOODIX_NULL_CHECKSUM == data[sizeof (GoodixProtocol) + length];
+  if (cmd)
+    *cmd = protocol->cmd;
+  /* Zero-length payloads decode to NULL (never a valid empty pointer to
+   * index); see the header contract. */
+  if (payload)
+    *payload = length > 0 ? g_memdup2 (data + sizeof (GoodixProtocol), length) : NULL;
+  if (payload_len)
+    *payload_len = length;
+  if (valid_checksum)
+    *valid_checksum =
+      (guint8) (0xaa - goodix_calc_checksum (data, sizeof (GoodixProtocol) + length)) ==
+      data[sizeof (GoodixProtocol) + length];
+  if (valid_null_checksum)
+    *valid_null_checksum =
+      GOODIX_NULL_CHECKSUM == data[sizeof (GoodixProtocol) + length];
 
   return TRUE;
 }

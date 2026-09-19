@@ -52,8 +52,7 @@ class TestF77MultiFingerGallery(unittest.TestCase):
     def test_b_gallery_single_call_fail_closed(self):
         """One identifyImage(count=N); corrupt entries reject, never match."""
         src = _read(MILAN_C)
-        fn = _slice(src, "goodix_milan_identify_image (const uint8_t *pixels",
-                    "void goodix_milan_close")
+        fn = src[src.index("goodix_milan_identify_image (const uint8_t *pixels"):]
         # validation + engine/GS
         self.assertIn("n_templates <= 0", fn)
         self.assertIn("width != 64 || height != 80", fn)

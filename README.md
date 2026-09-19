@@ -19,9 +19,8 @@ The driver opens a TLS 1.2 PSK channel to the sensor and uses hardware FDT touch
 
 ## What's in this repo
 
-- `libfprint-driver/`: driver sources.
 - `libfprint-driver/`: driver sources (single source of truth).
-- `goodix-5e0a-integration.patch`: upstream-integration changes only (meson registration, small core fixes) — applied by the flake and install.sh; driver sources are copied in from `libfprint-driver/`.
+- `goodix-5e0a-integration.patch`: Meson/hwdb registration and fprintd compatibility (version and retry enum) — applied by the flake and install.sh; driver sources are copied in from `libfprint-driver/`.
 - `libfprint-goodix.nix`, `nixos-module.nix`, `flake.nix`: first-party Nix packaging and integration.
 - `install.sh`: installer for other Linux distributions (any distro with `--no-deps`; staging builds for non-systemd systems with `--build-only`; `--check` reports runtime and desktop-integration gaps without changing anything).
 - `packaging/selinux/`: SELinux policy for the engine memfd on enforcing distros (Fedora/RHEL).
@@ -129,7 +128,7 @@ Realme Book Prime is tested. The USB sensor must be `27c6:5e0a`, with firmware s
 ## Troubleshooting
 
 - Check detection with `lsusb -d 27c6:5e0a`. Where the engine DLL lives depends on install route: `/opt/goodix-libfprint/GoodixEngineAdapter.dll` (install.sh), `/var/lib/fprint/GoodixEngineAdapter.dll` (NixOS with `dllFile = null`), or the store path shown by `journalctl -u fprintd | grep -m1 GOODIX`.
-- Restart and follow logs with `sudo G_MESSAGES_DEBUG=all systemctl restart fprintd`, then `journalctl -u fprintd -f`. Note that systemd does not pass the command's environment to the service; for actual debug output, set `Environment=G_MESSAGES_DEBUG=all` in a temporary `[Service]` override using `sudo systemctl edit fprintd`, then restart it.
+- Follow logs with `journalctl -u fprintd -f`. For debug output, use `sudo systemctl edit fprintd` to add `Environment=G_MESSAGES_DEBUG=all` under `[Service]`, then `sudo systemctl restart fprintd`. Remove that temporary setting when finished; systemd does not inherit environment variables from the restart command.
 - `failed to load GoodixEngineAdapter.dll` at device open means the engine did not load. Check file readability and `GOODIX_ENGINE_DLL_PATH` in the service environment. On SELinux-enforcing systems the real cause is usually the memfd denial above; the loader now also logs the failing step and errno, so follow that message before anything else.
 - `Invalid device firmware` means the required firmware string does not match. This driver does not support that firmware.
 - Activation/TLS-handshake failures on another unit may be provisioning differences; there is no supported PSK or DAC/threshold override.

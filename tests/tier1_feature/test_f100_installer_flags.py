@@ -1,6 +1,7 @@
-"""Installer flags for portable and desktop-integrated setups (tickets 97-99).
-Run: python3 -B tests/tier1_feature/test_f100_installer_portability.py -v"""
+"""Installer CLI and SELinux policy checks; no installation or sensor claims."""
 
+import os
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -10,10 +11,10 @@ TE_FILE = ROOT / "packaging/selinux/goodix-engine.te"
 
 
 class InstallerFlagsTest(unittest.TestCase):
-    def run_script(self, *args):
-        import subprocess
+    def run_script(self, *args, **env):
         return subprocess.run(["bash", str(SCRIPT), *args],
-                              capture_output=True, text=True)
+                              env={**os.environ, "GOODIX_ENGINE_DLL_PATH": "", **env},
+                              capture_output=True, text=True, timeout=10)
 
     def test_help_documents_new_flags(self):
         result = self.run_script("--help")
@@ -32,9 +33,22 @@ class InstallerFlagsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("Usage", result.stderr)
 
-    def test_missing_dll_error_mentions_opt_out(self):
-        # Unknown/odd ID must not hard-fail the parse; it falls back to
-        # --no-deps behavior and the preinstalled-dependency checks.
+    def test_check_ignores_engine_environment(self):
+        result = self.run_script("--check", GOODIX_ENGINE_DLL_PATH="/missing/engine.dll")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("These checks do not establish a working driver", result.stdout)
+
+    def test_standalone_modes_reject_build_options(self):
+        for mode in ("--help", "--check", "--uninstall"):
+            for options in (("--no-deps",), ("--dll", "engine.dll"),
+                            ("--build-only", "stage")):
+                for args in ((*options, mode), (mode, *options)):
+                    with self.subTest(args=args):
+                        result = self.run_script(*args)
+                        self.assertEqual(result.returncode, 1)
+                        self.assertIn("Usage", result.stderr)
+
+    def test_build_only_requires_destination(self):
         result = self.run_script("--build-only")
         self.assertEqual(result.returncode, 1)
         self.assertIn("Usage", result.stderr)

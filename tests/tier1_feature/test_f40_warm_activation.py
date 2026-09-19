@@ -24,7 +24,7 @@ Verifies without hardware (hermetic static & structural validation):
 (f) suspend always clears warmth (sleep safety); the ticket-34 gen-mismatch
     drop in on_tls_activation_complete is preserved;
 (g) no scope creep: ticket-38 symbols, ticket-39 macro + single submit,
-    bz3_threshold 12, exactly one goodix_tls_init site, no new SSM enum
+    no NBIS bz3_threshold, exactly one goodix_tls_init site, no new SSM enum
     states, and no g_message beyond the four specified warm lines.
 """
 
@@ -271,8 +271,8 @@ class TestF40WarmActivation(unittest.TestCase):
         self.assertEqual(src.count("fpi_image_device_image_captured ("), 1)
         self.assertIn("score-proxy", src)
         self.assertNotIn("score", src.replace("score-proxy", ""))
-        # biometric operating point (Ticket 43)
-        self.assertIn("img_dev_class->bz3_threshold = 14;", src)
+        # biometric operating point: Milan engine, no NBIS threshold
+        self.assertNotIn("bz3_threshold", src)
         # handshake never skipped: exactly one tls_init site (the shared
         # activate_complete handoff used by both ladders)
         self.assertEqual(src.count("goodix_tls_init ("), 1)

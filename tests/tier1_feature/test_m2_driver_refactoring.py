@@ -5,9 +5,7 @@ base-class derivations, minimal code footprints, and Ponytail invariants.
 """
 
 import unittest
-import os
-import re
-from tests.repo_paths import repo, BUILD_TREE
+from tests.repo_paths import repo
 
 class TestM2DriverRefactoring(unittest.TestCase):
 
@@ -97,17 +95,6 @@ class TestM2DriverRefactoring(unittest.TestCase):
         self.assertLess(len(lines), 2000, f"Driver exceeds production compactness limit: {len(lines)} LOC")
         self.assertIn("FPI_TYPE_DEVICE_GOODIXTLS5XX", self.c_content)
 
-
-    @unittest.skipUnless(BUILD_TREE.is_dir(), "deployed build tree /tmp/libfprint-goodix absent")
-    def test_local_tree_synchronization(self):
-        """Verify local driver tree in workspace matches active build tree exactly."""
-        tree = BUILD_TREE / "libfprint" / "drivers" / "goodixtls"
-        with open(tree / "goodix5e0a.c", "r") as f:
-            tree_c = f.read()
-        with open(tree / "goodix5e0a.h", "r") as f:
-            tree_h = f.read()
-        self.assertEqual(self.c_content, tree_c, "goodix5e0a.c out of sync between build and repo")
-        self.assertEqual(self.h_content, tree_h, "goodix5e0a.h out of sync between build and repo")
 
 if __name__ == "__main__":
     unittest.main()

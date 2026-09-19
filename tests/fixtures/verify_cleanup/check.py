@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -69,6 +70,10 @@ else:
 
 
 def main():
+    try:
+        signal.signal(signal.SIGHUP, signal.SIG_DFL)
+    except (ValueError, AttributeError):
+        pass
     cases = {
         'match': (0, 0), 'no-match': (0, 0), 'garbage': (1, 1),
         'timeout': (124, 124), 'second-timeout': (124, 124),
@@ -86,7 +91,7 @@ def main():
         bin_dir = sandbox / 'bin'
         bin_dir.mkdir()
         # No inherited PATH fallback: accidental new commands cannot reach hardware.
-        for tool in ('bash', 'date', 'mktemp', 'cat', 'grep', 'sed', 'tee'):
+        for tool in ('bash', 'date', 'dirname', 'mktemp', 'cat', 'grep', 'sed', 'tee'):
             (bin_dir / tool).symlink_to(shutil.which(tool))
         for tool in ('sudo', 'systemctl', 'timeout', 'journalctl', 'sleep', 'fprintd-verify'):
             p = bin_dir / tool
@@ -103,7 +108,12 @@ def main():
                            EVENTS=str(events_path), LC_ALL='C')
                 cmd = [str(bin_dir / 'bash'), str(ROOT / f'scripts/verify-ticket{script}.sh')]
                 if gap: cmd.append(gap)
-                result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=15)
+                # Exercise sourcing from another cwd and by basename in scripts/.
+                cwd = home
+                if case == 'no-match':
+                    cmd[1] = Path(cmd[1]).name
+                    cwd = ROOT / 'scripts'
+                result = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=15)
                 tag = f'ticket{script} gap={gap} {case}'
                 assert result.returncode == final_rc, (tag, result.returncode, result.stdout, result.stderr)
                 dirs = list(home.glob('goodix-*'))

@@ -142,7 +142,10 @@ static void* MS sh_LocalFree(void *h) { free(h); return NULL; }
 
 static void* MS sh_malloc(size_t s) { return malloc(s ? s : 1); }
 static void* MS sh_calloc(size_t n, size_t s) { return calloc(n ? n : 1, s ? s : 1); }
-static void* MS sh_realloc(void *p, size_t s) { return realloc(p, s ? s : 1); }
+static void* MS sh_realloc(void *p, size_t s) {
+    if (!s) { free(p); return NULL; }
+    return realloc(p, s);
+}
 static void  MS sh_free(void *p) { free(p); }
 
 static void MS sh_InitCS(void *p) { }
@@ -161,7 +164,7 @@ static void* MS sh_PushEntrySList(void *h, void *e) { return NULL; }
 
 static u32 g_tls_next = 1;
 static void *g_tls_vals[1088];
-static u32  MS sh_TlsAlloc(void) { return g_tls_next++; }
+static u32  MS sh_TlsAlloc(void) { if (g_tls_next >= 1088) return 0xFFFFFFFF; return g_tls_next++; }
 static int  MS sh_TlsFree(u32 i) { return 1; }
 static void* MS sh_TlsGetValue(u32 i) { g_lasterr = 0; return (i < 1088) ? g_tls_vals[i] : NULL; }
 static int  MS sh_TlsSetValue(u32 i, void *v) { if (i < 1088) g_tls_vals[i] = v; return 1; }
@@ -285,15 +288,12 @@ static int MS sh_CryptAcquireContextW(void **ph, void *cn, void *pn, u32 pt, u32
 }
 static int MS sh_CryptReleaseContext(void *h, u32 f) { return 1; }
 static int MS sh_CryptGenRandom(void *h, u32 len, u8 *buf) {
-    if (buf) {
-        int fd = open("/dev/urandom", O_RDONLY);
-        if (fd >= 0) {
-            ssize_t ignored = read(fd, buf, len);
-            (void)ignored;
-            close(fd);
-        }
-    }
-    return 1;
+    if (!buf) return 0;
+    int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return 0;
+    ssize_t n = read(fd, buf, len);
+    close(fd);
+    return (n == (ssize_t)len) ? 1 : 0;
 }
 static u32 MS sh_EventUnregister(u64 h) { return 0; }
 static u32 MS sh_RegOpenCurrentUser(u32 am, void **k) { if (k) *k = (void*)0x5001; return 0; }
@@ -318,11 +318,84 @@ static int MS sh_CoCreateGuid(void *guid) { if (guid) memset(guid, 0x42, 16); re
 static int MS sh_CoSetProxyBlanket(void *p, u32 a, u32 b, void *c, u32 d, u32 e, void *f, u32 g) { return 0; }
 static int MS sh_CoInitializeSecurity(void *p, long c, void *as, void *r1, u32 l, u32 il, void *r2, u32 cap, void *r3) { return 0; }
 
-static void* MS sh_SysAllocString(const u16 *s) { return (void*)s; }
-static void* MS sh_SysAllocStringLen(const u16 *s, u32 l) { return (void*)s; }
-static void  MS sh_SysFreeString(void *s) { }
-static u32   MS sh_SysStringLen(const u16 *s) { if (!s) return 0; u32 l = 0; while (s[l]) l++; return l; }
-static u32   MS sh_SysStringByteLen(const u16 *s) { return sh_SysStringLen(s) * 2; }
+/* Live-BSTR tracker for sh_SysStringByteLen validation.
+ * Every BSTR handed out by sh_SysAllocStringLen is recorded here and removed
+ * by sh_SysFreeString. ByteLen only trusts the 4-byte length prefix for a
+ * tracked (known-live) pointer; anything else — static, stack, or foreign
+ * buffers — falls back to a bounded NUL scan so a non-BSTR pointer can never
+ * cause an OOB read below the pointer. All engine calls are serialized by
+ * g_milan_mutex, so no extra locking is needed. */
+#define BSTR_TRACK_MAX 512
+#define BSTR_FALLBACK_MAX_CHARS 0x100000u
+static const u16 *g_bstr_live[BSTR_TRACK_MAX];
+static u32 g_bstr_bytes[BSTR_TRACK_MAX];
+static int g_bstr_nlive = 0;
+
+static void bstr_track_add(const u16 *s, u32 byte_len) {
+    if (g_bstr_nlive >= BSTR_TRACK_MAX) return;
+    g_bstr_live[g_bstr_nlive] = s;
+    g_bstr_bytes[g_bstr_nlive] = byte_len;
+    g_bstr_nlive++;
+}
+
+static int bstr_tracked(const u16 *s) {
+    for (int i = 0; i < g_bstr_nlive; i++) {
+        if (g_bstr_live[i] == s) return 1;
+    }
+    return 0;
+}
+
+static void bstr_track_remove(const u16 *s) {
+    for (int i = 0; i < g_bstr_nlive; i++) {
+        if (g_bstr_live[i] == s) {
+            g_bstr_nlive--;
+            g_bstr_live[i] = g_bstr_live[g_bstr_nlive];
+            g_bstr_bytes[i] = g_bstr_bytes[g_bstr_nlive];
+            return;
+        }
+    }
+}
+
+static void* MS sh_SysAllocStringLen(const u16 *s, u32 l) {
+    if (l >= 0x40000000) return NULL;
+    u32 byte_len = l * sizeof(u16);
+    u8 *buf = malloc(sizeof(u32) + byte_len + sizeof(u16));
+    if (!buf) return NULL;
+    *(u32*)buf = byte_len;
+    u16 *str = (u16*)(buf + sizeof(u32));
+    if (s) memcpy(str, s, byte_len);
+    str[l] = 0;
+    bstr_track_add(str, byte_len);
+    return (void*)str;
+}
+static void* MS sh_SysAllocString(const u16 *s) {
+    if (!s) return NULL;
+    u32 l = 0;
+    while (s[l]) l++;
+    return sh_SysAllocStringLen(s, l);
+}
+static void  MS sh_SysFreeString(void *s) {
+    if (!s) return;
+    if (!bstr_tracked((const u16*)s)) return; /* static/stack/foreign: not ours, never free s-4 */
+    bstr_track_remove((const u16*)s);
+    free((u8*)s - sizeof(u32));
+}
+static u32   MS sh_SysStringByteLen(const u16 *s) {
+    if (!s) return 0;
+    /* Fast path: engine-supplied BSTRs were allocated by
+     * sh_SysAllocStringLen above, so only a tracked live pointer may trust
+     * the length prefix. */
+    if (bstr_tracked(s))
+        return *(const u32*)((const u8*)s - sizeof(u32));
+    /* Unknown pointer: the prefix may be unmapped, so fall back to a
+     * bounded NUL scan instead of an OOB read. */
+    u32 l = 0;
+    while (l < BSTR_FALLBACK_MAX_CHARS && s[l]) l++;
+    return l * sizeof(u16);
+}
+static u32   MS sh_SysStringLen(const u16 *s) {
+    return sh_SysStringByteLen(s) / sizeof(u16);
+}
 static void  MS sh_VariantInit(void *v) { if (v) memset(v, 0, 24); }
 static int   MS sh_VariantClear(void *v) { if (v) memset(v, 0, 24); return 0; }
 static int   MS sh_VariantCopy(void *d, void *s) { if (d && s) memcpy(d, s, 24); return 0; }
@@ -428,18 +501,31 @@ static int MS sh_waccess_s(const u16 *p, int m) { return -1; }
 static int MS sh_access_s(const char *p, int m) { return -1; }
 static int MS sh_wmkdir(const u16 *p) { return 0; }
 static u64 MS sh_time64(u64 *t) { time_t n = time(NULL); if (t) *t = n; return n; }
+struct win_tm {
+    int tm_sec, tm_min, tm_hour, tm_mday, tm_mon, tm_year, tm_wday, tm_yday, tm_isdst;
+};
 static int MS sh_localtime64_s(void *tm_out, const u64 *t) {
     if (!tm_out || !t) return 1;
-    time_t now = *t;
-    struct tm *r = localtime(&now);
-    if (!r) return 1;
-    memcpy(tm_out, r, sizeof(struct tm));
+    time_t now = (time_t)*t;
+    struct tm r;
+    if (!localtime_r(&now, &r)) return 1;
+    struct win_tm *w = (struct win_tm*)tm_out;
+    w->tm_sec = r.tm_sec;   w->tm_min = r.tm_min;   w->tm_hour = r.tm_hour;
+    w->tm_mday = r.tm_mday; w->tm_mon = r.tm_mon;   w->tm_year = r.tm_year;
+    w->tm_wday = r.tm_wday; w->tm_yday = r.tm_yday; w->tm_isdst = r.tm_isdst;
     return 0;
 }
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wformat-nonliteral"
 static size_t MS sh_strftime(char *s, size_t max, const char *fmt, const void *tm) {
-    return strftime(s, max, fmt, (const struct tm*)tm);
+    if (!s || !fmt || !tm) return 0;
+    const struct win_tm *w = (const struct win_tm*)tm;
+    struct tm ltm = {
+        .tm_sec = w->tm_sec, .tm_min = w->tm_min, .tm_hour = w->tm_hour,
+        .tm_mday = w->tm_mday, .tm_mon = w->tm_mon, .tm_year = w->tm_year,
+        .tm_wday = w->tm_wday, .tm_yday = w->tm_yday, .tm_isdst = w->tm_isdst,
+    };
+    return strftime(s, max, fmt, &ltm);
 }
 #pragma GCC diagnostic pop
 static u64 MS sh_clock(void) { return (u64)clock(); }
@@ -697,20 +783,35 @@ static void register_all_shims(void) {
     reg_name("__stdio_common_vfwprintf", sh_stdio_common_vfwprintf);
 }
 
+static u32 g_sizeofimage = 0;
+
+static inline int rva_ok(u32 rva, u32 need) {
+    return need <= g_sizeofimage && rva <= g_sizeofimage - need;
+}
+
 static void* get_export(const char *want) {
-    if (!g_image) return NULL;
-    u32 e = f32(0x3c);
-    u32 exprva = f32(e + 24 + 112 + 8 * 0);
+    if (!g_image || !g_sizeofimage) return NULL;
+    u32 e = *(u32*)(g_image + 0x3c);
+    if (e + 24 + 112 + 8 > g_sizeofimage) return NULL;
+    u32 exprva = *(u32*)(g_image + e + 24 + 112 + 8 * 0);
+    if (!exprva || exprva + 40 > g_sizeofimage) return NULL;
     u32 nnames = *(u32*)(g_image + exprva + 24);
     u32 fns = *(u32*)(g_image + exprva + 28);
     u32 names = *(u32*)(g_image + exprva + 32);
     u32 ords = *(u32*)(g_image + exprva + 36);
+    if (names + nnames * 4 > g_sizeofimage || ords + nnames * 2 > g_sizeofimage) return NULL;
 
     for (u32 i = 0; i < nnames; i++) {
         u32 nrva = *(u32*)(g_image + names + i * 4);
+        if (nrva >= g_sizeofimage) continue;
+        /* Bound the export-name read to the mapped image, like the
+         * import-name checks in load_pe_file: skip unterminated names. */
+        if (strnlen((char*)(g_image + nrva), g_sizeofimage - nrva) >= g_sizeofimage - nrva) continue;
         if (strcmp((char*)(g_image + nrva), want) == 0) {
             u16 ord = *(u16*)(g_image + ords + i * 2);
+            if (fns + (u32)ord * 4 + 4 > g_sizeofimage) return NULL;
             u32 frva = *(u32*)(g_image + fns + ord * 4);
+            if (frva >= g_sizeofimage) return NULL;
             return g_image + frva;
         }
     }
@@ -750,6 +851,7 @@ static int load_pe_file(const char *path) {
         f16(e + 24) != 0x20b) { errno = ENOEXEC; goto fail; }
     g_imagebase = f64(e + 24 + 24);
     sizeofimage = f32(e + 24 + 56);
+    g_sizeofimage = sizeofimage;
     u32 entry = f32(e + 24 + 16);
     u16 nsec = f16(e + 6);
     u16 optsize = f16(e + 20);
@@ -766,29 +868,40 @@ static int load_pe_file(const char *path) {
 
     for (int i = 0; i < nsec; i++) {
         u64 s = sectbl + i * 40;
-        u32 vaddr = f32(s + 12), rawsize = f32(s + 16), rawptr = f32(s + 20);
+        u32 vaddr = f32(s + 12), vsize = f32(s + 8), rawsize = f32(s + 16), rawptr = f32(s + 20);
         step = "PE section";
         if ((u64)rawptr + rawsize > (u64)g_filelen ||
             (u64)vaddr + rawsize > sizeofimage) { errno = ENOEXEC; goto fail; }
-        if (rawsize) memcpy(img + vaddr, g_file + rawptr, rawsize);
+        u32 copysize = (vsize && vsize < rawsize) ? vsize : rawsize;
+        if (copysize) memcpy(img + vaddr, g_file + rawptr, copysize);
     }
 
     u32 imprva = f32(e + 24 + 112 + 8 * 1);
+    step = "PE imports";
     for (u64 d = imprva; ; d += 20) {
+        if (d + 20 > sizeofimage) { errno = ENOEXEC; goto fail; }
         u32 orig = *(u32*)(img + d), namer = *(u32*)(img + d + 12), fthunk = *(u32*)(img + d + 16);
         if (namer == 0) break;
+        if (!rva_ok(namer, 1) ||
+            strnlen((char*)(img + namer), sizeofimage - namer) >= sizeofimage - namer) { errno = ENOEXEC; goto fail; }
         const char *dllname = (char*)(img + namer);
         u64 rt = orig ? orig : fthunk;
+        if (!rt || rt >= sizeofimage) { errno = ENOEXEC; goto fail; }
         for (int j = 0; ; j++) {
-            u64 ent = *(u64*)(img + rt + j * 8);
+            u64 off = rt + (u64)j * 8, soff = (u64)fthunk + (u64)j * 8;
+            if (off + 8 > sizeofimage || soff + 8 > sizeofimage) { errno = ENOEXEC; goto fail; }
+            u64 ent = *(u64*)(img + off);
             if (!ent) break;
-            u64 *slot = (u64*)(img + fthunk + j * 8);
+            u64 *slot = (u64*)(img + soff);
             void *sh = NULL;
             if (ent >> 63) {
                 u32 ord = (u32)(ent & 0xffff);
                 sh = find_shim_ordinal(dllname, ord);
             } else {
-                const char *fn = (char*)(img + (ent & 0x7fffffff) + 2);
+                u32 nrva = (u32)(ent & 0x7fffffff);
+                if (!rva_ok(nrva, 3) ||
+                    strnlen((char*)(img + nrva + 2), sizeofimage - nrva - 2) >= sizeofimage - nrva - 2) { errno = ENOEXEC; goto fail; }
+                const char *fn = (char*)(img + nrva + 2);
                 sh = find_shim(fn);
             }
             *slot = (u64)sh;
@@ -842,6 +955,17 @@ static int load_pe_file(const char *path) {
     close(mfd);
     mfd = -1;
 
+    memset(g_teb, 0, sizeof(g_teb));
+    memset(g_peb, 0, sizeof(g_peb));
+    *(u64*)(g_teb + 0x30) = (u64)g_teb;
+    *(u64*)(g_teb + 0x08) = (u64)(g_teb + sizeof(g_teb));
+    *(u64*)(g_teb + 0x10) = (u64)g_teb;
+    *(u64*)(g_teb + 0x58) = (u64)g_tls_array;
+    *(u64*)(g_teb + 0x60) = (u64)g_peb;
+
+    step = "arch_prctl";
+    if (syscall(SYS_arch_prctl, ARCH_SET_GS, g_teb) != 0) goto fail;
+
     u32 tlsrva = f32(e + 24 + 112 + 8 * 9);
     if (tlsrva) {
         u64 start = *(u64*)(g_image + tlsrva);
@@ -861,20 +985,16 @@ static int load_pe_file(const char *path) {
         }
     }
 
-    memset(g_teb, 0, sizeof(g_teb));
-    memset(g_peb, 0, sizeof(g_peb));
-    *(u64*)(g_teb + 0x30) = (u64)g_teb;
-    *(u64*)(g_teb + 0x08) = (u64)(g_teb + sizeof(g_teb));
-    *(u64*)(g_teb + 0x10) = (u64)g_teb;
-    *(u64*)(g_teb + 0x58) = (u64)g_tls_array;
-    *(u64*)(g_teb + 0x60) = (u64)g_peb;
-
-    step = "arch_prctl";
-    if (syscall(SYS_arch_prctl, ARCH_SET_GS, g_teb) != 0) goto fail;
-
     int(MS *DllMain)(void*, u32, void*) = (void*)(g_image + entry);
     int r = DllMain((void*)g_imagebase, DLL_PROCESS_ATTACH, 0);
-    if (r) return 0;
+    if (r) {
+        if (fd >= 0) close(fd);
+        if (mfd >= 0) close(mfd);
+        free(g_file);
+        g_file = NULL;
+        g_filelen = 0;
+        return 0;
+    }
     step = "DllMain";
     errno = ENOEXEC;
 
@@ -888,6 +1008,7 @@ fail:;
     if (mfd >= 0) close(mfd);
     free(img);
     if (g_image) { munmap(g_image, sizeofimage); g_image = NULL; }
+    g_sizeofimage = 0;
     free(g_file);
     g_file = NULL;
     g_filelen = 0;
@@ -907,13 +1028,19 @@ static int (MS *m_templatePack)(void*, void*) = NULL;
 static int (MS *m_templateUnPack)(const void*, int, void*, void**) = NULL;
 static int (MS *m_templateDelete)(void*) = NULL;
 static int (MS *m_identifyImage)(GoodixImage*, void*, void**, int, int*, int*, u32*, int, int, void*, int) = NULL;
-/* Ticket 76: native frame quality export. Optional: older DLL variants may
- * lack it, so a missing export degrades to the legacy minutiae tiebreak
- * instead of failing engine init. */
+/* Optional native quality export: without it, frame selection uses
+ * residual range and active area instead of failing engine init. */
 static int (MS *m_getQuality)(GoodixImage*, u32*) = NULL;
 
 static gboolean g_milan_available = FALSE;
 static char g_milan_version[128] = "Unknown";
+static GRecMutex g_milan_mutex;
+
+/* This GLib version provides no G_REC_MUTEX_INIT static initializer, so the
+ * mutex is initialized in a constructor before any wrapper can lock it. */
+__attribute__((constructor)) static void goodix_milan_mutex_init(void) {
+    g_rec_mutex_init(&g_milan_mutex);
+}
 
 static const char *default_search_paths[] = {
     "/var/lib/fprint/GoodixEngineAdapter.dll",
@@ -925,7 +1052,11 @@ static const char *default_search_paths[] = {
 };
 
 gboolean goodix_milan_init (const char *dll_path) {
-    if (g_milan_available) return TRUE;
+    g_rec_mutex_lock (&g_milan_mutex);
+    if (g_milan_available) {
+        g_rec_mutex_unlock (&g_milan_mutex);
+        return TRUE;
+    }
 
     g_nshims = 0;
     register_all_shims();
@@ -950,6 +1081,7 @@ gboolean goodix_milan_init (const char *dll_path) {
 
     if (loaded != 0) {
         g_warning("5e0a: failed to load GoodixEngineAdapter.dll");
+        g_rec_mutex_unlock (&g_milan_mutex);
         return FALSE;
     }
 
@@ -973,10 +1105,13 @@ gboolean goodix_milan_init (const char *dll_path) {
         !m_templateGetPackedSize || !m_templatePack || !m_templateUnPack ||
         !m_templateDelete || !m_identifyImage) {
         g_warning("5e0a: required Milan engine exports missing");
+        if (g_image) { munmap(g_image, g_sizeofimage); g_image = NULL; }
+        g_sizeofimage = 0;
+        g_rec_mutex_unlock (&g_milan_mutex);
         return FALSE;
     }
     if (!m_getQuality)
-        g_debug ("5e0a: Milan getQuality export missing; frame judging falls back to minutiae proxy");
+        g_debug ("5e0a: Milan getQuality export missing; frame judging falls back to residual range and active area");
 
     ensure_gs();
     m_getAlgorithmVersion(g_milan_version);
@@ -984,11 +1119,8 @@ gboolean goodix_milan_init (const char *dll_path) {
 
     g_message("5e0a: Milan biometric matching engine loaded successfully (%s)", g_milan_version);
     g_milan_available = TRUE;
+    g_rec_mutex_unlock (&g_milan_mutex);
     return TRUE;
-}
-
-gboolean goodix_milan_is_available (void) {
-    return g_milan_available;
 }
 
 const char *goodix_milan_get_version (void) {
@@ -1012,7 +1144,7 @@ static void make_goodix_image(GoodixImage *img, const uint8_t *pix, int width, i
  * local-contrast frames report quality 18-19 / overlap 98-100, while blank,
  * noise, and poor-clarity frames report 0/0 — enough range to rank a burst.
  * The caller passes the 64x80 normalized buffer (the exact bytes verify
- * feeds identifyImage), never the 128x160 scaled FpImage minutiae runs on. */
+ * feeds identifyImage), never the 128x160 scaled FpImage. */
 guint goodix_milan_frame_quality (const uint8_t *pixels,
                                   int width,
                                   int height,
@@ -1025,8 +1157,11 @@ guint goodix_milan_frame_quality (const uint8_t *pixels,
      * it never saw in the ticket-72 shootout. */
     if (!pixels || width != 64 || height != 80)
         return 0;
-    if (!g_milan_available || !m_getQuality)
+    g_rec_mutex_lock (&g_milan_mutex);
+    if (!g_milan_available || !m_getQuality) {
+        g_rec_mutex_unlock (&g_milan_mutex);
         return 0;
+    }
     ensure_gs();
 
     GoodixImage img;
@@ -1038,17 +1173,23 @@ guint goodix_milan_frame_quality (const uint8_t *pixels,
     guint o = img.overlap;
     if (out_quality) *out_quality = q;
     if (out_overlap) *out_overlap = o;
+    g_rec_mutex_unlock (&g_milan_mutex);
     return (q << 8) | o;
 }
 
 void *goodix_milan_enroll_start (int *max_images) {
     if (!g_milan_available && !goodix_milan_init(NULL)) return NULL;
+    g_rec_mutex_lock (&g_milan_mutex);
     ensure_gs();
     int max_imgs = 16;
     void *ctx = m_enrolStartEx(&max_imgs);
-    if (!ctx) return NULL;
+    if (!ctx) {
+        g_rec_mutex_unlock (&g_milan_mutex);
+        return NULL;
+    }
     if (max_images) *max_images = max_imgs;
     *(u16*)((char*)ctx + 8) = 12; /* Target 12 enrollment touches */
+    g_rec_mutex_unlock (&g_milan_mutex);
     return ctx;
 }
 
@@ -1058,7 +1199,8 @@ int goodix_milan_enroll_add_image (void *ctx,
                                    int height,
                                    int *enrolled_count,
                                    int *progress_pct) {
-    if (!ctx || !pixels) return -1;
+    if (!ctx || !pixels || width != 64 || height != 80) return -1;
+    g_rec_mutex_lock (&g_milan_mutex);
     ensure_gs();
 
     GoodixImage img;
@@ -1068,6 +1210,7 @@ int goodix_milan_enroll_add_image (void *ctx,
     int add_res = m_enrolAddImage(ctx, &img, NULL, NULL, 0, status_out);
     if (enrolled_count) *enrolled_count = *(u16*)((char*)ctx + 10);
     if (progress_pct) *progress_pct = *(int*)((char*)ctx + 12);
+    g_rec_mutex_unlock (&g_milan_mutex);
     return add_res;
 }
 
@@ -1075,33 +1218,50 @@ int goodix_milan_enroll_commit (void *ctx,
                                 uint8_t **out_blob,
                                 size_t *out_len) {
     if (!ctx || !out_blob || !out_len) return -1;
+    g_rec_mutex_lock (&g_milan_mutex);
     ensure_gs();
 
     void *master_template = NULL;
     int t_res = m_enrolGetTemplate(ctx, &master_template);
-    if (t_res != 0 || !master_template) return -2;
+    if (t_res != 0 || !master_template) {
+        g_rec_mutex_unlock (&g_milan_mutex);
+        return -2;
+    }
 
     int packed_size = m_templateGetPackedSize(master_template);
-    if (packed_size <= 0) return -3;
+    if (packed_size <= 0) {
+        m_templateDelete(master_template);
+        g_rec_mutex_unlock (&g_milan_mutex);
+        return -3;
+    }
 
     uint8_t *packed_buf = malloc(packed_size);
-    if (!packed_buf) return -4;
+    if (!packed_buf) {
+        m_templateDelete(master_template);
+        g_rec_mutex_unlock (&g_milan_mutex);
+        return -4;
+    }
 
     int pack_res = m_templatePack(master_template, packed_buf);
+    m_templateDelete(master_template);
     if (pack_res != 0) {
         free(packed_buf);
+        g_rec_mutex_unlock (&g_milan_mutex);
         return -5;
     }
 
     *out_blob = packed_buf;
     *out_len = (size_t)packed_size;
+    g_rec_mutex_unlock (&g_milan_mutex);
     return 0;
 }
 
 void goodix_milan_enroll_finish (void *ctx) {
     if (!ctx) return;
+    g_rec_mutex_lock (&g_milan_mutex);
     ensure_gs();
     m_enrolFinish(ctx);
+    g_rec_mutex_unlock (&g_milan_mutex);
 }
 
 int goodix_milan_verify_image (const uint8_t *pixels,
@@ -1111,13 +1271,16 @@ int goodix_milan_verify_image (const uint8_t *pixels,
                                size_t template_len,
                                int *out_score) {
     if (!pixels || !template_blob || template_len == 0) return 0;
+    if (width != 64 || height != 80) return 0;
     if (!g_milan_available && !goodix_milan_init(NULL)) return 0;
+    g_rec_mutex_lock (&g_milan_mutex);
     ensure_gs();
 
     void *unpacked_template = NULL;
     int unpack_res = m_templateUnPack(template_blob, (int)template_len, NULL, &unpacked_template);
     if (unpack_res != 0 || !unpacked_template) {
         g_warning("5e0a: templateUnPack failed (err=%d)", unpack_res);
+        g_rec_mutex_unlock (&g_milan_mutex);
         return 0;
     }
 
@@ -1137,6 +1300,7 @@ int goodix_milan_verify_image (const uint8_t *pixels,
 
     int is_match = (matched_idx == 0 && match_score > 0);
     if (out_score) *out_score = (match_score >= 0) ? match_score : 0;
+    g_rec_mutex_unlock (&g_milan_mutex);
     return is_match;
 }
 
@@ -1157,6 +1321,7 @@ int goodix_milan_identify_image (const uint8_t *pixels,
     if (width != 64 || height != 80)
         return 0;
     if (!g_milan_available && !goodix_milan_init(NULL)) return 0;
+    g_rec_mutex_lock (&g_milan_mutex);
     ensure_gs();
 
     void **unpacked = g_new0 (void *, n_templates);
@@ -1181,6 +1346,7 @@ int goodix_milan_identify_image (const uint8_t *pixels,
     int is_match = (matched_idx >= 0 && matched_idx < n_templates && match_score > 0);
     if (out_idx) *out_idx = is_match ? matched_idx : -1;
     if (out_score) *out_score = (match_score >= 0) ? match_score : 0;
+    g_rec_mutex_unlock (&g_milan_mutex);
     return is_match;
 
 fail_closed:
@@ -1188,9 +1354,6 @@ fail_closed:
     for (int i = 0; i < n_templates; i++)
         if (unpacked[i]) m_templateDelete (unpacked[i]);
     g_free (unpacked);
+    g_rec_mutex_unlock (&g_milan_mutex);
     return 0;
-}
-
-void goodix_milan_close (void) {
-    /* Process lifetime mappings intentionally preserved */
 }

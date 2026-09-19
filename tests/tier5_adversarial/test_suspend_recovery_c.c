@@ -279,6 +279,157 @@ static void test_public_idle_suspend (void)
   goodix5e0a_suspend (dev);
 }
 
+/* Test the actual normalizer included above, with independently calculated
+ * values: an affine ramp has zero interior residual and clipped edge means. */
+static void test_frame_normalization (void)
+{
+  GoodixTls5xxPix raw[64 * 80] = {0};
+  guint8 normalized[64 * 80];
+  float low, high;
+
+  g_assert_false (goodix5e0a_normalize_raw_frame (raw, normalized, NULL, NULL));
+  for (guint i = 0; i < 63; i++)
+    raw[i] = 1000;
+  g_assert_false (goodix5e0a_normalize_raw_frame (raw, normalized, NULL, NULL));
+  raw[63] = 1000;
+  g_assert_true (goodix5e0a_normalize_raw_frame (raw, normalized, NULL, NULL));
+
+  for (int y = 0; y < 80; y++)
+    for (int x = 0; x < 64; x++)
+      raw[y * 64 + x] = 1000 + 6 * x + 12 * y;
+  g_assert_true (goodix5e0a_normalize_raw_frame (raw, normalized, &low, &high));
+  g_assert_cmpfloat (low, ==, -9.0f);
+  g_assert_cmpfloat (high, ==, 9.0f);
+  for (int y = 0; y < 80; y++)
+    for (int x = 0; x < 64; x++)
+      g_assert_cmpuint (normalized[y * 64 + x], ==,
+                        128 + (x == 0 ? -3 : x == 63 ? 3 : 0)
+                            + (y == 0 ? -6 : y == 79 ? 6 : 0));
+
+  for (guint i = 0; i < G_N_ELEMENTS (raw); i++)
+    raw[i] = 1000;
+  g_assert_false (goodix5e0a_normalize_raw_frame (raw, normalized, &low, &high));
+  g_assert_cmpfloat (low, ==, 0.0f);
+  g_assert_cmpfloat (high, ==, 0.0f);
+  for (int delta = -900; delta <= 900; delta += 1800)
+    {
+      raw[40 * 64 + 32] = 1000 + delta;
+      g_assert_true (goodix5e0a_normalize_raw_frame (raw, normalized, NULL, NULL));
+      g_assert_cmpuint (normalized[40 * 64 + 32], ==, delta < 0 ? 0 : 255);
+      g_assert_cmpuint (normalized[40 * 64 + 31], ==, 128 - delta / 9);
+      g_assert_cmpuint (normalized[0], ==, 128);
+    }
+}
+
+static guint probe_handler_calls, probe_complete_calls;
+static GQuark probe_complete_domain;
+static gint probe_complete_code;
+
+static void probe_handler (FpiSsm *ssm, FpDevice *dev)
+{
+  probe_handler_calls++;
+}
+
+static void probe_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
+{
+  probe_complete_calls++;
+  if (error)
+    {
+      probe_complete_domain = error->domain;
+      probe_complete_code = error->code;
+      g_error_free (error);
+    }
+  else
+    {
+      probe_complete_domain = 0;
+      probe_complete_code = -1;
+    }
+}
+
+/* Real-priv teardown: this harness mocks send_protocol, so priv is never
+ * armed and goodix_reset_state is a no-op in the cases above. Arm a real
+ * priv waiter with goodix_read_tls (no USB needed) whose completion is a
+ * live scan callback, then tear down mid-command. A correct teardown
+ * abandons the SSM first: park is ineligible and exactly one completion
+ * (deactivate_complete / suspend_complete) is reported, never a
+ * session_error alongside it. */
+static void test_deactivate_mid_command_real_priv (void)
+{
+  g_autoptr(FpDevice) dev = new_device ();
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+  dev_activate ((FpImageDevice *) dev);
+  tls_cb (dev, tls_data, NULL);
+  enable_cb (dev, enable_data, NULL);
+  g_assert_nonnull (self->scan_ssm);
+  g_assert_true (tls_alive);
+  g_assert_true (self->warm_ok);
+  reading = TRUE;
+
+  /* FDT_DOWN wait armed at the priv layer with the live scan SSM. */
+  goodix_read_tls (dev, goodix5e0a_on_fdt_down_reply, self->scan_ssm);
+  goodix5e0a_deactivate ((FpImageDevice *) dev);
+  g_assert_null (self->scan_ssm);
+  g_assert_false (self->tls_parked);
+  g_assert_false (reading);
+  g_assert_false (goodix_session_is_clean (dev));
+  g_assert_cmpuint (shutdowns, ==, 1);
+  g_assert_cmpuint (errors, ==, 0);
+}
+
+/* Same armed-priv setup through suspend: one suspend_complete, no error. */
+static void test_suspend_mid_command_real_priv (void)
+{
+  g_autoptr(FpDevice) dev = new_device ();
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+  dev_activate ((FpImageDevice *) dev);
+  tls_cb (dev, tls_data, NULL);
+  enable_cb (dev, enable_data, NULL);
+  g_assert_nonnull (self->scan_ssm);
+
+  goodix_read_tls (dev, goodix5e0a_on_fdt_down_reply, self->scan_ssm);
+  goodix5e0a_suspend (dev);
+  g_assert_null (self->scan_ssm);
+  g_assert_false (self->tls_parked);
+  g_assert_cmpuint (suspends, ==, 1);
+  g_assert_cmpuint (errors, ==, 0);
+  goodix5e0a_resume (dev);
+  g_assert_cmpuint (resumes, ==, 1);
+}
+
+/* step_cb on teardown CANCELLED must fail the SSM, never advance it;
+ * non-CANCELLED transients stay tolerant and advance. */
+static void test_step_cb_cancelled_fails_fast (void)
+{
+  g_autoptr(FpDevice) dev = new_device ();
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+
+  probe_handler_calls = probe_complete_calls = 0;
+  FpiSsm *probe = fpi_ssm_new (dev, probe_handler, 3);
+  fpi_ssm_start (probe, probe_complete);
+  g_assert_cmpuint (probe_handler_calls, ==, 1);
+  self->scan_ssm = probe;
+  goodix5e0a_step_cb (dev, probe,
+                      g_error_new_literal (G_IO_ERROR, G_IO_ERROR_CANCELLED,
+                                           "Command cancelled by state reset"));
+  g_assert_cmpuint (probe_handler_calls, ==, 1);
+  g_assert_cmpuint (probe_complete_calls, ==, 1);
+  g_assert_cmpuint (probe_complete_domain, ==, G_IO_ERROR);
+  g_assert_cmpint (probe_complete_code, ==, G_IO_ERROR_CANCELLED);
+  self->scan_ssm = NULL; /* mark_failed auto-freed the SSM */
+
+  probe_handler_calls = probe_complete_calls = 0;
+  probe = fpi_ssm_new (dev, probe_handler, 3);
+  fpi_ssm_start (probe, probe_complete);
+  self->scan_ssm = probe;
+  goodix5e0a_step_cb (dev, probe,
+                      g_error_new_literal (G_IO_ERROR, G_IO_ERROR_TIMED_OUT,
+                                           "transient timeout"));
+  g_assert_cmpuint (probe_handler_calls, ==, 2);
+  g_assert_cmpuint (probe_complete_calls, ==, 0);
+  fpi_ssm_free (probe);
+  self->scan_ssm = NULL;
+}
+
 int main (int argc, char **argv)
 {
   g_test_init (&argc, &argv, NULL);
@@ -287,5 +438,9 @@ int main (int argc, char **argv)
   g_test_add_func ("/goodix/lifecycle/late-probe-after-suspend", test_late_probe_after_suspend);
   g_test_add_func ("/goodix/lifecycle/active-scan-cancel", test_active_scan_cancel);
   g_test_add_func ("/goodix/lifecycle/public-idle-suspend", test_public_idle_suspend);
+  g_test_add_func ("/goodix/frame/normalization", test_frame_normalization);
+  g_test_add_func ("/goodix/lifecycle/deactivate-mid-command-real-priv", test_deactivate_mid_command_real_priv);
+  g_test_add_func ("/goodix/lifecycle/suspend-mid-command-real-priv", test_suspend_mid_command_real_priv);
+  g_test_add_func ("/goodix/lifecycle/step-cb-cancelled-fails-fast", test_step_cb_cancelled_fails_fast);
   return g_test_run ();
 }

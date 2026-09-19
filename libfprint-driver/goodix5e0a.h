@@ -35,7 +35,6 @@
 #define GOODIX_5E0A_FRAME_BLOCKS (80)
 #define GOODIX_5E0A_BLOCK_BYTES (132)
 #define GOODIX_5E0A_BLOCK_ACTIVE_BYTES (96)
-#define GOODIX_5E0A_ACT_BYTES (GOODIX_5E0A_FRAME_BLOCKS * GOODIX_5E0A_BLOCK_ACTIVE_BYTES) /* 7680 */
 #define GOODIX_5E0A_FRAME_WIRE_BYTES (GOODIX_5E0A_FRAME_BLOCKS * GOODIX_5E0A_BLOCK_BYTES + 4) /* 10564 */
 
 #define GOODIX_5E0A_CONTRAST_GAIN (1.0f)
@@ -52,12 +51,17 @@
  * inside SCAN_5E0A_GET_IMAGE and submit the highest Milan quality / contrast frame. */
 #define GOODIX_5E0A_FRAMES_PER_TOUCH (4)
 
+/* FDT_DOWN empty-poll stop-loss: a zero-length reply is retried after 50ms
+ * (transient empties happen), but a device answering empty forever is dead.
+ * 200 consecutive empties (~10s+ of polling) fail the scan SSM instead of
+ * looping until the client gives up. Valid replies reset the count. */
+#define GOODIX_5E0A_DOWN_EMPTY_POLL_MAX (200)
+
 
 /* Host TLS PSK for TLS_PSK_WITH_AES_128_CBC_SHA256 (flags 0xbb020001).
  * Captured once from the Windows driver stack (DPAPI-decrypted material);
- * no runtime derivation is known. Per-unit vs per-model scope is unconfirmed
- * (see docs/UPSTREAM.md section 6 for the upstream disclosure). Required for
- * the TLS handshake; the driver performs no on-device key provisioning.
+ * no runtime derivation is known. Per-unit vs per-model scope is unconfirmed.
+ * Required for the TLS handshake; the driver performs no on-device key provisioning.
  * Ticket 26 closure: the 0xe4-readable bb020001 slot always reports factory
  * bytes even while TLS with this key succeeds, and 0xe0 writes are rejected
  * by the MCU, so activation talks TLS directly with this key. */

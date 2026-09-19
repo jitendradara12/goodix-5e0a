@@ -18,9 +18,7 @@ from tests.test_utils import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-LOCAL_HEADER_PATH = REPO_ROOT / "libfprint-driver" / "goodix5e0a.h"
-TMP_HEADER_PATH = Path("/tmp/libfprint-goodix/libfprint/drivers/goodixtls/goodix5e0a.h")
-HEADER_PATH = TMP_HEADER_PATH if TMP_HEADER_PATH.exists() else LOCAL_HEADER_PATH
+HEADER_PATH = REPO_ROOT / "libfprint-driver" / "goodix5e0a.h"
 
 
 def parse_c_array(header_content: str, array_name: str) -> bytes:

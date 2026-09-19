@@ -11,7 +11,7 @@ Hermetic static and structural validation:
 (f) SCAN_5E0A_FDT_UP_2 uses 2000ms timeout when retry_guard is TRUE;
 (g) goodix5e0a_on_fdt_up_reply clears retry_guard and jumps to SCAN_5E0A_FDT_DOWN;
 (h) goodix5e0a_suspend and goodix5e0a_scan_complete reset retry_guard;
-(i) bz3_threshold is 14 and nr_enroll_stages is 14 (Tickets 43 + 65 + 70 operating point).
+(i) nr_enroll_stages is 12 and the NBIS bz3_threshold stays gone (Milan operating point).
 """
 
 import os
@@ -60,7 +60,7 @@ class TestF47VerifyRetryReleaseGuard(unittest.TestCase):
     def test_d_scan_start_ttl_check(self):
         """goodix5e0a_scan_start expires retry_guard after 2000ms TTL."""
         src = _read(GOODIX5E0A_C)
-        scan_start = _slice(src, "goodix5e0a_scan_start (FpDevice *dev)", "goodix5e0a_change_state")
+        scan_start = _slice(src, "goodix5e0a_scan_start (FpDevice *dev)", "goodix5e0a_deactivate (FpImageDevice *img_dev)")
         self.assertIn("if (self->retry_guard)", scan_start)
         self.assertIn("delta_us > 2 * G_USEC_PER_SEC", scan_start)
         self.assertIn("self->retry_guard = FALSE;", scan_start)
@@ -117,11 +117,11 @@ class TestF47VerifyRetryReleaseGuard(unittest.TestCase):
         self.assertIn("self->retry_guard = FALSE;", scan_complete)
 
     def test_i_threshold_and_enroll_stages_pinned(self):
-        """Ticket 83 operating point: threshold 14 (legacy compat), 12 enroll stages for Milan."""
+        """Milan operating point: 12 enroll stages; NBIS bz3_threshold stays gone."""
         src = _read(GOODIX5E0A_C)
         class_init = _slice(src, "fpi_device_goodixtls5e0a_class_init", "fpi_device_class_auto_initialize_features")
         self.assertIn("dev_class->nr_enroll_stages = 12;", class_init)
-        self.assertIn("img_dev_class->bz3_threshold = 14;", class_init)
+        self.assertNotIn("bz3_threshold", src)
 
 
 if __name__ == "__main__":
