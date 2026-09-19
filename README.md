@@ -2,11 +2,11 @@
 
 Linux fingerprint driver for Goodix 27c6:5e0a sensors, found in laptops like the Realme Book Prime.
 
-The driver runs as a libfprint module with fprintd. It loads Goodix's Windows engine, `GoodixEngineAdapter.dll`, inside the process through a custom PE loader. Because it depends on this binary, upstream libfprint cannot include it.
+Runs as a libfprint module. It loads Goodix's Windows engine, `GoodixEngineAdapter.dll`, inside the process via a PE loader. This proprietary dependency prevents upstreaming.
 
 ## Installation
 
-For all distributions other than NixOS, run `install.sh`.
+Run `install.sh` for all distributions except NixOS. See `./install.sh --help` for custom DLL paths or uninstalling.
 
 ```bash
 git clone https://github.com/jitendradara12/goodix-5e0a.git
@@ -17,17 +17,9 @@ fprintd-enroll
 fprintd-verify
 ```
 
-The script builds the driver and installs fprintd. It does not touch your PAM configuration or overwrite system packages.
-
-Useful flags:
-
-- `--check` inspects system state and reports missing packages without making changes.
-- `--dll /path/to/GoodixEngineAdapter.dll` loads a custom engine DLL instead of the bundled copy.
-- `--uninstall` removes all files installed by this script.
-
 ### SELinux on Fedora and RHEL
 
-SELinux blocks fprintd from writing to the memory buffer needed by the loader. Install the policy module before running fprintd:
+Install the policy module before running fprintd:
 
 ```bash
 cd packaging/selinux
@@ -38,7 +30,7 @@ sudo semodule -i goodix-engine.pp
 
 ### PAM login setup
 
-Enrolling prints stores them, but logging in with them requires the PAM module.
+Logging in requires the PAM module.
 
 - Ubuntu and Debian: install `libpam-fprintd`, run `sudo pam-auth-update`, and enable fingerprint authentication.
 - Fedora and RHEL: run `sudo dnf install fprintd-pam && sudo authselect enable-feature with-fingerprint && sudo authselect apply-changes`.
@@ -49,7 +41,6 @@ Enrolling prints stores them, but logging in with them requires the PAM module.
 Add the repository to your flake inputs and import the module:
 
 ```nix
-# flake.nix
 inputs.goodix.url = "github:jitendradara12/goodix-5e0a";
 
 # configuration.nix
@@ -57,17 +48,11 @@ imports = [ inputs.goodix.nixosModules.default ];
 services.fprintd.goodix.pamServices = true;
 ```
 
-The module uses the bundled DLL by default. Set `services.fprintd.goodix.dllFile = ./path/to/dll;` to supply your own.
+Set `services.fprintd.goodix.dllFile = ./path/to/dll;` to supply a custom engine DLL.
 
 ## Development
 
-Run tests with:
-
-```bash
-bash tests/run_all_tests.sh
-```
-
-These software tests do not require the physical sensor.
+Run tests with `bash tests/run_all_tests.sh`. The sensor is not required.
 
 ## Known limits
 
@@ -77,6 +62,6 @@ These software tests do not require the physical sensor.
 
 ## License
 
-Linux driver code is licensed under LGPL-2.1-or-later. See [LICENSE](LICENSE) for details.
+Driver code is LGPL-2.1-or-later. See [LICENSE](LICENSE).
 
-The files in `windows_driver/`, including `GoodixEngineAdapter.dll`, are proprietary binaries from Goodix, included for compatibility research.
+`windows_driver/GoodixEngineAdapter.dll` is a proprietary Goodix binary included for research.
