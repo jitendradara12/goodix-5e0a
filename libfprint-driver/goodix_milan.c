@@ -1230,20 +1230,22 @@ int goodix_milan_enroll_commit (void *ctx,
 
     int packed_size = m_templateGetPackedSize(master_template);
     if (packed_size <= 0) {
-        m_templateDelete(master_template);
+        /* master_template is borrowed from ctx (freed by enrolFinish);
+         * never templateDelete it here (ticket-72 harness precedent). */
         g_rec_mutex_unlock (&g_milan_mutex);
         return -3;
     }
 
     uint8_t *packed_buf = malloc(packed_size);
     if (!packed_buf) {
-        m_templateDelete(master_template);
         g_rec_mutex_unlock (&g_milan_mutex);
         return -4;
     }
 
     int pack_res = m_templatePack(master_template, packed_buf);
-    m_templateDelete(master_template);
+    /* Do NOT templateDelete(master_template): it is owned by ctx and
+     * freed by enrolFinish. Deleting it here double-frees and corrupts
+     * the engine heap (hang after 12th stage, verify no-match). */
     if (pack_res != 0) {
         free(packed_buf);
         g_rec_mutex_unlock (&g_milan_mutex);
