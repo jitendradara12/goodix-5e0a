@@ -3,7 +3,7 @@
 **What to build:** A Fedora user who runs `install.sh` successfully and enrolls via `fprintd-enroll` still gets no desktop integration: no Fingerprint Login row in GNOME Settings > Users, no GDM/login/sudo fingerprint. Make the repo either wire it up or document/detect it so "enroll works but Settings shows nothing" stops being a surprise.
 
 **Blocked by:** None (98 is the daemon-side counterpart; this is the session-side counterpart).
-**Status:** ready-for-hardware-verify
+**Status:** closed
 **Owns:** `install.sh`, README (Fedora section), portability test lane. No driver changes.
 
 ## Observed on failing setup (2026-09-17, sastalinux, Fedora 44, GNOME)
@@ -65,3 +65,7 @@
 
 - Do not commit local `fprintd-goodix.pp/.te` from ticket 98 alongside this work; they are host-specific workaround artifacts (currently untracked in repo root).
 - NixOS path already manages PAM via `pamServices`; keep the two paths consistent in wording but separate in code.
+
+## Verdict (closed 2026-09-21, sastalinux Fedora 44 GNOME)
+
+Confirm — went beyond option A: `install.sh` dnf deps now include `fprintd-pam`, new `./install.sh --integrate` idempotently enables `with-fingerprint` (explicit flag, never silent on default install), `--check` reports no PAM gaps, README quick-start includes the integrate step. Live: `authselect current` shows `with-fingerprint`, `authselect check` valid, `pam_fprintd.so` in system-auth, 10 prints enrolled, user confirms desktop login working.

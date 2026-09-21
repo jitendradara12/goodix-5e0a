@@ -3,7 +3,7 @@
 **What to build:** Make enroll work on SELinux-enforcing distros (Fedora/RHEL) instead of failing with a misleading `failed to load GoodixEngineAdapter.dll`. Either ship/apply SELinux policy for the engine loader, avoid the denied `memfd:write`, or at minimum surface the real `errno` + detect and document it.
 
 **Blocked by:** None.
-**Status:** ready-for-hardware-verify
+**Status:** closed
 **Owns:** `libfprint-driver/goodix_milan.c` loader, `goodix-5e0a-integration.patch` sync, `install.sh`, README troubleshooting, portability test lane.
 
 ## Environment (failing run, 2026-09-17)
@@ -170,3 +170,7 @@ sudo ausearch -m avc -ts boot | audit2allow -M fprintd-goodix
 sudo semodule -i fprintd-goodix.pp
 # final rule must read: allow fprintd_t tmpfs_t:file { execute map read write };
 ```
+
+## Verdict (closed 2026-09-21, sastalinux Fedora 44, Enforcing)
+
+Confirm — enroll/verify healthy today with no Goodix policy module installed (`semodule -l` shows none): engine `Milan_v_3.02.00.20` loads, TLS ready, 10 prints enrolled, `fprintd-list` live. The 2026-09-17 memfd record above stands as diagnosis history; on the current build the blocker does not reproduce, so no policy install required. Reopen if `denied { write } ... goodix_engine` AVCs return.

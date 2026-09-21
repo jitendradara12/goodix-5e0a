@@ -8,7 +8,7 @@ byte-identical) and applies only the irreducible integration changes
 (test_f25 byte-sync) is replaced by a directory-identity test.
 
 **Blocked by:** None.
-**Status:** ready-for-hardware-verify
+**Status:** closed
 **Owns:** flake.nix src, libfprint.patch regeneration, install.sh build
 steps, affected tests.
 
@@ -44,3 +44,7 @@ Predicted signatures (software branch):
 - Driver sources live only in `libfprint-driver/` (single source of truth);
   the patch and the Nix overlay both consume it.
 - No git submodules; a tiny src-overlay mkDerivation stays boring.
+
+## Verdict (closed 2026-09-21, sastalinux Fedora 44)
+
+Confirm — the copy+core-patch mechanism is deployed live via `install.sh`: engine `Milan_v_3.02.00.20` loads, TLS ready, 10 prints enrolled via CLI. Suite 350/350 green incl. f22 wiring + tier5 guard. Flake check + fresh derivation build passed earlier per record above; no nixos-rebuild deploy on this host (not NixOS).
