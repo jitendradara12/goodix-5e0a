@@ -83,7 +83,7 @@ build_stage() (
 )
 
 usage() {
-    echo 'Usage: ./install.sh [--no-deps] [--dll FILE] [--build-only DIRECTORY] | --check | --uninstall | --help'
+    echo 'Usage: ./install.sh [--no-deps] [--dll FILE] [--build-only DIRECTORY] | --check | --uninstall | --integrate | --help'
     echo 'Run as your normal user. Default: private /opt install for systemd and root-run fprintd.'
     echo '--no-deps: use installed dependencies on any distro; no package manager calls.'
     echo '--build-only DIRECTORY: build a staging tree without sudo, systemd, or package installation.'
@@ -102,9 +102,7 @@ integration_hints() {
             echo 'PAM gap: fprintd-pam is not installed. Fedora/RHEL: sudo dnf install fprintd-pam'
         fi
         if ! authselect current 2>/dev/null | grep -q with-fingerprint; then
-            echo 'PAM gap: with-fingerprint is not enabled. On an authselect-managed profile:'
-            echo 'sudo authselect check && sudo authselect enable-feature with-fingerprint'
-            echo 'sudo authselect apply-changes'
+            echo 'PAM gap: with-fingerprint is not enabled. Run: ./install.sh --integrate'
         fi
         echo 'Log out/in, then GNOME Settings > Users > Fingerprint Login. Other desktops vary.'
     else
@@ -112,6 +110,23 @@ integration_hints() {
         echo 'Debian/Ubuntu: sudo apt install libpam-fprintd; sudo pam-auth-update'
     fi
 }
+
+# ponytail: authselect-only on purpose; other distros keep their README steps.
+apply_integration() (
+    set -euo pipefail
+    command -v authselect >/dev/null || { fail 'authselect not found; wire PAM manually (see README)'; exit 1; }
+    if command -v rpm >/dev/null; then
+        rpm -q fprintd-pam >/dev/null 2>&1 || { fail 'fprintd-pam is not installed. Fedora/RHEL: sudo dnf install fprintd-pam'; exit 1; }
+    fi
+    if authselect current 2>/dev/null | grep -q with-fingerprint; then
+        echo 'with-fingerprint already enabled.'
+    else
+        echo 'Keep a password session open while PAM changes apply.'
+        sudo authselect enable-feature with-fingerprint
+        sudo authselect apply-changes
+        echo 'Enabled with-fingerprint. Log out/in, then GNOME Settings > Users > Fingerprint Login.'
+    fi
+)
 
 check_setup() {
     echo "Architecture: $(uname -m) (engine requires x86_64)"
@@ -137,7 +152,7 @@ main() (
     local no_deps=false output='' argc=$#
     while (($#)); do
         case $1 in
-            --help|--check|--uninstall)
+            --help|--check|--uninstall|--integrate)
                 [[ $argc == 1 ]] || { usage >&2; exit 1; }
                 mode=${1#--}; shift ;;
             --no-deps) no_deps=true; shift ;;
@@ -152,6 +167,7 @@ main() (
     done
     if [[ $mode == help ]]; then usage; return; fi
     if [[ $mode == check ]]; then check_setup; return; fi
+    if [[ $mode == integrate ]]; then apply_integration; return; fi
     # os-release is supplied by the OS; sourcing handles single/double quoted IDs.
     local ID='' ID_LIKE=''
     # shellcheck disable=SC1091
@@ -209,7 +225,7 @@ main() (
             sudo apt-get install -y git meson ninja-build pkg-config gcc g++ fprintd libglib2.0-dev libusb-1.0-0-dev \
                 libgusb-dev libpixman-1-dev libssl-dev libnss3-dev libnspr4-dev libgirepository1.0-dev ;;
         dnf)
-            sudo dnf install -y git meson ninja-build pkgconf-pkg-config gcc gcc-c++ fprintd glib2-devel libusb1-devel \
+            sudo dnf install -y git meson ninja-build pkgconf-pkg-config gcc gcc-c++ fprintd fprintd-pam glib2-devel libusb1-devel \
                 libgusb-devel pixman-devel openssl-devel nss-devel nspr-devel gobject-introspection-devel ;;
         pacman)
             sudo pacman -S --needed --noconfirm git meson ninja pkgconf gcc fprintd glib2 libusb libgusb \

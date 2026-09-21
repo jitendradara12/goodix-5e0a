@@ -13,6 +13,7 @@ git clone https://github.com/jitendradara12/goodix-5e0a.git
 cd goodix-5e0a
 ./install.sh
 sudo systemctl restart fprintd
+./install.sh --integrate
 fprintd-enroll
 fprintd-verify
 ```
@@ -33,7 +34,7 @@ sudo semodule -i goodix-engine.pp
 Logging in requires the PAM module.
 
 - Ubuntu and Debian: install `libpam-fprintd`, run `sudo pam-auth-update`, and enable fingerprint authentication.
-- Fedora and RHEL: run `sudo dnf install fprintd-pam && sudo authselect enable-feature with-fingerprint && sudo authselect apply-changes`.
+- Fedora and RHEL: run `./install.sh --integrate` (installs nothing; enables `with-fingerprint` via authselect).
 - Arch: add `pam_fprintd.so` to `/etc/pam.d/system-local-login` and `/etc/pam.d/sudo`.
 
 ## NixOS
