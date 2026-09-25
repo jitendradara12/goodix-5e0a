@@ -57,9 +57,9 @@ Run tests with `bash tests/run_all_tests.sh`. The sensor is not required.
 
 ## Known limits
 
-- Fingerprint unlock fails right after waking from S3 sleep. Type your password instead.
+- Sleep and shutdown are supported. On wake, the driver detects the suspend (boottime vs monotonic clock skew), discards any parked session without reusing it, and re-activates the sensor from scratch; the parked-session fast path only applies when no sleep happened. Verified in daily use on the tested laptop.
 - Encryption keys and calibration tables come from one tested laptop. Other units might have different factory provisioning and fail the handshake.
-- Keep password login enabled and enroll more than one finger.
+- Keep password login enabled as a fallback.
 
 ## License
 
