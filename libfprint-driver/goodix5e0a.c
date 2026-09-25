@@ -41,7 +41,7 @@
 #include "goodix_milan.h"
 
 
-guint32 goodix5e0a_last_declen = 0;
+static guint32 goodix5e0a_last_declen = 0;
 
 static void goodix5e0a_scan_start (FpDevice *);
 
@@ -1089,6 +1089,83 @@ goodix5e0a_get_print_template (FpPrint *print, GVariant **out_var, gsize *out_le
   return d;
 }
 
+/* Ticket 77/84: the ONLY reader of the identify gallery and the ONLY caller of
+ * identifyImage, so the deliver tail and the ticket-84 speculative fast path
+ * cannot drift apart — a second copy that re-derived any part of this is
+ * exactly how a fast path silently loosens what counts as a match.
+ * On a match *out_print receives the exact winning gallery object (NULL when
+ * the caller only needs the verdict); FALSE leaves out_idx/out_pts untouched. */
+static gboolean
+goodix5e0a_identify_best_frame (FpDevice *dev, int *out_idx, int *out_pts,
+                                FpPrint **out_print)
+{
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+  g_autoptr(GPtrArray) held = NULL;
+  g_autofree const guint8 **blobs = NULL;
+  g_autofree gsize *lens = NULL;
+  g_autofree FpPrint **owners = NULL;
+  GPtrArray *prints = NULL;
+  guint m = 0;
+  int idx = -1, pts = 0;
+  gboolean matched = FALSE;
+
+  fpi_device_get_identify_data (dev, &prints);
+  if (!prints || prints->len == 0)
+    return FALSE;
+
+  held = g_ptr_array_new_with_free_func ((GDestroyNotify) g_variant_unref);
+  blobs = g_new0 (const guint8 *, prints->len);
+  lens = g_new0 (gsize, prints->len);
+  owners = g_new0 (FpPrint *, prints->len);
+
+  for (guint i = 0; i < prints->len; i++)
+    {
+      FpPrint *p = g_ptr_array_index (prints, i);
+      GVariant *v = NULL;
+      gsize dl = 0;
+      gconstpointer d = goodix5e0a_get_print_template (p, &v, &dl);
+
+      if (!d)
+        continue;
+
+      g_ptr_array_add (held, v); /* adopts the ref */
+      blobs[m] = d;
+      lens[m] = dl;
+      owners[m] = p;
+      m++;
+    }
+
+  if (m == 0)
+    {
+      fp_dbg ("5e0a identify: empty gallery, reporting no-match");
+      return FALSE;
+    }
+
+  matched = goodix_milan_identify_image (self->best_pixels,
+                                         GOODIX_5E0A_WIDTH,
+                                         GOODIX_5E0A_HEIGHT,
+                                         blobs, lens, (int) m,
+                                         &idx, &pts) != 0;
+  fp_dbg ("5e0a Milan identify: match=%d idx=%d pts=%d (usable=%u)",
+          matched, idx, pts, m);
+
+  /* The engine's verdict is necessary but not sufficient: its winner index is
+   * attacker-influenced data until it is bounds-checked against what we fed in. */
+  if (matched && idx >= 0 && (guint) idx < m)
+    {
+      if (out_idx)
+        *out_idx = idx;
+      if (out_pts)
+        *out_pts = pts;
+      if (out_print)
+        *out_print = owners[idx];
+    }
+  else
+    matched = FALSE;
+
+  return matched;
+}
+
 static void
 goodix5e0a_deliver_frame (FpDevice *dev)
 {
@@ -1141,51 +1218,11 @@ goodix5e0a_deliver_frame (FpDevice *dev)
         }
       else
         {
-          GPtrArray *prints = NULL;
-          fpi_device_get_identify_data (dev, &prints);
-          if (!prints || prints->len == 0)
-            {
-              fp_dbg ("5e0a identify: empty gallery, reporting no-match");
-              fpi_device_identify_report (dev, NULL, NULL, NULL);
-              fpi_device_identify_complete (dev, NULL);
-            }
-          else
-            {
-              guint n = prints->len;
-              g_autoptr(GPtrArray) held = g_ptr_array_new_with_free_func ((GDestroyNotify) g_variant_unref);
-              g_autofree const uint8_t **blobs = g_new0 (const uint8_t *, n);
-              g_autofree size_t *lens = g_new0 (size_t, n);
-              g_autofree FpPrint **owners = g_new0 (FpPrint *, n);
-              guint m = 0;
-              for (guint i = 0; i < n; i++)
-                {
-                  FpPrint *p = g_ptr_array_index (prints, i);
-                  GVariant *v = NULL;
-                  gsize dl = 0;
-                  gconstpointer d = goodix5e0a_get_print_template (p, &v, &dl);
-                  if (!d)
-                    continue;
-                  g_ptr_array_add (held, v);
-                  blobs[m] = d;
-                  lens[m] = dl;
-                  owners[m] = p;
-                  m++;
-                }
-              int match_idx = -1, match_pts = 0, is_match = 0;
-              if (m > 0)
-                is_match = goodix_milan_identify_image (self->best_pixels,
-                                                        GOODIX_5E0A_WIDTH,
-                                                        GOODIX_5E0A_HEIGHT,
-                                                        blobs, lens, m,
-                                                        &match_idx, &match_pts);
-              fp_dbg ("5e0a Milan identify: match=%d idx=%d pts=%d (gallery=%u usable=%u)",
-                      is_match, match_idx, match_pts, n, m);
-              if (is_match && match_idx >= 0 && (guint) match_idx < m)
-                fpi_device_identify_report (dev, owners[match_idx], NULL, NULL);
-              else
-                fpi_device_identify_report (dev, NULL, NULL, NULL);
-              fpi_device_identify_complete (dev, NULL);
-            }
+          FpPrint *winner = NULL;
+
+          goodix5e0a_identify_best_frame (dev, NULL, NULL, &winner);
+          fpi_device_identify_report (dev, winner, NULL, NULL);
+          fpi_device_identify_complete (dev, NULL);
         }
       /* Same no-deactivate rule as verify: scan SSM completes in
        * on_read_img; fprintd closes/parks via dev_close. */
@@ -1500,13 +1537,17 @@ goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm,
           if (self->tmpl_blob != NULL && self->tmpl_len > 0)
             {
               int match_pts = 0;
-              goodix_milan_verify_image (self->best_pixels,
-                                         GOODIX_5E0A_WIDTH,
-                                         GOODIX_5E0A_HEIGHT,
-                                         self->tmpl_blob,
-                                         self->tmpl_len,
-                                         &match_pts);
-              if (match_pts > 0)
+              /* The engine's own verdict, not a re-derived one: the fast path
+               * may only spend the burst earlier, never widen what counts as
+               * a hit. Re-deriving `match_pts > 0` here would also accept an
+               * engine reply whose winner index is not our single template. */
+              int is_match = goodix_milan_verify_image (self->best_pixels,
+                                                        GOODIX_5E0A_WIDTH,
+                                                        GOODIX_5E0A_HEIGHT,
+                                                        self->tmpl_blob,
+                                                        self->tmpl_len,
+                                                        &match_pts);
+              if (is_match)
                 {
                   g_message ("5e0a optimistic fast-path match on frame 1: pts=%d, skipping remaining burst",
                              match_pts);
@@ -1516,43 +1557,15 @@ goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm,
         }
       else if (self->is_identify || action == FPI_DEVICE_ACTION_IDENTIFY)
         {
-          GPtrArray *prints = NULL;
-          fpi_device_get_identify_data (dev, &prints);
-          if (prints && prints->len > 0)
+          int matched_idx = -1, match_pts = 0;
+
+          /* Same verdict the deliver tail will reach — the fast path only
+           * spends the remaining burst earlier, it never decides. */
+          if (goodix5e0a_identify_best_frame (dev, &matched_idx, &match_pts, NULL))
             {
-              guint n = prints->len;
-              g_autoptr(GPtrArray) held = g_ptr_array_new_with_free_func ((GDestroyNotify) g_variant_unref);
-              g_autofree const uint8_t **blobs = g_new0 (const uint8_t *, n);
-              g_autofree size_t *lens = g_new0 (size_t, n);
-              guint m = 0;
-              for (guint i = 0; i < n; i++)
-                {
-                  FpPrint *p = g_ptr_array_index (prints, i);
-                  GVariant *v = NULL;
-                  gsize dl = 0;
-                  gconstpointer d = goodix5e0a_get_print_template (p, &v, &dl);
-                  if (!d)
-                    continue;
-                  g_ptr_array_add (held, v);
-                  blobs[m] = d;
-                  lens[m] = dl;
-                  m++;
-                }
-              if (m > 0)
-                {
-                  int matched_idx = -1, match_pts = 0;
-                  goodix_milan_identify_image (self->best_pixels,
-                                               GOODIX_5E0A_WIDTH,
-                                               GOODIX_5E0A_HEIGHT,
-                                               blobs, lens, m,
-                                               &matched_idx, &match_pts);
-                  if (matched_idx >= 0 && match_pts > 0)
-                    {
-                      g_message ("5e0a optimistic fast-path identify match on frame 1: idx=%d pts=%d, skipping remaining burst",
-                                 matched_idx, match_pts);
-                      return FALSE;
-                    }
-                }
+              g_message ("5e0a optimistic fast-path identify match on frame 1: idx=%d pts=%d, skipping remaining burst",
+                         matched_idx, match_pts);
+              return FALSE;
             }
         }
     }

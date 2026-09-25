@@ -398,6 +398,17 @@ scan_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
     }
   free (raw_frame);
 
+  /* Both hooks are optional (`process_raw_frame` may also decline a frame by
+   * returning NULL — goodix5e0a does exactly that when normalisation fails).
+   * Handing a NULL image to the core used to be possible here; fail the scan
+   * instead so a NULL never reaches fpi_image_device_image_captured. */
+  if (!img)
+    {
+      fp_err ("5xx: frame processing produced no image");
+      fpi_ssm_mark_failed (ssm, fpi_device_error_new (FP_DEVICE_ERROR_GENERAL));
+      return;
+    }
+
   fpi_image_device_image_captured (img_dev, img);
 
   fpi_ssm_next_state (ssm);

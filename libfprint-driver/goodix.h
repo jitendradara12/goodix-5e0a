@@ -114,9 +114,6 @@ typedef void (*GoodixImageCallback)(FpDevice *dev,
                                     gpointer  user_data,
                                     GError   *error);
 
-gchar *data_to_str (guint8 *data,
-                    guint32 length);
-
 // ---- GOODIX RECEIVE SECTION START ----
 
 /**

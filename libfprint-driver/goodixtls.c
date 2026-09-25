@@ -204,6 +204,8 @@ goodix_tls_init_serve (void *me)
 gboolean
 goodix_tls_server_deinit (GoodixTlsServer *self, GError **error)
 {
+  (void) error; /* teardown is best-effort and always reports success */
+
   if (!self)
     return TRUE;
 
@@ -280,8 +282,11 @@ goodix_tls_server_init (GoodixTlsServer *self, GError **error)
   if (socketpair (AF_UNIX, SOCK_STREAM, 0, socks) != 0)
     {
       if (error)
-        g_set_error (error, G_FILE_ERROR, errno,
-                     "failed to create socket pair: %s", strerror (errno));
+        /* g_file_error_from_errno() maps the raw errno onto a GFileError
+         * code; passing errno directly produced a bogus error code (the two
+         * enumerations are unrelated). */
+        g_set_error (error, G_FILE_ERROR, g_file_error_from_errno (errno),
+                     "failed to create socket pair: %s", g_strerror (errno));
       SSL_CTX_free (self->ssl_ctx);
       self->ssl_ctx = NULL;
       return FALSE;

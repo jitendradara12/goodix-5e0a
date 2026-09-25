@@ -139,16 +139,54 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
         self.assertIn("goodix_receive_data (dev);", start_body)
 
     def test_genuine_io_error_preserved(self):
-        """Verify genuine non-cancellation errors are reported via fp_warn and retried."""
+        """Genuine non-cancellation errors are warned about and retried."""
         with open(self.goodix_c, "r") as f:
             content = f.read()
 
         cb_idx = content.find("goodix_receive_data_cb (FpiUsbTransfer *transfer")
-        cb_body = content[cb_idx:cb_idx + 800]
+        self.assertNotEqual(cb_idx, -1)
+        cb_body = content[cb_idx:content.find("\nstatic void\ngoodix_receive_retry_cb")]
 
-        # Following the cancelled block, genuine errors are caught:
-        self.assertIn("fp_warn (\"Receive data error: %s\", error->message);", cb_body)
+        # Following the cancelled block, genuine errors are caught and counted:
+        self.assertIn("fp_warn (\"Receive data error (%u consecutive): %s\",", cb_body)
+        self.assertNotIn("g_clear_error", cb_body)
+
+    def test_read_loop_backoff_is_bounded(self):
+        """A device failing every submission must not spin the main thread.
+
+        Resubmitting straight from the completion callback turns a permanently
+        failing endpoint into a tight loop at 100% CPU. The retry now runs on a
+        timer, and the loop stops for good after GOODIX_READ_ERROR_MAX.
+        """
+        with open(self.goodix_c, "r") as f:
+            content = f.read()
+
+        cb_idx = content.find("goodix_receive_data_cb (FpiUsbTransfer *transfer")
+        cb_body = content[cb_idx:content.find("\nstatic void\ngoodix_receive_retry_cb")]
+
+        self.assertIn("priv->read_errors++", cb_body)
+        self.assertIn("GOODIX_READ_ERROR_MAX", cb_body)
+        self.assertIn("goodix_stop_read_loop (dev);", cb_body)
+        # On the error path the retry is scheduled, never issued inline.
+        error_branch = cb_body[cb_body.find("if (error)"):cb_body.find("priv->read_errors = 0;")]
+        self.assertIn("fpi_device_add_timeout (dev, GOODIX_READ_RETRY_MS,", error_branch)
+        self.assertNotIn("goodix_receive_data (dev);", error_branch)
+        # ...while a successful read still chains straight into the next one.
         self.assertIn("goodix_receive_data (dev);", cb_body)
+
+        retry_idx = content.find("goodix_receive_retry_cb (FpDevice *dev")
+        retry_body = content[retry_idx:content.find("static void\ngoodix_receive_timeout_cb")]
+        self.assertIn("priv->read_retry = NULL;", retry_body)
+        self.assertIn("goodix_receive_data (dev);", retry_body)
+
+        # Both teardown entries release a pending retry and reset the counter.
+        stop = content[content.find("goodix_stop_read_loop (FpDevice *dev)"):]
+        stop = stop[:stop.find("\nstatic void\ngoodix_receive_data")]
+        self.assertIn("g_clear_pointer (&priv->read_retry, g_source_destroy);", stop)
+
+        deinit = content[content.find("goodix_dev_deinit (FpDevice *dev"):]
+        deinit = deinit[:deinit.find("// ---- DEV SECTION END ----")]
+        self.assertIn("g_clear_pointer (&priv->read_retry, g_source_destroy);", deinit)
 
     # --------------------------------------------------------------------------
     # 3. Verification Capture Flow & Contrast Calibration

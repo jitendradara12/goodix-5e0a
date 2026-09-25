@@ -83,9 +83,15 @@ class TestF77MultiFingerGallery(unittest.TestCase):
         self.assertIn("action == FPI_DEVICE_ACTION_IDENTIFY || self->is_identify", src)
         self.assertIn("fpi_device_get_identify_data (dev, &prints);", src)
         self.assertIn("goodix_milan_identify_image (self->best_pixels,", src)
-        self.assertIn("fpi_device_identify_report (dev, owners[match_idx], NULL, NULL);", src)
+        self.assertIn("fpi_device_identify_report (dev, winner, NULL, NULL);", src)
         self.assertIn("fpi_device_identify_report (dev, NULL, NULL, NULL);", src)
         self.assertIn("fpi_device_identify_complete (dev, NULL);", src)
+        # One gallery reader and one engine call site: the deliver tail and the
+        # ticket-84 fast path must not be able to drift apart.
+        self.assertEqual(src.count("fpi_device_get_identify_data (dev, &prints);"), 1)
+        self.assertEqual(src.count("goodix_milan_identify_image (self->best_pixels,"), 1)
+        self.assertIn("goodix5e0a_identify_best_frame (dev, NULL, NULL, &winner);", src)
+        self.assertIn("goodix5e0a_identify_best_frame (dev, &matched_idx, &match_pts, NULL)", src)
         # empty gallery and unusable frames fail closed as no-match
         self.assertIn("empty gallery, reporting no-match", src)
         self.assertIn("no usable frame, reporting identify no-match", src)

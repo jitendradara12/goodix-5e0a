@@ -62,11 +62,40 @@ class TestF84OptimisticVerifyFastPath(unittest.TestCase):
 
     def test_c_speculative_identify_fast_path(self):
         """Speculative identify matches gallery on frame 1, logs journal line, returns FALSE."""
-        self.assertIn("fpi_device_get_identify_data (dev, &prints);", self.keep_body)
-        self.assertIn("goodix5e0a_get_print_template (p, &v, &dl);", self.keep_body)
-        self.assertIn("goodix_milan_identify_image (self->best_pixels,", self.keep_body)
-        self.assertIn("&matched_idx, &match_pts);", self.keep_body)
+        # Same shared helper the deliver tail uses — never a local re-read.
+        self.assertIn("goodix5e0a_identify_best_frame (dev, &matched_idx, &match_pts, NULL)",
+                      self.keep_body)
         self.assertIn("5e0a optimistic fast-path identify match on frame 1: idx=%d pts=%d, skipping remaining burst", self.keep_body)
+        self.assertIn("return FALSE;", self.keep_body)
+        # The gallery read lives in that shared helper, not in the fast path.
+        helper = self.c_src[self.c_src.index("goodix5e0a_identify_best_frame (FpDevice *dev"):]
+        helper = helper[:helper.index("\nstatic void\ngoodix5e0a_deliver_frame")]
+        self.assertIn("fpi_device_get_identify_data (dev, &prints);", helper)
+        self.assertIn("goodix5e0a_get_print_template (p, &v, &dl);", helper)
+
+    def test_c2_fast_path_uses_engine_verdict_not_a_rederived_gate(self):
+        """The fast path gates on the engine's match verdict, never on pts>0 alone.
+
+        Re-deriving the decision (`match_pts > 0`) silently drops the winner-index
+        checks the authoritative deliver tail applies (`matched_idx == 0` for
+        verify, `matched_idx < n` for identify). The fast path only buys time by
+        spending the burst early; it must not widen what counts as a hit.
+        """
+        verify = self.keep_body[self.keep_body.index("int is_match = goodix_milan_verify_image ("):]
+        verify = verify[:verify.index("5e0a optimistic fast-path match on frame 1")]
+        self.assertIn("int is_match = goodix_milan_verify_image (", verify)
+        self.assertIn("self->tmpl_blob,", verify)
+        self.assertIn("self->tmpl_len,", verify)
+        self.assertIn("&match_pts", verify)
+        self.assertIn("if (is_match)", verify)
+        self.assertNotIn("match_pts > 0", verify)
+
+        identify = self.keep_body[self.keep_body.index("int matched_idx = -1, match_pts = 0;"):]
+        identify = identify[:identify.index("5e0a optimistic fast-path identify match on frame 1")]
+        self.assertIn("goodix5e0a_identify_best_frame (dev, &matched_idx, &match_pts, NULL)", identify)
+        self.assertIn("if (goodix5e0a_identify_best_frame", identify)
+        self.assertNotIn("matched_idx >= 0 && match_pts > 0", identify)
+        self.assertNotIn("match_pts > 0", identify)
 
     def test_d_fallback_to_burst_intact(self):
         """When not matched or weak contact, loops frames 2..4 via goodix_tls_read_image."""
