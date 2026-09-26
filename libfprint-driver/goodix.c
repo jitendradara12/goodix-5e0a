@@ -100,24 +100,22 @@ typedef struct
 
   GCancellable *transfer_cancel_tkn;
   gboolean      inited;
+
+  /* Read-loop backoff. A device that fails every submission (unplugged
+   * mid-claim, stalled endpoint, revoked permissions) used to be resubmitted
+   * straight from the completion callback, spinning the daemon's main thread
+   * at 100% CPU. Failures are retried on a timer; after the bounded retry
+   * budget, any armed command is failed before the loop stops. */
+  GSource      *read_retry;
+  guint         read_errors;
 } FpiDeviceGoodixTlsPrivate;
+
+/* Consecutive USB read failures tolerated, and the pause between retries. */
+#define GOODIX_READ_ERROR_MAX (5)
+#define GOODIX_READ_RETRY_MS (100)
 
 G_DEFINE_ABSTRACT_TYPE_WITH_PRIVATE (FpiDeviceGoodixTls, fpi_device_goodixtls,
                                      FP_TYPE_DEVICE);
-
-gchar *
-data_to_str (guint8 *data, guint32 length)
-{
-  if (!data || length > (G_MAXUINT32 - 1) / 2)
-    return NULL;
-
-  gchar *string = g_malloc ((length * 2) + 1);
-
-  for (guint32 i = 0; i < length; i++)
-    sprintf (string + i * 2, "%02x", data[i]);
-
-  return string;
-}
 
 // ---- GOODIX RECEIVE SECTION START ----
 
@@ -131,6 +129,7 @@ static void goodix_receive_firmware_version (FpDevice *dev, guint8 *data, guint1
 static void goodix_receive_protocol (FpDevice *dev, guint8 *data, guint32 length);
 static void goodix_receive_pack (FpDevice *dev, guint8 *data, guint32 length);
 static void goodix_receive_timeout_cb (FpDevice *dev, gpointer user_data);
+static void goodix_receive_retry_cb (FpDevice *dev, gpointer user_data);
 static void goodix_receive_data (FpDevice *dev);
 
 static void
@@ -142,6 +141,7 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
     fpi_device_goodixtls_get_instance_private (self);
   GoodixCmdCallback callback = priv->callback;
   gpointer user_data = priv->user_data;
+  guint8 cmd = priv->cmd;
 
   if (!(priv->ack || priv->reply))
     {
@@ -153,8 +153,10 @@ goodix_receive_done (FpDevice *dev, guint8 *data, guint16 length,
   priv->callback = NULL;
   priv->user_data = NULL;
   goodix_reset_state (dev);
+  /* goodix_reset_state() clears priv->cmd, so log the snapshot taken above —
+   * reading it back here always printed 0x00. */
   if (!error)
-    fp_dbg ("Completed command: 0x%02x", priv->cmd);
+    fp_dbg ("Completed command: 0x%02x", cmd);
 
   if (callback)
     callback (dev, data, length, user_data, error);
@@ -662,18 +664,59 @@ goodix_receive_data_cb (FpiUsbTransfer *transfer, FpDevice *dev,
 
   if (error)
     {
-      fp_warn ("Receive data error: %s", error->message);
+      priv->read_errors++;
+      fp_warn ("Receive data error (%u consecutive): %s",
+               priv->read_errors, error->message);
       g_error_free (error);
 
-      // Retry receiving data and return.
-      if (priv->inited)
-        goodix_receive_data (dev);
+      if (!priv->inited)
+        return;
+
+      /* Back off instead of resubmitting from inside the completion: with a
+       * device that errors immediately every time (unplugged, stalled) the
+       * old direct resubmit was a tight loop on the main thread. */
+      if (priv->read_errors >= GOODIX_READ_ERROR_MAX)
+        {
+          GError *read_error =
+            g_error_new (G_IO_ERROR, G_IO_ERROR_FAILED,
+                         "Read loop stopped after %u consecutive USB errors",
+                         priv->read_errors);
+
+          fp_err ("Read loop stopping after %u consecutive USB errors",
+                  priv->read_errors);
+          goodix_stop_read_loop (dev);
+          /* Some reply commands intentionally have no timeout. Completing
+           * the armed callback here prevents FDT/TLS operations from waiting
+           * forever after their only receive path has stopped. */
+          goodix_receive_done (dev, NULL, 0, read_error);
+          return;
+        }
+
+      if (priv->read_retry == NULL)
+        priv->read_retry = fpi_device_add_timeout (dev, GOODIX_READ_RETRY_MS,
+                                                   goodix_receive_retry_cb,
+                                                   NULL, NULL);
       return;
     }
+
+  priv->read_errors = 0;
 
   goodix_receive_pack (dev, transfer->buffer, transfer->actual_length);
 
   goodix_receive_data (dev);
+}
+
+static void
+goodix_receive_retry_cb (FpDevice *dev, gpointer user_data)
+{
+  FpiDeviceGoodixTls *self = FPI_DEVICE_GOODIXTLS (dev);
+  FpiDeviceGoodixTlsPrivate *priv =
+    fpi_device_goodixtls_get_instance_private (self);
+
+  priv->read_retry = NULL;
+
+  if (priv->inited)
+    goodix_receive_data (dev);
 }
 
 static void
@@ -705,6 +748,7 @@ goodix_start_read_loop (FpDevice *dev)
     g_cancellable_reset (priv->transfer_cancel_tkn);
 
   priv->inited = TRUE;
+  priv->read_errors = 0;
   g_clear_pointer (&priv->data, g_free);
   priv->length = 0;
 
@@ -722,7 +766,11 @@ goodix_stop_read_loop (FpDevice *dev)
   if (priv->transfer_cancel_tkn)
     g_cancellable_cancel (priv->transfer_cancel_tkn);
 
+  if (priv->read_retry)
+    g_clear_pointer (&priv->read_retry, g_source_destroy);
+
   priv->inited = FALSE;
+  priv->read_errors = 0;
   g_clear_pointer (&priv->data, g_free);
   priv->length = 0;
 }
@@ -903,7 +951,11 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
                         NULL, FALSE, GOODIX_NOP_TIMEOUT, FALSE, NULL, NULL);
 }
 
-guint8 goodix5e0a_capture_payload[10] = {0x05, 0x00, 0xb0, 0x00, 0xb2, 0x00, 0xb0, 0x00, 0xb1, 0x00};
+/* Hardware ground truth for the 5e0a image-capture payload. Kept static and
+ * const: it was a writable global with external linkage in a shared library,
+ * and it duplicates goodix_5e0a_img_payload in goodix5e0a.h (which the
+ * boundary tests parse). Both must stay byte-identical. */
+static const guint8 goodix5e0a_capture_payload[10] = {0x05, 0x00, 0xb0, 0x00, 0xb2, 0x00, 0xb0, 0x00, 0xb1, 0x00};
 
 void
 goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,
@@ -911,7 +963,7 @@ goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,
 {
   GoodixCallbackInfo *cb_info;
   GoodixDefault payload_default = {.unused_flags = 0x01};
-  guint8 *payload = (guint8 *) &payload_default;
+  const guint8 *payload = (const guint8 *) &payload_default;
   guint16 len = sizeof (payload_default);
 
   if (g_strcmp0 (fp_device_get_driver (dev), "goodixtls5e0a") == 0)
@@ -955,21 +1007,30 @@ goodix_send_mcu_switch_to_fdt_down (FpDevice *dev, const guint8 *mode, guint16 l
       cb = goodix_receive_default;
     }
 
-  if (mode && length > 0 && mode[0] == 0x01)
+  /* A 0x01-prefixed table needs the command byte prepended. Only do it when
+   * the grown payload still fits the guint16 wire length (length+1 would
+   * otherwise wrap to 0 and send an empty frame) and when the copy can
+   * actually be made. On either miss fall through and send the caller's
+   * buffer unchanged: that keeps ownership with free_func and never turns an
+   * allocation failure into a NULL deref in the memcpy. */
+  if (mode && length > 0 && length < G_MAXUINT16 && mode[0] == 0x01)
     {
       guint8 * payload = malloc (sizeof (guint8) * (length + 1));
-      memcpy (payload + 1, mode, length);
-      payload[0] = 0xc;
-      if (free_func)
-        free_func ((void *) mode);
-      goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, payload, length + 1,
-                            free, TRUE, 0, TRUE, cb, cb_info);
+
+      if (payload)
+        {
+          memcpy (payload + 1, mode, length);
+          payload[0] = 0xc;
+          if (free_func)
+            free_func ((void *) mode);
+          goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, payload, length + 1,
+                                free, TRUE, 0, TRUE, cb, cb_info);
+          return;
+        }
     }
-  else
-    {
-      goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, mode, length,
-                            free_func, TRUE, 0, TRUE, cb, cb_info);
-    }
+
+  goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN, mode, length,
+                        free_func, TRUE, 0, TRUE, cb, cb_info);
 }
 
 void
@@ -989,21 +1050,26 @@ goodix_send_mcu_switch_to_fdt_up (FpDevice *dev, const guint8 *mode, guint16 len
       cb = goodix_receive_default;
     }
 
-  if (mode && length > 0 && mode[0] == 0x01)
+  /* Same guarded prepend as the FDT_DOWN sibling above: never wrap the grown
+   * length, never deref a failed allocation. */
+  if (mode && length > 0 && length < G_MAXUINT16 && mode[0] == 0x01)
     {
       guint8 * payload = malloc (sizeof (guint8) * (length + 1));
-      memcpy (payload + 1, mode, length);
-      payload[0] = 0xe;
-      if (free_func)
-        free_func ((void *) mode);
-      goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP, payload, length + 1,
-                            free, TRUE, 0, TRUE, cb, cb_info);
+
+      if (payload)
+        {
+          memcpy (payload + 1, mode, length);
+          payload[0] = 0xe;
+          if (free_func)
+            free_func ((void *) mode);
+          goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP, payload, length + 1,
+                                free, TRUE, 0, TRUE, cb, cb_info);
+          return;
+        }
     }
-  else
-    {
-      goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP, mode, length,
-                            free_func, TRUE, 0, TRUE, cb, cb_info);
-    }
+
+  goodix_send_protocol (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP, mode, length,
+                        free_func, TRUE, 0, TRUE, cb, cb_info);
 }
 
 void
@@ -1473,10 +1539,17 @@ goodix_dev_init (FpDevice *dev, GError **error)
   priv->timeout = NULL;
   priv->ack = FALSE;
   priv->reply = FALSE;
+  priv->cmd = 0;
   priv->callback = NULL;
   priv->user_data = NULL;
   priv->data = NULL;
   priv->length = 0;
+  priv->read_errors = 0;
+  g_clear_pointer (&priv->read_retry, g_source_destroy);
+  /* A second open without an intervening close would otherwise drop the only
+   * reference to the previous token and leak it (along with any transfer
+   * still holding one). */
+  g_clear_object (&priv->transfer_cancel_tkn);
   priv->transfer_cancel_tkn = g_cancellable_new ();
 
   /* Ticket 42 conditional USB reset: skip the cold-state repair only when
@@ -1682,6 +1755,9 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
       g_source_destroy (priv->timeout);
       priv->timeout = NULL;
     }
+  if (priv->read_retry)
+    g_clear_pointer (&priv->read_retry, g_source_destroy);
+  priv->read_errors = 0;
   g_free (priv->data);
   priv->data = NULL;
   if (priv->transfer_cancel_tkn)
@@ -1692,8 +1768,15 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
 
   goodix_reset_state (dev);
 
+  /* A TLS shutdown failure above has already filled *error. Handing a set
+   * GError to g_usb_device_release_interface makes it bail out with a GLib
+   * critical ("set over the top of a previous GError") and report FALSE
+   * without even attempting the release — so the real teardown error would
+   * mask a failure to let go of the interface. Pass NULL once we already
+   * own an error; the release result is still recorded below. */
   released = g_usb_device_release_interface (fpi_device_get_usb_device (dev),
-                                              class->interface, 0, error);
+                                              class->interface, 0,
+                                              (error && *error) ? NULL : error);
   if (!released)
     {
       /* A failed release is a dirty close even if deactivate parked TLS.
@@ -1707,7 +1790,9 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
     }
   priv->last_close_boot = goodix_get_boottime_us ();
   priv->last_close_mono = g_get_monotonic_time ();
-  return released;
+  /* A TLS shutdown error is still a failed deinit even if releasing the USB
+   * interface succeeded. The caller owns and reports the existing *error. */
+  return released && !(error && *error);
 }
 
 // ---- DEV SECTION END ----
@@ -1856,9 +1941,11 @@ on_goodix_tls_read_handshake (FpDevice *dev, guint8 *data,
 
   if (sent < 0)
     {
-      fpi_ssm_mark_failed (ssm, g_error_new (g_io_error_quark (), sent,
-                                             "failed to sent data to "
-                                             "tls server"));
+      /* sent is a byte count (or -1 on failure), never a GIOErrorEnum; the
+       * old g_io_error_quark()/sent pair produced an invalid error code. */
+      fpi_ssm_mark_failed (ssm, g_error_new (G_IO_ERROR, G_IO_ERROR_FAILED,
+                                             "failed to send %u bytes to tls server (wrote=%d)",
+                                             length, sent));
       return;
     }
   fpi_ssm_next_state (ssm);
@@ -1952,9 +2039,13 @@ tls_handshake_run (FpiSsm *ssm, FpDevice *dev)
                                               buff, sizeof (buff));
       if (size <= 0)
         {
-          fpi_ssm_mark_failed (ssm, g_error_new (g_io_error_quark (), size,
-                                                 "failed to read tls server "
-                                                 "hello"));
+          /* size is the raw read() status (0 = peer closed, <0 = failed),
+           * not a GIOErrorEnum — map it instead of passing it as a code. */
+          fpi_ssm_mark_failed (ssm, g_error_new (G_IO_ERROR,
+                                                 size == 0 ? G_IO_ERROR_CONNECTION_CLOSED
+                                                           : G_IO_ERROR_FAILED,
+                                                 "failed to read tls server hello (read=%d)",
+                                                 size));
           return;
         }
       goodix_tls_hex_dump ("ServerHello flight (server->device)", buff, size);
@@ -1980,10 +2071,11 @@ tls_handshake_run (FpiSsm *ssm, FpDevice *dev)
                                               buff, sizeof (buff));
       if (size <= 0)
         {
-          fpi_ssm_mark_failed (ssm, g_error_new (g_io_error_quark (), size,
-                                                 "failed to read server "
-                                                 "handshake"));
-
+          fpi_ssm_mark_failed (ssm, g_error_new (G_IO_ERROR,
+                                                 size == 0 ? G_IO_ERROR_CONNECTION_CLOSED
+                                                           : G_IO_ERROR_FAILED,
+                                                 "failed to read server handshake (read=%d)",
+                                                 size));
           return;
         }
       goodix_tls_hex_dump ("ServerCCS+Finished (server->device)", buff, size);

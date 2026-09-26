@@ -61,6 +61,10 @@ typedef struct __attribute__((packed)) {
 } GoodixImage;
 
 static u8 *g_image = NULL;
+/* Fully backed, zero-filled image used only to parse PE metadata. The live
+ * image intentionally leaves unmapped holes PROT_NONE; parsing from it can
+ * fault even when an RVA is below SizeOfImage. */
+static u8 *g_image_data = NULL;
 static u64 g_imagebase = 0;
 static u8 *g_file = NULL;
 static long g_filelen = 0;
@@ -163,16 +167,24 @@ static void* MS sh_FlushSList(void *p) { return NULL; }
 static void* MS sh_PushEntrySList(void *h, void *e) { return NULL; }
 
 static u32 g_tls_next = 1;
-static void *g_tls_vals[1088];
-static u32  MS sh_TlsAlloc(void) { if (g_tls_next >= 1088) return 0xFFFFFFFF; return g_tls_next++; }
-static int  MS sh_TlsFree(u32 i) { return 1; }
-static void* MS sh_TlsGetValue(u32 i) { g_lasterr = 0; return (i < 1088) ? g_tls_vals[i] : NULL; }
-static int  MS sh_TlsSetValue(u32 i, void *v) { if (i < 1088) g_tls_vals[i] = v; return 1; }
+/* Windows guarantees at least 1088 TLS slots per process (TLS_MINIMUM_AVAILABLE
+ * is 64, FLS_MAXIMUM_AVAILABLE 4096); one shared slot table serves both the
+ * Tls* and Fls* shims, as before. */
+#define TLS_SLOT_MAX 1088
+#define TLS_INDEX_INVALID 0xFFFFFFFFu
 
-static u32  MS sh_FlsAlloc(void *cb) { return g_tls_next++; }
+static void *g_tls_vals[TLS_SLOT_MAX];
+static u32  MS sh_TlsAlloc(void) { if (g_tls_next >= TLS_SLOT_MAX) return TLS_INDEX_INVALID; return g_tls_next++; }
+static int  MS sh_TlsFree(u32 i) { return 1; }
+static void* MS sh_TlsGetValue(u32 i) { g_lasterr = 0; return (i < TLS_SLOT_MAX) ? g_tls_vals[i] : NULL; }
+static int  MS sh_TlsSetValue(u32 i, void *v) { if (i < TLS_SLOT_MAX) g_tls_vals[i] = v; return 1; }
+
+/* Same bound as TlsAlloc: the old version kept incrementing past the table,
+ * after which FlsGetValue/FlsSetValue silently dropped every value. */
+static u32  MS sh_FlsAlloc(void *cb) { if (g_tls_next >= TLS_SLOT_MAX) return TLS_INDEX_INVALID; return g_tls_next++; }
 static int  MS sh_FlsFree(u32 i) { return 1; }
-static void* MS sh_FlsGetValue(u32 i) { return (i < 1088) ? g_tls_vals[i] : NULL; }
-static int  MS sh_FlsSetValue(u32 i, void *v) { if (i < 1088) g_tls_vals[i] = v; return 1; }
+static void* MS sh_FlsGetValue(u32 i) { return (i < TLS_SLOT_MAX) ? g_tls_vals[i] : NULL; }
+static int  MS sh_FlsSetValue(u32 i, void *v) { if (i < TLS_SLOT_MAX) g_tls_vals[i] = v; return 1; }
 
 static void* MS sh_GetCurrentProcess(void) { return (void*)-1; }
 static u32  MS sh_GetCurrentProcessId(void) { return 1234; }
@@ -190,7 +202,15 @@ static int  MS sh_SetEvent(void *h) { return 1; }
 static int  MS sh_ResetEvent(void *h) { return 1; }
 static u32  MS sh_WaitForSingleObject(void *h, u32 ms) { return 0; }
 static u32  MS sh_WaitForMultipleObjects(u32 count, void **handles, int wait_all, u32 ms) { return 0; }
-static void MS sh_Sleep(u32 ms) { usleep(ms * 1000); }
+static void MS sh_Sleep(u32 ms) {
+    struct timespec ts;
+    /* usleep(ms * 1000) overflows for ms past ~71 minutes and usleep() is
+     * removed from POSIX; nanosleep is exact and restartable on EINTR. */
+    ts.tv_sec = (time_t) (ms / 1000u);
+    ts.tv_nsec = (long) (ms % 1000u) * 1000000L;
+    while (nanosleep (&ts, &ts) == -1 && errno == EINTR)
+        ;
+}
 
 static u32 MS sh_timeGetTime(void) {
     struct timeval tv;
@@ -288,12 +308,20 @@ static int MS sh_CryptAcquireContextW(void **ph, void *cn, void *pn, u32 pt, u32
 }
 static int MS sh_CryptReleaseContext(void *h, u32 f) { return 1; }
 static int MS sh_CryptGenRandom(void *h, u32 len, u8 *buf) {
+    size_t got = 0;
     if (!buf) return 0;
     int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
     if (fd < 0) return 0;
-    ssize_t n = read(fd, buf, len);
+    /* read() may fill a short count; treating that as failure reported a
+     * CSPRNG outage to the engine for a perfectly good (partial) read. */
+    while (got < (size_t) len) {
+        ssize_t n = read(fd, buf + got, (size_t) len - got);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) break;
+        got += (size_t) n;
+    }
     close(fd);
-    return (n == (ssize_t)len) ? 1 : 0;
+    return got == (size_t) len ? 1 : 0;
 }
 static u32 MS sh_EventUnregister(u64 h) { return 0; }
 static u32 MS sh_RegOpenCurrentUser(u32 am, void **k) { if (k) *k = (void*)0x5001; return 0; }
@@ -477,19 +505,69 @@ static u16* MS sh_wcscpy(u16 *d, const u16 *s) { u16 *p = d; while ((*p++ = *s++
 static char* MS sh_strtok_s(char *s, const char *del, char **ctx) { return strtok_r(s, del, ctx); }
 static long MS sh_atol(const char *s) { return atol(s); }
 static int  MS sh_abs(int j) { return abs(j); }
+/* Bottom-up merge sort on the engine's own comparator.
+ *
+ * The original here was a bubble sort: O(n^2) comparisons on the engine's hot
+ * path, and the engine does hand it large arrays. Merging is stable and
+ * O(n log n); unlike the old non-adjacent-swap bubble sort, it can change the
+ * relative order of equal elements. The comparator keeps its MS-ABI pointer
+ * type, so no ABI bridging is involved. calloc checks n*s for overflow. If
+ * scratch allocation fails, an in-place stable insertion sort preserves the
+ * old guarantee that the caller still receives a sorted array. */
 static void MS sh_qsort(void *b, size_t n, size_t s, int (MS *cmp)(const void*, const void*)) {
     u8 *p = (u8*)b;
-    for (size_t i = 0; i < n; i++) {
-        for (size_t j = i + 1; j < n; j++) {
-            if (cmp(p + i * s, p + j * s) > 0) {
+    u8 *tmp;
+    size_t width;
+
+    if (!b || !cmp || s == 0 || n < 2)
+        return;
+
+    tmp = (u8*)calloc(n, s);
+    if (!tmp) {
+        /* OOM must not turn qsort into a no-op: the previous implementation
+         * required no scratch space. This stable, in-place fallback is slow
+         * only on the allocation-failure path. */
+        for (size_t i = 1; i < n; i++) {
+            size_t j = i;
+            while (j > 0 && cmp(p + (j - 1) * s, p + j * s) > 0) {
                 for (size_t k = 0; k < s; k++) {
-                    u8 tmp = p[i * s + k];
-                    p[i * s + k] = p[j * s + k];
-                    p[j * s + k] = tmp;
+                    u8 byte = p[(j - 1) * s + k];
+                    p[(j - 1) * s + k] = p[j * s + k];
+                    p[j * s + k] = byte;
                 }
+                j--;
             }
         }
+        return;
     }
+
+    for (width = 1; width < n;) {
+        /* Saturate the final run width instead of overflowing 2*width near
+         * SIZE_MAX. Advance by each run's actual end for the same reason. */
+        size_t step = (width > n - width) ? n : width * 2;
+        for (size_t left = 0; left < n;) {
+            size_t remaining = n - left;
+            size_t mid = left + ((width < remaining) ? width : remaining);
+            size_t right = left + ((step < remaining) ? step : remaining);
+            size_t i = left, j = mid, k = left;
+
+            while (i < mid && j < right) {
+                if (cmp(p + i * s, p + j * s) <= 0)
+                    memcpy(tmp + (k++) * s, p + (i++) * s, s);
+                else
+                    memcpy(tmp + (k++) * s, p + (j++) * s, s);
+            }
+            while (i < mid)   memcpy(tmp + (k++) * s, p + (i++) * s, s);
+            while (j < right) memcpy(tmp + (k++) * s, p + (j++) * s, s);
+            memcpy(p + left * s, tmp + left * s, (right - left) * s);
+            left = right;
+        }
+        if (width > n / 2)
+            break;
+        width *= 2;
+    }
+
+    free(tmp);
 }
 static double MS sh_sqrt(double x) { return sqrt(x); }
 static double MS sh_fabs(double x) { return fabs(x); }
@@ -790,27 +868,32 @@ static inline int rva_ok(u32 rva, u32 need) {
 }
 
 static void* get_export(const char *want) {
-    if (!g_image || !g_sizeofimage) return NULL;
-    u32 e = *(u32*)(g_image + 0x3c);
-    if (e + 24 + 112 + 8 > g_sizeofimage) return NULL;
-    u32 exprva = *(u32*)(g_image + e + 24 + 112 + 8 * 0);
-    if (!exprva || exprva + 40 > g_sizeofimage) return NULL;
-    u32 nnames = *(u32*)(g_image + exprva + 24);
-    u32 fns = *(u32*)(g_image + exprva + 28);
-    u32 names = *(u32*)(g_image + exprva + 32);
-    u32 ords = *(u32*)(g_image + exprva + 36);
-    if (names + nnames * 4 > g_sizeofimage || ords + nnames * 2 > g_sizeofimage) return NULL;
+    /* Parse through the full zero-filled copy rather than g_image: its gaps
+     * are intentionally PROT_NONE and attacker-controlled RVAs must not turn
+     * a bounds-valid metadata read into SIGSEGV. Widen arithmetic before
+     * checking every PE-controlled offset. */
+    if (!g_image || !g_image_data || g_sizeofimage < 0x40) return NULL;
+    u32 e = *(u32*)(g_image_data + 0x3c);
+    /* The export data directory is the first 8-byte entry at optional-header
+     * offset 112; this parser reads its first 4-byte RVA. */
+    if ((u64)e + 24 + 112 + 4 > g_sizeofimage) return NULL;
+    u32 exprva = *(u32*)(g_image_data + e + 24 + 112);
+    if (!exprva || (u64)exprva + 40 > g_sizeofimage) return NULL;
+    u32 nnames = *(u32*)(g_image_data + exprva + 24);
+    u32 fns = *(u32*)(g_image_data + exprva + 28);
+    u32 names = *(u32*)(g_image_data + exprva + 32);
+    u32 ords = *(u32*)(g_image_data + exprva + 36);
+    if ((u64)names + (u64)nnames * 4 > g_sizeofimage ||
+        (u64)ords + (u64)nnames * 2 > g_sizeofimage) return NULL;
 
     for (u32 i = 0; i < nnames; i++) {
-        u32 nrva = *(u32*)(g_image + names + i * 4);
+        u32 nrva = *(u32*)(g_image_data + names + (u64)i * 4);
         if (nrva >= g_sizeofimage) continue;
-        /* Bound the export-name read to the mapped image, like the
-         * import-name checks in load_pe_file: skip unterminated names. */
-        if (strnlen((char*)(g_image + nrva), g_sizeofimage - nrva) >= g_sizeofimage - nrva) continue;
-        if (strcmp((char*)(g_image + nrva), want) == 0) {
-            u16 ord = *(u16*)(g_image + ords + i * 2);
-            if (fns + (u32)ord * 4 + 4 > g_sizeofimage) return NULL;
-            u32 frva = *(u32*)(g_image + fns + ord * 4);
+        if (strnlen((char*)(g_image_data + nrva), g_sizeofimage - nrva) >= g_sizeofimage - nrva) continue;
+        if (strcmp((char*)(g_image_data + nrva), want) == 0) {
+            u16 ord = *(u16*)(g_image_data + ords + (u64)i * 2);
+            if ((u64)fns + (u64)ord * 4 + 4 > g_sizeofimage) return NULL;
+            u32 frva = *(u32*)(g_image_data + fns + (u64)ord * 4);
             if (frva >= g_sizeofimage) return NULL;
             return g_image + frva;
         }
@@ -918,7 +1001,10 @@ static int load_pe_file(const char *path) {
         if (n <= 0) { if (n == 0) errno = EIO; goto fail; }
         off += n;
     }
-    free(img);
+    /* Keep the complete backed copy for safe metadata parsing; live image
+     * pages that were not mapped below remain PROT_NONE by design. */
+    free(g_image_data);
+    g_image_data = img;
     img = NULL;
 
     step = "mmap reserve";
@@ -933,16 +1019,25 @@ static int load_pe_file(const char *path) {
     g_image = m;
 
     step = "mmap headers";
-    u32 hdrmap = (hdrsize + 0xfff) & ~0xfffu;
-    if (mmap(g_image, hdrmap, PROT_READ, MAP_PRIVATE | MAP_FIXED, mfd, 0) == MAP_FAILED)
-        goto fail;
+    u64 hdrmap = ((u64)hdrsize + 0xfff) & ~(u64)0xfff;
+    /* Stay inside the PROT_NONE reservation: rounding up may overshoot
+     * SizeOfImage by up to a page. (The old u32 round-up also wrapped to 0
+     * for headers within a page of 4GiB.) */
+    if (hdrmap > sizeofimage) hdrmap = sizeofimage;
+    if (mmap(g_image, (size_t)hdrmap, PROT_READ, MAP_PRIVATE | MAP_FIXED, mfd, 0) == MAP_FAILED)
+      goto fail;
 
     for (int i = 0; i < nsec; i++) {
         u64 s = sectbl + i * 40;
         u32 vaddr = f32(s + 12), vsize = f32(s + 8), rawsize = f32(s + 16), chars = f32(s + 36);
-        u32 seglen = (vsize > rawsize ? vsize : rawsize);
-        seglen = (seglen + 0xfff) & ~0xfffu;
-        if (vaddr + seglen > sizeofimage) seglen = sizeofimage - vaddr;
+        u64 seglen = (vsize > rawsize ? vsize : rawsize);
+        seglen = (seglen + 0xfff) & ~(u64)0xfff;
+        /* vaddr is unvalidated until here: a section based at or past
+         * SizeOfImage must be skipped, not clamped — `sizeofimage - vaddr`
+         * would underflow in u32 and mmap a near-4GiB window (the old code
+         * also computed `vaddr + seglen` in u32, which wrapped). */
+        if (vaddr >= sizeofimage) continue;
+        if (seglen > (u64)sizeofimage - vaddr) seglen = (u64)sizeofimage - vaddr;
         if (!seglen) continue;
 
         int prot = PROT_READ;
@@ -1007,6 +1102,8 @@ fail:;
     if (fd >= 0) close(fd);
     if (mfd >= 0) close(mfd);
     free(img);
+    free(g_image_data);
+    g_image_data = NULL;
     if (g_image) { munmap(g_image, sizeofimage); g_image = NULL; }
     g_sizeofimage = 0;
     free(g_file);
@@ -1106,6 +1203,8 @@ gboolean goodix_milan_init (const char *dll_path) {
         !m_templateDelete || !m_identifyImage) {
         g_warning("5e0a: required Milan engine exports missing");
         if (g_image) { munmap(g_image, g_sizeofimage); g_image = NULL; }
+        free(g_image_data);
+        g_image_data = NULL;
         g_sizeofimage = 0;
         g_rec_mutex_unlock (&g_milan_mutex);
         return FALSE;
@@ -1178,8 +1277,14 @@ guint goodix_milan_frame_quality (const uint8_t *pixels,
 }
 
 void *goodix_milan_enroll_start (int *max_images) {
-    if (!g_milan_available && !goodix_milan_init(NULL)) return NULL;
+    /* Lock first, then lazily init: reading g_milan_available outside the
+     * mutex is a check-then-act race, and goodix_milan_init() takes the same
+     * (recursive) mutex, so this stays correct if another thread won it. */
     g_rec_mutex_lock (&g_milan_mutex);
+    if (!g_milan_available && !goodix_milan_init(NULL)) {
+        g_rec_mutex_unlock (&g_milan_mutex);
+        return NULL;
+    }
     ensure_gs();
     int max_imgs = 16;
     void *ctx = m_enrolStartEx(&max_imgs);
@@ -1274,8 +1379,11 @@ int goodix_milan_verify_image (const uint8_t *pixels,
                                int *out_score) {
     if (!pixels || !template_blob || template_len == 0) return 0;
     if (width != 64 || height != 80) return 0;
-    if (!g_milan_available && !goodix_milan_init(NULL)) return 0;
     g_rec_mutex_lock (&g_milan_mutex);
+    if (!g_milan_available && !goodix_milan_init(NULL)) {
+        g_rec_mutex_unlock (&g_milan_mutex);
+        return 0;
+    }
     ensure_gs();
 
     void *unpacked_template = NULL;
@@ -1322,8 +1430,11 @@ int goodix_milan_identify_image (const uint8_t *pixels,
         return 0;
     if (width != 64 || height != 80)
         return 0;
-    if (!g_milan_available && !goodix_milan_init(NULL)) return 0;
     g_rec_mutex_lock (&g_milan_mutex);
+    if (!g_milan_available && !goodix_milan_init(NULL)) {
+        g_rec_mutex_unlock (&g_milan_mutex);
+        return 0;
+    }
     ensure_gs();
 
     void **unpacked = g_new0 (void *, n_templates);

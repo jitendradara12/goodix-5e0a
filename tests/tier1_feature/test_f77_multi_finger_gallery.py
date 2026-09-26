@@ -83,11 +83,18 @@ class TestF77MultiFingerGallery(unittest.TestCase):
         self.assertIn("action == FPI_DEVICE_ACTION_IDENTIFY || self->is_identify", src)
         self.assertIn("fpi_device_get_identify_data (dev, &prints);", src)
         self.assertIn("goodix_milan_identify_image (self->best_pixels,", src)
-        self.assertIn("fpi_device_identify_report (dev, owners[match_idx], NULL, NULL);", src)
+        self.assertIn("fpi_device_identify_report (dev, winner, NULL, NULL);", src)
         self.assertIn("fpi_device_identify_report (dev, NULL, NULL, NULL);", src)
         self.assertIn("fpi_device_identify_complete (dev, NULL);", src)
-        # empty gallery and unusable frames fail closed as no-match
-        self.assertIn("empty gallery, reporting no-match", src)
+        # One gallery reader and one engine call site: the deliver tail and the
+        # ticket-84 fast path must not be able to drift apart.
+        self.assertEqual(src.count("fpi_device_get_identify_data (dev, &prints);"), 1)
+        self.assertEqual(src.count("goodix_milan_identify_image (self->best_pixels,"), 1)
+        self.assertIn("goodix5e0a_identify_best_frame (dev, NULL, NULL, &winner);", src)
+        self.assertIn("goodix5e0a_identify_best_frame (dev, &matched_idx, &match_pts, NULL)", src)
+        # Unusable gallery templates and unusable frames fail closed as no-match;
+        # retain the Milan identify journal prefix for the former case.
+        self.assertIn("5e0a Milan identify: match=0 idx=-1 pts=0 (gallery=%u usable=0)", src)
         self.assertIn("no usable frame, reporting identify no-match", src)
         # identify is single-touch like verify: excluded from the enroll loop
         self.assertIn("!self->is_verify && !self->is_identify && self->enroll_stage", src)

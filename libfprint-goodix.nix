@@ -2,7 +2,13 @@
 
 stdenv.mkDerivation {
   pname = "libfprint-goodix";
-  version = "1.94.5-goodixtls-5e0a";
+
+  # Keep this in step with the meson project version set by
+  # goodix-5e0a-integration.patch (1.94.9). The library self-reports that
+  # version at runtime ("Initializing FpContext (libfprint version 1.94.9)")
+  # and fprintd's pkg-config check reads it from there, so a store path
+  # claiming 1.94.5 sends the wrong signal when debugging a deployed system.
+  version = "1.94.9-goodixtls-5e0a";
 
   src = fetchFromGitHub {
     owner = "goodix-fp-linux-dev";
