@@ -92,8 +92,9 @@ class TestF77MultiFingerGallery(unittest.TestCase):
         self.assertEqual(src.count("goodix_milan_identify_image (self->best_pixels,"), 1)
         self.assertIn("goodix5e0a_identify_best_frame (dev, NULL, NULL, &winner);", src)
         self.assertIn("goodix5e0a_identify_best_frame (dev, &matched_idx, &match_pts, NULL)", src)
-        # empty gallery and unusable frames fail closed as no-match
-        self.assertIn("empty gallery, reporting no-match", src)
+        # Unusable gallery templates and unusable frames fail closed as no-match;
+        # retain the Milan identify journal prefix for the former case.
+        self.assertIn("5e0a Milan identify: match=0 idx=-1 pts=0 (gallery=%u usable=0)", src)
         self.assertIn("no usable frame, reporting identify no-match", src)
         # identify is single-touch like verify: excluded from the enroll loop
         self.assertIn("!self->is_verify && !self->is_identify && self->enroll_stage", src)

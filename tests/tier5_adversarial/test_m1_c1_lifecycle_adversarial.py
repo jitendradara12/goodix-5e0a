@@ -156,7 +156,8 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
 
         Resubmitting straight from the completion callback turns a permanently
         failing endpoint into a tight loop at 100% CPU. The retry now runs on a
-        timer, and the loop stops for good after GOODIX_READ_ERROR_MAX.
+        timer; exhausting the bounded budget fails an armed reply before the
+        read loop is stopped, so no zero-timeout command is orphaned.
         """
         with open(self.goodix_c, "r") as f:
             content = f.read()
@@ -165,12 +166,17 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
         cb_body = content[cb_idx:content.find("\nstatic void\ngoodix_receive_retry_cb")]
 
         self.assertIn("priv->read_errors++", cb_body)
-        self.assertIn("GOODIX_READ_ERROR_MAX", cb_body)
+        self.assertIn("priv->read_errors >= GOODIX_READ_ERROR_MAX", cb_body)
         self.assertIn("goodix_stop_read_loop (dev);", cb_body)
-        # On the error path the retry is scheduled, never issued inline.
+        self.assertIn("goodix_receive_done (dev, NULL, 0, read_error);", cb_body)
+        self.assertIn("G_IO_ERROR_FAILED", cb_body)
+        # On the error path retries are scheduled, never issued inline; when
+        # the budget is exhausted the pending command is completed with error.
         error_branch = cb_body[cb_body.find("if (error)"):cb_body.find("priv->read_errors = 0;")]
         self.assertIn("fpi_device_add_timeout (dev, GOODIX_READ_RETRY_MS,", error_branch)
         self.assertNotIn("goodix_receive_data (dev);", error_branch)
+        self.assertLess(error_branch.index("goodix_stop_read_loop (dev);"),
+                        error_branch.index("goodix_receive_done (dev, NULL, 0, read_error);"))
         # ...while a successful read still chains straight into the next one.
         self.assertIn("goodix_receive_data (dev);", cb_body)
 
@@ -187,6 +193,12 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
         deinit = content[content.find("goodix_dev_deinit (FpDevice *dev"):]
         deinit = deinit[:deinit.find("// ---- DEV SECTION END ----")]
         self.assertIn("g_clear_pointer (&priv->read_retry, g_source_destroy);", deinit)
+
+        # Reopening must destroy, not orphan, a retry source from an earlier
+        # lifecycle before resetting the source pointer.
+        init = content[content.find("goodix_dev_init (FpDevice *dev"):]
+        init = init[:init.find("/* Ticket 42 conditional USB reset")]
+        self.assertIn("g_clear_pointer (&priv->read_retry, g_source_destroy);", init)
 
     # --------------------------------------------------------------------------
     # 3. Verification Capture Flow & Contrast Calibration

@@ -5,10 +5,10 @@ Verifies without hardware (hermetic static & structural validation):
 (a) goodix5e0a.c implements optimistic verify fast-path in goodix5e0a_keep_best_frame:
     gated to non-enroll actions (verify or identify), frame_count == 1,
     active >= 1500, range >= 500;
-(b) speculative verify tests frame 1 against self->tmpl_blob via goodix_milan_verify_image;
-    if match_pts > 0, logs fast-path match and returns FALSE without re-issuing read_image;
-(c) speculative identify tests frame 1 against gallery templates via goodix_milan_identify_image;
-    if matched_idx >= 0 and match_pts > 0, logs fast-path identify match and returns FALSE;
+(b) speculative verify calls goodix_milan_verify_image for frame 1 and gates on its
+    verdict before logging a fast-path match and returning FALSE;
+(c) speculative identify uses the shared gallery helper, which checks the engine verdict
+    and validates the winner index before logging a fast-path match;
 (d) fallback to normal 4-frame burst loop intact when not matched or active < 1500 / range < 500;
 (e) enrollment touch never enters fast-path (only non-enroll actions participate);
 (f) score-proxy wording preserved; driver contains no bare score keyword;
@@ -76,10 +76,10 @@ class TestF84OptimisticVerifyFastPath(unittest.TestCase):
     def test_c2_fast_path_uses_engine_verdict_not_a_rederived_gate(self):
         """The fast path gates on the engine's match verdict, never on pts>0 alone.
 
-        Re-deriving the decision (`match_pts > 0`) silently drops the winner-index
-        checks the authoritative deliver tail applies (`matched_idx == 0` for
-        verify, `matched_idx < n` for identify). The fast path only buys time by
-        spending the burst early; it must not widen what counts as a hit.
+        Re-deriving the decision (`match_pts > 0`) can ignore the engine's match
+        verdict. Verify is gated by its return value; identify is gated by that
+        verdict plus a bounds-checked winner index. The fast path only buys time
+        by spending the burst early; it must not widen what counts as a hit.
         """
         verify = self.keep_body[self.keep_body.index("int is_match = goodix_milan_verify_image ("):]
         verify = verify[:verify.index("5e0a optimistic fast-path match on frame 1")]

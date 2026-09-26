@@ -70,6 +70,28 @@ class TestDeadCodeRemoved(unittest.TestCase):
             self.assertNotIn("data_to_str (", read("libfprint-driver", name))
 
 
+class TestPreviouslyUncoveredAuditFixes(unittest.TestCase):
+    """Guard audit fixes that were initially missing from the source checks."""
+
+    def test_read_cancellable_is_replaced_without_leaking(self):
+        goodix_c = read("libfprint-driver", "goodix.c")
+        init = goodix_c[goodix_c.index("goodix_dev_init (FpDevice *dev"):]
+        init = init[:init.index("/* Ticket 42 conditional USB reset")]
+        self.assertIn("g_clear_object (&priv->transfer_cancel_tkn);", init)
+        self.assertIn("priv->transfer_cancel_tkn = g_cancellable_new ();", init)
+
+    def test_last_declen_is_translation_unit_local(self):
+        goodix5e0a_c = read("libfprint-driver", "goodix5e0a.c")
+        self.assertIn("static guint32 goodix5e0a_last_declen", goodix5e0a_c)
+        self.assertNotIn("extern guint16 goodix5e0a_last_declen", goodix5e0a_c)
+
+    def test_packaged_version_matches_integration_patch(self):
+        derivation = read("libfprint-goodix.nix")
+        integration = read("goodix-5e0a-integration.patch")
+        self.assertIn("1.94.9-goodixtls-5e0a", derivation)
+        self.assertIn("+    version: '1.94.9',", integration)
+
+
 class TestPeLoaderBounds(unittest.TestCase):
     """The DLL is not always the expected vendor binary: PE fields are untrusted."""
 
@@ -85,10 +107,14 @@ class TestPeLoaderBounds(unittest.TestCase):
         self.assertIn("g_sizeofimage < 0x40", get_export)
 
     def test_export_table_arithmetic_is_widened(self):
-        """u32 offsets wrap: `e + 144` and `nnames * 4` both used to be checked in u32."""
+        """PE-controlled offsets need widened arithmetic and exact read-width checks."""
         get_export = self._slice("static void* get_export(const char *want)",
                                  "static int load_pe_file")
-        self.assertIn("(u64)e + 24 + 112 + 8 > g_sizeofimage", get_export)
+        self.assertIn("(u64)e + 24 + 112 + 4 > g_sizeofimage", get_export)
+        self.assertIn("g_image_data + 0x3c", get_export)
+        self.assertIn("g_image_data + exprva + 24", get_export)
+        self.assertNotIn("*(u32*)(g_image +", get_export)
+        self.assertIn("return g_image + frva;", get_export)
         self.assertIn("(u64)exprva + 40 > g_sizeofimage", get_export)
         self.assertIn("(u64)names + (u64)nnames * 4 > g_sizeofimage", get_export)
         self.assertIn("(u64)ords + (u64)nnames * 2 > g_sizeofimage", get_export)
@@ -109,6 +135,15 @@ class TestPeLoaderBounds(unittest.TestCase):
         self.assertIn("u64 hdrmap = ((u64)hdrsize + 0xfff) & ~(u64)0xfff;", self.src)
         self.assertIn("if (hdrmap > sizeofimage) hdrmap = sizeofimage;", self.src)
 
+    def test_export_parser_uses_fully_backed_image_copy(self):
+        """An in-SizeOfImage RVA in a PROT_NONE gap must not fault the parser."""
+        self.assertIn("static u8 *g_image_data = NULL;", self.src)
+        loader = self._slice("static int load_pe_file(const char *path)",
+                             "/* Engine Function Pointers */")
+        self.assertIn("g_image_data = img;", loader)
+        self.assertIn("free(g_image_data);", loader)
+        self.assertIn("g_image_data = NULL;", loader)
+
 
 class TestShimCorrectness(unittest.TestCase):
     def setUp(self):
@@ -118,10 +153,16 @@ class TestShimCorrectness(unittest.TestCase):
         """The engine hands qsort large arrays; the old bubble sort was O(n^2)."""
         qsort = function_body(self.src, "static void MS sh_qsort(")
         self.assertNotIn("for (size_t j = i + 1", qsort)
-        self.assertIn("for (width = 1; width < n; width *= 2)", qsort)
+        self.assertIn("for (width = 1; width < n;)", qsort)
+        self.assertIn("size_t step = (width > n - width) ? n : width * 2;", qsort)
+        self.assertIn("left = right;", qsort)
         self.assertIn("calloc(n, s)", qsort)
-        # Stability preserved: equal elements keep input order.
+        # The merge path and OOM fallback both preserve stability. The old
+        # non-adjacent-swap bubble sort was not stable on tied keys.
         self.assertIn("cmp(p + i * s, p + j * s) <= 0", qsort)
+        self.assertIn("if (!tmp)", qsort)
+        self.assertIn("cmp(p + (j - 1) * s, p + j * s) > 0", qsort)
+        self.assertIn("for (size_t k = 0; k < s; k++)", qsort)
 
     def test_sleep_does_not_overflow_and_is_restartable(self):
         start = self.src.index("static void MS sh_Sleep(u32 ms)")
@@ -160,6 +201,7 @@ class TestErrorReporting(unittest.TestCase):
         deinit = goodix_c[goodix_c.index("goodix_dev_deinit (FpDevice *dev, GError **error)"):]
         deinit = deinit[:deinit.index("// ---- DEV SECTION END ----")]
         self.assertIn("(error && *error) ? NULL : error", deinit)
+        self.assertIn("return released && !(error && *error);", deinit)
         # The TLS shutdown that can set *error must still be guarded by clean_close.
         self.assertLess(deinit.index("if (!clean_close)"),
                         deinit.index("goodix_shutdown_tls (dev, error);"))
@@ -236,6 +278,17 @@ class TestIdentifySingleSourceOfTruth(unittest.TestCase):
         helper = helper[:helper.index("\nstatic void\ngoodix5e0a_deliver_frame")]
         self.assertIn("if (matched && idx >= 0 && (guint) idx < m)", helper)
         self.assertIn("*out_print = owners[idx];", helper)
+
+    def test_unusable_gallery_preserves_identify_journal_line(self):
+        """Non-empty galleries with no valid templates still produce a no-match log."""
+        goodix5e0a_c = read("libfprint-driver", "goodix5e0a.c")
+        helper = goodix5e0a_c[
+            goodix5e0a_c.index("goodix5e0a_identify_best_frame (FpDevice *dev"):]
+        helper = helper[:helper.index("\nstatic void\ngoodix5e0a_deliver_frame")]
+        self.assertIn("5e0a Milan identify: match=0 idx=-1 pts=0 (gallery=%u usable=0)",
+                      helper)
+        self.assertIn("5e0a Milan identify: match=%d idx=%d pts=%d (gallery=%u usable=%u)",
+                      helper)
 
 
 if __name__ == "__main__":
