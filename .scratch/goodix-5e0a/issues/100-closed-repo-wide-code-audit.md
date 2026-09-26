@@ -9,26 +9,33 @@ safe to make without a deployed-driver run.
 
 ## Verdict
 
-16 defects fixed (2 of them real security-boundary bugs in the PE loader, 1 a
-CPU-spin on device removal, 1 a GError double-set on the teardown path).
-16 further items are recorded below as **not-fixed-on-purpose** with the reason.
-Software suite: **366 executed / 366 passed / 8 skipped**
+The original audit fixed 16 defects (including two PE-loader bounds bugs, the
+USB read-loop CPU spin, and the teardown GError issue). The independent PR-review
+follow-ups below additionally close the zero-timeout waiter, stale-retry-source,
+OOM sort, export metadata, logging, and reporting gaps. Sixteen unrelated items
+remain recorded as **not-fixed-on-purpose** with their reasons.
+Software suite after review follow-ups: **371 executed / 371 passed / 8 skipped**
 (`GOODIX_NATIVE_TESTS=skip GOODIX_SUSPEND_TESTS=skip bash tests/run_all_tests.sh`).
 
 ## Verification chain (executed, not claimed)
 
 - `GOODIX_NATIVE_TESTS=skip GOODIX_SUSPEND_TESTS=skip bash tests/run_all_tests.sh`
-  → 366 executed, 366 passed, 8 skipped. Skips are the Nix native harness, the
-  suspend harness (both need `nix-build`, absent here) and two PGM fixtures.
-- `gcc -c -Wall -Wextra -o /dev/null libfprint-driver/goodix_milan.c` against a
-  ~40-line GLib stand-in → **clean, zero warnings** (the real GLib/GUsb/OpenSSL
-  headers are not installed in this sandbox, so `goodix.c`/`goodix5e0a.c` could
-  not be compiled; those edits were verified by brace-balance check, by reading,
-  and by the type/link invariants the test suite asserts).
-- `sh_qsort` replaced with a bottom-up merge sort and differentially tested
-  standalone: 4000 random arrays matched the old bubble sort's output exactly,
-  500 stability trials passed, and 200 000 elements now sort in 0.028 s
-  (3.33 M comparisons) where the bubble sort needs ~2 x 10^10.
+  → 371 executed, 371 passed, 8 skipped. Native/suspend harnesses and
+  fixture-dependent checks account for the skips; `nix-build` is absent.
+- A review reran `gcc -fsyntax-only -Wall -Wextra` for the pre-follow-up
+  `goodix_milan.c` against a GLib stand-in: no errors, but 292 pre-existing
+  `-Wunused-parameter` shim-table warnings (same profile on the base revision).
+  For the follow-up changes, the extracted `sh_qsort` and `get_export` routines
+  compiled in a standalone harness and passed merge-sort, forced-OOM fallback,
+  PROT_NONE metadata-read, and export-boundary checks. Real GLib/GUsb/OpenSSL
+  headers are not installed here, so the full driver files could not be built.
+- `sh_qsort` was replaced with a bottom-up merge sort. The merge is stable;
+  unlike the old non-adjacent-swap bubble sort, it can reorder tied elements
+  relative to that implementation. A standalone differential test confirmed
+  sorted output, and separate trials confirmed the merge's stable tie order;
+  200 000 elements sorted in 0.028 s (3.33 M comparisons) versus about
+  2 x 10^10 comparisons for the old quadratic sort. An in-place stable
+  insertion-sort fallback now preserves sorting if scratch allocation fails.
 - Brace/paren balance checked on every modified file against `HEAD`.
 
 ---
@@ -47,8 +54,10 @@ computed in `u32`:
   and the subsequent reads walk off the mapping.
 - `*(u32*)(g_image + 0x3c)` itself was read with no minimum-image-size check.
 
-All arithmetic is now `u64`, and `g_sizeofimage < 0x40` is rejected before the
-`e_lfanew` read.
+All offset arithmetic is widened, the `e_lfanew` read is bounded by the
+minimum image size, and the export-directory RVA check includes all four bytes
+it reads. Export metadata is read from a fully backed zero-filled image copy,
+not from `g_image`'s intentionally `PROT_NONE` holes.
 
 ### A2. PE section mapping: `u32` underflow and wrap
 
@@ -63,9 +72,12 @@ header mapping is likewise clamped to `sizeofimage` so it cannot overshoot the
 
 ### A3. `sh_qsort` was an O(n^2) bubble sort on the engine's hot path
 
-Replaced with a stable bottom-up merge sort (differential + stability + timing
-evidence above). `calloc(n, s)` gives an overflow-checked scratch buffer, and a
-failed allocation leaves the caller's array untouched rather than half-sorted.
+Replaced with a stable bottom-up merge sort (sorted-output, stability, and
+timing evidence above). The old bubble sort was *not* stable: its non-adjacent
+swaps could reorder equal elements, so outputs can differ when keys tie.
+`calloc(n, s)` checks the scratch allocation size; if it fails, an in-place
+stable insertion sort preserves the old guarantee that the caller receives a
+sorted array (at quadratic cost only on OOM).
 
 ### A4. `sh_FlsAlloc` walked off the slot table
 
@@ -107,17 +119,22 @@ the base frees the raster, and returning NULL rejects the frame.
 `goodix_receive_data_cb` resubmitted `goodix_receive_data()` straight from the
 USB completion callback. A device that errors on every submission (unplugged
 mid-claim, stalled endpoint) therefore ran a tight loop at 100% CPU in fprintd's
-main thread. Retries now go through a 100 ms `fpi_device_add_timeout`, and the
-loop stops for good after `GOODIX_READ_ERROR_MAX` (5) consecutive failures. A
-pending command still fails on its own 1 s timeout, so no waiter is orphaned.
+main thread. Retries now go through a 100 ms `fpi_device_add_timeout`. After
+`GOODIX_READ_ERROR_MAX` (5) consecutive failures, the loop stops and completes
+any armed command with `G_IO_ERROR_FAILED`. This also covers FDT and TLS reply
+commands that intentionally have no timeout; ordinary timed commands retain
+their existing timeout as a second line of defense.
 
 ### B2. `goodix_dev_deinit` handed a non-NULL `*error` to `g_usb_device_release_interface`
 
-`goodix_shutdown_tls (dev, error)` can fill `*error`; the following release call
-was then given a set `GError`, which makes GUsb emit a GLib critical and return
-FALSE without attempting the release — the TLS error would mask a failure to let
-go of the interface. It now passes NULL once `*error` is already set. Both
-`goodix5e0a.c:dev_close` and `goodix5xx.c:dev_deinit` benefit.
+A shutdown error, if one is reported, must not be passed into the following
+release call: GUsb treats a pre-set `GError` as a critical and skips the
+release. Deinit now passes NULL to the release call when `*error` is already
+set, still attempts the release, and returns failure if either shutdown or
+release failed. Currently `goodix_tls_server_deinit()` is best-effort and
+always returns TRUE without setting `error`, so the shutdown-error branch is
+defensive rather than reachable today. Both `goodix5e0a.c:dev_close` and
+`goodix5xx.c:dev_deinit` benefit.
 
 ### B3. Error codes were raw `errno` / byte counts, not enum members
 
@@ -132,7 +149,8 @@ and the messages carry the count that used to be the code.
 
 `priv->transfer_cancel_tkn = g_cancellable_new ()` overwrote the previous
 pointer, dropping its only reference along with any in-flight transfer's. Now
-`g_clear_object`'d first.
+`g_clear_object`'d first. Review follow-up also destroys a pending `read_retry`
+source during init rather than orphaning it and allowing an extra read later.
 
 ### B5. "Completed command: 0x%02x" always printed 0x00
 
@@ -142,10 +160,11 @@ cleared it. The command is now snapshotted before the reset.
 ### B6. Ticket-84 fast path re-derived the match decision
 
 `goodix5e0a_keep_best_frame`'s optimistic path gated on `match_pts > 0` (verify)
-and `matched_idx >= 0 && match_pts > 0` (identify), while the authoritative
-deliver tail gates on the engine's return value *plus* `matched_idx == 0`
-(verify) / `matched_idx < n` (identify). Two copies of the gallery read, two
-copies of the engine call, two copies of the gate.
+and `matched_idx >= 0 && match_pts > 0` (identify), instead of using the engine
+verdict. In the authoritative deliver tail, verify gates on the verify engine's
+return value; identify gates on the identify engine's return value and validates
+its winner index against the usable gallery. The duplicate identify paths also
+had two copies of the gallery read and engine call.
 
 The fast path cannot itself grant access — it only skips the remaining burst, and
 deliver still decides — but a fast path that re-derives the decision is one edit
@@ -156,9 +175,10 @@ Fixed by making `goodix5e0a_identify_best_frame()` the single reader of the
 gallery and the single caller of `identifyImage`, and by gating both fast paths
 on the engine's verdict. The two divergent blocks (83 non-blank lines) collapsed
 into one shared helper plus two three-line call sites. That mattered:
-`goodix5e0a.c` sat **4 non-blank lines under** the suite's own 2000-line
-compactness budget (`test_m2_driver_refactoring`), so a dedupe that grew the
-file would have broken it; this one costs net **+1** line (1996 → 1997).
+The compactness guard is `tests/tier1_feature/test_f13_no_polling.py`
+(`assertLess(nonblank_lines, 2000)`). Before the refactor the source had 1996
+nonblank lines; the shared-helper refactor plus the identify journal fix leaves
+it at 1998, still below the production limit.
 
 ### B7. Milan engine lazy-init was check-then-act outside the mutex
 
@@ -218,26 +238,28 @@ Aligned to `1.94.9-goodixtls-5e0a`.
 
 | File | Change |
 |---|---|
-| `libfprint-driver/goodix.c` | A7, B1, B2, B3, B4, B5, B8, B9 |
+| `libfprint-driver/goodix.c` | A7, B1, B2, B3, B4, B5, B8, B9; review follow-up completes armed reads on retry exhaustion, destroys stale retry sources, and preserves failure status from deinit |
 | `libfprint-driver/goodix.h` | B9 |
-| `libfprint-driver/goodix5e0a.c` | B6, B10 |
+| `libfprint-driver/goodix5e0a.c` | B6, B10; review follow-up preserves the Milan identify journal line for unusable galleries |
 | `libfprint-driver/goodix5xx.c` | A8 |
 | `libfprint-driver/goodix5xx.h` | A8 (contract comment) |
-| `libfprint-driver/goodix_milan.c` | A1–A7, B7 |
+| `libfprint-driver/goodix_milan.c` | A1–A7, B7; review follow-up validates the exact export-RVA width, parses through a fully backed image copy, and sorts in-place on OOM |
 | `libfprint-driver/goodixtls.c` | B3 |
 | `libfprint-goodix.nix` | B11 |
-| `tests/tier1_feature/test_f77_multi_finger_gallery.py` | B6: single gallery reader / single engine call |
-| `tests/tier1_feature/test_f84_optimistic_verify_fast_path.py` | B6: fast path must use the engine verdict |
-| `tests/tier5_adversarial/test_m1_c1_lifecycle_adversarial.py` | B1: read-loop backoff is bounded |
-| `tests/tier5_adversarial/test_m3_audit_hardening.py` | **new** — 19 regression guards for A1–A8, B2, B3, B5, B6, B9 |
+| `tests/tier1_feature/test_f77_multi_finger_gallery.py` | B6: single gallery reader / single engine call; assert no-match journal preservation |
+| `tests/tier1_feature/test_f84_optimistic_verify_fast_path.py` | B6: fast path must use the engine verdict; corrected verify-vs-identify gate description |
+| `tests/tier5_adversarial/test_m1_c1_lifecycle_adversarial.py` | B1: bounded backoff completes the armed command and init destroys stale retry sources |
+| `tests/tier5_adversarial/test_m3_audit_hardening.py` | **new** — 24 source guards, including follow-up coverage for B4, B10, B11, sort OOM fallback, export metadata safety, and identify logging |
 
 ## E. Honest limits
 
-- No compilation of `goodix.c` / `goodix5e0a.c` / `goodix5xx.c` (no libfprint,
-  GUsb, GLib or OpenSSL headers in this sandbox). The CI lane that does compile
-  them (`GOODIX_NATIVE_TESTS=required`) needs `nix-build` and did not run here.
+- No full compilation of `goodix.c` / `goodix5e0a.c` / `goodix5xx.c` or the
+  entire `goodix_milan.c` translation unit (libfprint, GUsb, GLib and OpenSSL
+  headers are absent). The native CI lane (`GOODIX_NATIVE_TESTS=required`) needs
+  `nix-build` and was not available. The changed `sh_qsort` and `get_export`
+  functions were compiled and exercised in an extracted standalone harness.
 - No hardware run, so no claim is made about latency, FRR/FAR, suspend, or the
-  parked-TLS TTL. Every fix above is a static-behaviour change verified by
-  reading, by the software suite, and — for `goodix_milan.c` — by compiling it.
-- `sh_qsort`'s merge sort was validated against a stand-in comparator, not
-  against the real engine's comparator inside the loaded DLL.
+  parked-TLS TTL. Driver changes are source-guarded and the available software
+  suite passes; the harness did not load the real vendor DLL.
+- `sh_qsort` was tested against a stand-in comparator, not the real engine's
+  comparator inside the loaded DLL.

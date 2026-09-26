@@ -1137,7 +1137,8 @@ goodix5e0a_identify_best_frame (FpDevice *dev, int *out_idx, int *out_pts,
 
   if (m == 0)
     {
-      fp_dbg ("5e0a identify: empty gallery, reporting no-match");
+      fp_dbg ("5e0a Milan identify: match=0 idx=-1 pts=0 (gallery=%u usable=0)",
+              prints->len);
       return FALSE;
     }
 
@@ -1146,8 +1147,8 @@ goodix5e0a_identify_best_frame (FpDevice *dev, int *out_idx, int *out_pts,
                                          GOODIX_5E0A_HEIGHT,
                                          blobs, lens, (int) m,
                                          &idx, &pts) != 0;
-  fp_dbg ("5e0a Milan identify: match=%d idx=%d pts=%d (usable=%u)",
-          matched, idx, pts, m);
+  fp_dbg ("5e0a Milan identify: match=%d idx=%d pts=%d (gallery=%u usable=%u)",
+          matched, idx, pts, prints->len, m);
 
   /* The engine's verdict is necessary but not sufficient: its winner index is
    * attacker-influenced data until it is bounds-checked against what we fed in. */

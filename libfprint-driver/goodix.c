@@ -104,8 +104,8 @@ typedef struct
   /* Read-loop backoff. A device that fails every submission (unplugged
    * mid-claim, stalled endpoint, revoked permissions) used to be resubmitted
    * straight from the completion callback, spinning the daemon's main thread
-   * at 100% CPU. Failures are now counted and retried on a timer instead,
-   * and the loop stops for good after GOODIX_READ_ERROR_MAX of them. */
+   * at 100% CPU. Failures are retried on a timer; after the bounded retry
+   * budget, any armed command is failed before the loop stops. */
   GSource      *read_retry;
   guint         read_errors;
 } FpiDeviceGoodixTlsPrivate;
@@ -675,11 +675,20 @@ goodix_receive_data_cb (FpiUsbTransfer *transfer, FpDevice *dev,
       /* Back off instead of resubmitting from inside the completion: with a
        * device that errors immediately every time (unplugged, stalled) the
        * old direct resubmit was a tight loop on the main thread. */
-      if (priv->read_errors > GOODIX_READ_ERROR_MAX)
+      if (priv->read_errors >= GOODIX_READ_ERROR_MAX)
         {
+          GError *read_error =
+            g_error_new (G_IO_ERROR, G_IO_ERROR_FAILED,
+                         "Read loop stopped after %u consecutive USB errors",
+                         priv->read_errors);
+
           fp_err ("Read loop stopping after %u consecutive USB errors",
                   priv->read_errors);
           goodix_stop_read_loop (dev);
+          /* Some reply commands intentionally have no timeout. Completing
+           * the armed callback here prevents FDT/TLS operations from waiting
+           * forever after their only receive path has stopped. */
+          goodix_receive_done (dev, NULL, 0, read_error);
           return;
         }
 
@@ -1536,7 +1545,7 @@ goodix_dev_init (FpDevice *dev, GError **error)
   priv->data = NULL;
   priv->length = 0;
   priv->read_errors = 0;
-  priv->read_retry = NULL;
+  g_clear_pointer (&priv->read_retry, g_source_destroy);
   /* A second open without an intervening close would otherwise drop the only
    * reference to the previous token and leak it (along with any transfer
    * still holding one). */
@@ -1781,7 +1790,9 @@ goodix_dev_deinit (FpDevice *dev, GError **error)
     }
   priv->last_close_boot = goodix_get_boottime_us ();
   priv->last_close_mono = g_get_monotonic_time ();
-  return released;
+  /* A TLS shutdown error is still a failed deinit even if releasing the USB
+   * interface succeeded. The caller owns and reports the existing *error. */
+  return released && !(error && *error);
 }
 
 // ---- DEV SECTION END ----

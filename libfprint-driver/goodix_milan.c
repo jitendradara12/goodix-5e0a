@@ -61,6 +61,10 @@ typedef struct __attribute__((packed)) {
 } GoodixImage;
 
 static u8 *g_image = NULL;
+/* Fully backed, zero-filled image used only to parse PE metadata. The live
+ * image intentionally leaves unmapped holes PROT_NONE; parsing from it can
+ * fault even when an RVA is below SizeOfImage. */
+static u8 *g_image_data = NULL;
 static u64 g_imagebase = 0;
 static u8 *g_file = NULL;
 static long g_filelen = 0;
@@ -504,12 +508,12 @@ static int  MS sh_abs(int j) { return abs(j); }
 /* Bottom-up merge sort on the engine's own comparator.
  *
  * The original here was a bubble sort: O(n^2) comparisons on the engine's hot
- * path, and the engine does hand it large arrays. Merging keeps the sort
- * stable (equal elements keep their input order, as the swap-only bubble sort
- * did) and O(n log n), and still calls cmp through its MS-ABI pointer type so
- * no ABI bridging is involved. The scratch buffer is calloc'd so the n*s size
- * computation is overflow-checked; without memory we fall back to nothing
- * rather than corrupt the caller's array. */
+ * path, and the engine does hand it large arrays. Merging is stable and
+ * O(n log n); unlike the old non-adjacent-swap bubble sort, it can change the
+ * relative order of equal elements. The comparator keeps its MS-ABI pointer
+ * type, so no ABI bridging is involved. calloc checks n*s for overflow. If
+ * scratch allocation fails, an in-place stable insertion sort preserves the
+ * old guarantee that the caller still receives a sorted array. */
 static void MS sh_qsort(void *b, size_t n, size_t s, int (MS *cmp)(const void*, const void*)) {
     u8 *p = (u8*)b;
     u8 *tmp;
@@ -519,16 +523,32 @@ static void MS sh_qsort(void *b, size_t n, size_t s, int (MS *cmp)(const void*, 
         return;
 
     tmp = (u8*)calloc(n, s);
-    if (!tmp)
+    if (!tmp) {
+        /* OOM must not turn qsort into a no-op: the previous implementation
+         * required no scratch space. This stable, in-place fallback is slow
+         * only on the allocation-failure path. */
+        for (size_t i = 1; i < n; i++) {
+            size_t j = i;
+            while (j > 0 && cmp(p + (j - 1) * s, p + j * s) > 0) {
+                for (size_t k = 0; k < s; k++) {
+                    u8 byte = p[(j - 1) * s + k];
+                    p[(j - 1) * s + k] = p[j * s + k];
+                    p[j * s + k] = byte;
+                }
+                j--;
+            }
+        }
         return;
+    }
 
-    /* width < n, and calloc(n, s) above succeeded, so width * 2 cannot come
-     * near overflowing size_t. */
-    for (width = 1; width < n; width *= 2) {
-        size_t step = width * 2;
-        for (size_t left = 0; left < n; left += step) {
-            size_t mid = (left + width < n) ? left + width : n;
-            size_t right = (left + step < n) ? left + step : n;
+    for (width = 1; width < n;) {
+        /* Saturate the final run width instead of overflowing 2*width near
+         * SIZE_MAX. Advance by each run's actual end for the same reason. */
+        size_t step = (width > n - width) ? n : width * 2;
+        for (size_t left = 0; left < n;) {
+            size_t remaining = n - left;
+            size_t mid = left + ((width < remaining) ? width : remaining);
+            size_t right = left + ((step < remaining) ? step : remaining);
             size_t i = left, j = mid, k = left;
 
             while (i < mid && j < right) {
@@ -540,7 +560,11 @@ static void MS sh_qsort(void *b, size_t n, size_t s, int (MS *cmp)(const void*, 
             while (i < mid)   memcpy(tmp + (k++) * s, p + (i++) * s, s);
             while (j < right) memcpy(tmp + (k++) * s, p + (j++) * s, s);
             memcpy(p + left * s, tmp + left * s, (right - left) * s);
+            left = right;
         }
+        if (width > n / 2)
+            break;
+        width *= 2;
     }
 
     free(tmp);
@@ -844,33 +868,32 @@ static inline int rva_ok(u32 rva, u32 need) {
 }
 
 static void* get_export(const char *want) {
-    /* Every offset below is attacker-controlled whenever the DLL is not the
-     * expected vendor binary, so all arithmetic is done in u64: several of
-     * these checks overflowed in u32 before (a huge NameCount made
-     * `nnames * 4` wrap to 0 and the bound check pass, and a near-2^32 e
-     * wrapped `e + 24 + 112 + 8`). */
-    if (!g_image || g_sizeofimage < 0x40) return NULL; /* need room for the e_lfanew read */
-    u32 e = *(u32*)(g_image + 0x3c);
-    if ((u64)e + 24 + 112 + 8 > g_sizeofimage) return NULL;
-    u32 exprva = *(u32*)(g_image + e + 24 + 112 + 8 * 0);
+    /* Parse through the full zero-filled copy rather than g_image: its gaps
+     * are intentionally PROT_NONE and attacker-controlled RVAs must not turn
+     * a bounds-valid metadata read into SIGSEGV. Widen arithmetic before
+     * checking every PE-controlled offset. */
+    if (!g_image || !g_image_data || g_sizeofimage < 0x40) return NULL;
+    u32 e = *(u32*)(g_image_data + 0x3c);
+    /* The export data directory is the first 8-byte entry at optional-header
+     * offset 112; this parser reads its first 4-byte RVA. */
+    if ((u64)e + 24 + 112 + 4 > g_sizeofimage) return NULL;
+    u32 exprva = *(u32*)(g_image_data + e + 24 + 112);
     if (!exprva || (u64)exprva + 40 > g_sizeofimage) return NULL;
-    u32 nnames = *(u32*)(g_image + exprva + 24);
-    u32 fns = *(u32*)(g_image + exprva + 28);
-    u32 names = *(u32*)(g_image + exprva + 32);
-    u32 ords = *(u32*)(g_image + exprva + 36);
+    u32 nnames = *(u32*)(g_image_data + exprva + 24);
+    u32 fns = *(u32*)(g_image_data + exprva + 28);
+    u32 names = *(u32*)(g_image_data + exprva + 32);
+    u32 ords = *(u32*)(g_image_data + exprva + 36);
     if ((u64)names + (u64)nnames * 4 > g_sizeofimage ||
         (u64)ords + (u64)nnames * 2 > g_sizeofimage) return NULL;
 
     for (u32 i = 0; i < nnames; i++) {
-        u32 nrva = *(u32*)(g_image + names + (u64)i * 4);
+        u32 nrva = *(u32*)(g_image_data + names + (u64)i * 4);
         if (nrva >= g_sizeofimage) continue;
-        /* Bound the export-name read to the mapped image, like the
-         * import-name checks in load_pe_file: skip unterminated names. */
-        if (strnlen((char*)(g_image + nrva), g_sizeofimage - nrva) >= g_sizeofimage - nrva) continue;
-        if (strcmp((char*)(g_image + nrva), want) == 0) {
-            u16 ord = *(u16*)(g_image + ords + (u64)i * 2);
+        if (strnlen((char*)(g_image_data + nrva), g_sizeofimage - nrva) >= g_sizeofimage - nrva) continue;
+        if (strcmp((char*)(g_image_data + nrva), want) == 0) {
+            u16 ord = *(u16*)(g_image_data + ords + (u64)i * 2);
             if ((u64)fns + (u64)ord * 4 + 4 > g_sizeofimage) return NULL;
-            u32 frva = *(u32*)(g_image + fns + (u64)ord * 4);
+            u32 frva = *(u32*)(g_image_data + fns + (u64)ord * 4);
             if (frva >= g_sizeofimage) return NULL;
             return g_image + frva;
         }
@@ -978,7 +1001,10 @@ static int load_pe_file(const char *path) {
         if (n <= 0) { if (n == 0) errno = EIO; goto fail; }
         off += n;
     }
-    free(img);
+    /* Keep the complete backed copy for safe metadata parsing; live image
+     * pages that were not mapped below remain PROT_NONE by design. */
+    free(g_image_data);
+    g_image_data = img;
     img = NULL;
 
     step = "mmap reserve";
@@ -1076,6 +1102,8 @@ fail:;
     if (fd >= 0) close(fd);
     if (mfd >= 0) close(mfd);
     free(img);
+    free(g_image_data);
+    g_image_data = NULL;
     if (g_image) { munmap(g_image, sizeofimage); g_image = NULL; }
     g_sizeofimage = 0;
     free(g_file);
@@ -1175,6 +1203,8 @@ gboolean goodix_milan_init (const char *dll_path) {
         !m_templateDelete || !m_identifyImage) {
         g_warning("5e0a: required Milan engine exports missing");
         if (g_image) { munmap(g_image, g_sizeofimage); g_image = NULL; }
+        free(g_image_data);
+        g_image_data = NULL;
         g_sizeofimage = 0;
         g_rec_mutex_unlock (&g_milan_mutex);
         return FALSE;
