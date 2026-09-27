@@ -1474,6 +1474,7 @@ deliver:
     }
   else
     {
+      goodix5e0a_reset_touch_frames (self); /* ticket 101: fresh burst per enroll touch */
       fpi_ssm_next_state (ssm);
     }
 }
