@@ -37,14 +37,7 @@
 #define GOODIX_5E0A_BLOCK_ACTIVE_BYTES (96)
 #define GOODIX_5E0A_FRAME_WIRE_BYTES (GOODIX_5E0A_FRAME_BLOCKS * GOODIX_5E0A_BLOCK_BYTES + 4) /* 10564 */
 
-/* Ticket 101: contrast gain 1.5 (the ticket-72 shootout's validated lane).
- * At 1.0 the engine's minutiae extraction sits only ~20-40% above its
- * contrast floor, so a light/sloppy press falls below it and every verify
- * reports no-match with pts=0 (live journal 2026-09-27). Offline battery
- * through the real DLL: gain 1.0 rejects 6/20 degraded genuine probes,
- * gain 1.5 accepts all recoverable ones (down to 40% residual contrast)
- * with impostors still scoring 0 at every level. */
-#define GOODIX_5E0A_CONTRAST_GAIN (1.5f)
+#define GOODIX_5E0A_CONTRAST_GAIN (1.0f)
 
 /* FDT_UP guard 2000ms / normal 5000ms (ticket 47: a 0x34 timeout means the
  * finger is still down, so the guard path re-issues; success means genuine
