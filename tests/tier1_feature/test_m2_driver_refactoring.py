@@ -92,7 +92,10 @@ class TestM2DriverRefactoring(unittest.TestCase):
         # state, lexicographic rank, extended journal lines).
         # Ticket 77: gallery identify (+~100 lines: is_identify flag,
         # dev_identify entry, deliver N-gallery branch, enroll-loop guard).
-        self.assertLess(len(lines), 2000, f"Driver exceeds production compactness limit: {len(lines)} LOC")
+        # Ticket 102: burst-wide matching (+~85 lines: banked burst pixels and
+        # active counts, probe order, shared verify-burst helper, identify
+        # burst loop replacing the single ranked-winner probe).
+        self.assertLess(len(lines), 2150, f"Driver exceeds production compactness limit: {len(lines)} LOC")
         self.assertIn("FPI_TYPE_DEVICE_GOODIXTLS5XX", self.c_content)
 
 

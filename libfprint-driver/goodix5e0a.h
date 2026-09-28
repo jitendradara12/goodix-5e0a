@@ -47,8 +47,10 @@
 #define GOODIX_5E0A_PPMM (500.0 / 25.4)
 #define GOODIX_5E0A_NORMALIZE_MIDPOINT (128.0f)
 
-/* Best-of-N per-touch capture: bank 4 frames (~132ms settling burst)
- * inside SCAN_5E0A_GET_IMAGE and submit the highest Milan quality / contrast frame. */
+/* Per-touch capture burst (~132ms settling): bank 4 frames inside
+ * SCAN_5E0A_GET_IMAGE. Ticket 102: matching probes every usable banked
+ * frame (ranked winner first) and the engine's own verdict decides; the
+ * ranked winner remains what enrollment submits. */
 #define GOODIX_5E0A_FRAMES_PER_TOUCH (4)
 
 /* FDT_DOWN empty-poll stop-loss: a zero-length reply is retried after 50ms

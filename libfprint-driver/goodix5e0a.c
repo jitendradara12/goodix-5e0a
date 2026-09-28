@@ -119,6 +119,11 @@ struct _FpiDeviceGoodixTls5e0a
   guint8              best_pixels[GOODIX_5E0A_FRAME_SIZE];
   guint               best_active;
   guint8              latest_norm_pixels[GOODIX_5E0A_FRAME_SIZE];
+
+  /* Ticket 102: every banked frame of the burst, so matching probes the
+   * whole touch instead of the single ranked winner. */
+  guint8              burst_pixels[GOODIX_5E0A_FRAMES_PER_TOUCH][GOODIX_5E0A_FRAME_SIZE];
+  guint               burst_active[GOODIX_5E0A_FRAMES_PER_TOUCH];
 };
 
 G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a, FPI,
@@ -1050,6 +1055,29 @@ goodix5e0a_reset_touch_frames (FpiDeviceGoodixTls5e0a *self)
   self->best_active = 0;
   memset (self->best_pixels, 0, sizeof (self->best_pixels));
   memset (self->latest_norm_pixels, 0, sizeof (self->latest_norm_pixels));
+  memset (self->burst_pixels, 0, sizeof (self->burst_pixels));
+  memset (self->burst_active, 0, sizeof (self->burst_active));
+}
+
+/* Ticket 102: probe order for one banked burst — the ranked winner first,
+ * then every other usable frame in capture order. Live frames all report
+ * Milan quality 0 (ticket 76), so the winner is picked by tiebreakers that
+ * ticket 79 showed do not track matchability; the engine, not the ranker,
+ * decides which impression of the touch matches. Frames that failed
+ * normalization (active < 64, buffer zeroed) are never probed. */
+static guint
+goodix5e0a_burst_probe_order (FpiDeviceGoodixTls5e0a *self, guint *order)
+{
+  guint banked = MIN (self->frame_count, (guint) GOODIX_5E0A_FRAMES_PER_TOUCH);
+  guint best = self->best_frame_no;
+  guint n = 0;
+
+  if (best > 0 && best <= banked && self->burst_active[best - 1] >= 64)
+    order[n++] = best - 1;
+  for (guint i = 0; i < banked; i++)
+    if ((n == 0 || i != order[0]) && self->burst_active[i] >= 64)
+      order[n++] = i;
+  return n;
 }
 
 static void goodix5e0a_deactivate (FpImageDevice *);
@@ -1087,6 +1115,46 @@ goodix5e0a_get_print_template (FpPrint *print, GVariant **out_var, gsize *out_le
   if (out_len)
     *out_len = len;
   return d;
+}
+
+/* Ticket 102: the ONLY caller of verifyImage. Probes every usable frame of
+ * the banked burst in goodix5e0a_burst_probe_order sequence and reports the
+ * engine's own verdict on the first frame it accepts (winner first, so an
+ * unambiguous touch still costs one call). The ranker used to pick the one
+ * frame the engine was allowed to see; tickets 76/79 showed that rank does
+ * not track matchability, so the engine decides which impression of the
+ * touch matches. Per-frame decision is unchanged — the burst only widens
+ * how many impressions of ONE touch are offered. *out_pts receives the
+ * matching frame's engine points (0 when nothing matched). */
+static gboolean
+goodix5e0a_verify_burst (FpiDeviceGoodixTls5e0a *self, int *out_pts)
+{
+  guint order[GOODIX_5E0A_FRAMES_PER_TOUCH];
+  guint probes = goodix5e0a_burst_probe_order (self, order);
+
+  if (out_pts)
+    *out_pts = 0;
+
+  for (guint i = 0; i < probes; i++)
+    {
+      int frame_pts = 0;
+      gboolean matched = goodix_milan_verify_image (self->burst_pixels[order[i]],
+                                                    GOODIX_5E0A_WIDTH,
+                                                    GOODIX_5E0A_HEIGHT,
+                                                    self->tmpl_blob,
+                                                    self->tmpl_len,
+                                                    &frame_pts) != 0;
+
+      fp_dbg ("5e0a verify probe %u/%u (frame %u): match=%d pts=%d",
+              i + 1, probes, order[i] + 1, matched, frame_pts);
+      if (matched)
+        {
+          if (out_pts)
+            *out_pts = frame_pts;
+          return TRUE;
+        }
+    }
+  return FALSE;
 }
 
 /* Ticket 77/84: the ONLY reader of the identify gallery and the ONLY caller of
@@ -1142,11 +1210,28 @@ goodix5e0a_identify_best_frame (FpDevice *dev, int *out_idx, int *out_pts,
       return FALSE;
     }
 
-  matched = goodix_milan_identify_image (self->best_pixels,
-                                         GOODIX_5E0A_WIDTH,
-                                         GOODIX_5E0A_HEIGHT,
-                                         blobs, lens, (int) m,
-                                         &idx, &pts) != 0;
+  guint order[GOODIX_5E0A_FRAMES_PER_TOUCH];
+  guint probes = goodix5e0a_burst_probe_order (self, order);
+
+  /* Ticket 102: same burst-wide probing as verify — one gallery call per
+   * usable banked frame, winner first, engine verdict decides. */
+  for (guint i = 0; i < probes && !matched; i++)
+    {
+      int frame_idx = -1, frame_pts = 0;
+
+      matched = goodix_milan_identify_image (self->burst_pixels[order[i]],
+                                             GOODIX_5E0A_WIDTH,
+                                             GOODIX_5E0A_HEIGHT,
+                                             blobs, lens, (int) m,
+                                             &frame_idx, &frame_pts) != 0;
+      if (matched)
+        {
+          idx = frame_idx;
+          pts = frame_pts;
+        }
+      fp_dbg ("5e0a identify probe %u/%u (frame %u): match=%d idx=%d pts=%d",
+              i + 1, probes, order[i] + 1, matched, frame_idx, frame_pts);
+    }
   fp_dbg ("5e0a Milan identify: match=%d idx=%d pts=%d (gallery=%u usable=%u)",
           matched, idx, pts, prints->len, m);
 
@@ -1180,26 +1265,29 @@ goodix5e0a_deliver_frame (FpDevice *dev)
           fp_err ("5e0a verify: no stored template available");
           fpi_device_verify_complete (dev, fpi_device_error_new (FP_DEVICE_ERROR_DATA_INVALID));
         }
-      else if (self->best_active < 64)
-        {
-          fp_dbg ("5e0a no usable frame, reporting no-match");
-          fpi_device_verify_report (dev, FPI_MATCH_FAIL, NULL, NULL);
-          fpi_device_verify_complete (dev, NULL);
-        }
       else
         {
-          int match_pts = 0;
-          int is_match = goodix_milan_verify_image (self->best_pixels,
-                                                   GOODIX_5E0A_WIDTH,
-                                                   GOODIX_5E0A_HEIGHT,
-                                                   self->tmpl_blob,
-                                                   self->tmpl_len,
-                                                   &match_pts);
-          fp_dbg ("5e0a Milan verify: match=%d pts=%d", is_match, match_pts);
-          if (is_match)
-            fpi_device_verify_report (dev, FPI_MATCH_SUCCESS, NULL, NULL);
+          guint order[GOODIX_5E0A_FRAMES_PER_TOUCH];
+          guint probes = goodix5e0a_burst_probe_order (self, order);
+
+          /* Ticket 102: "usable" is the whole burst, not just the ranked
+           * winner — a burst whose winner is unmatchable can still match. */
+          if (probes == 0)
+            {
+              fp_dbg ("5e0a no usable frame, reporting no-match");
+              fpi_device_verify_report (dev, FPI_MATCH_FAIL, NULL, NULL);
+            }
           else
-            fpi_device_verify_report (dev, FPI_MATCH_FAIL, NULL, NULL);
+            {
+              int match_pts = 0;
+              gboolean is_match = goodix5e0a_verify_burst (self, &match_pts);
+
+              fp_dbg ("5e0a Milan verify: match=%d pts=%d", is_match, match_pts);
+              if (is_match)
+                fpi_device_verify_report (dev, FPI_MATCH_SUCCESS, NULL, NULL);
+              else
+                fpi_device_verify_report (dev, FPI_MATCH_FAIL, NULL, NULL);
+            }
           fpi_device_verify_complete (dev, NULL);
         }
       /* Note: Do not deactivate here. In verify mode, the scan SSM completes
@@ -1210,8 +1298,12 @@ goodix5e0a_deliver_frame (FpDevice *dev)
     {
       /* Ticket 77: gallery (1:N) identify. Same single-touch burst flow as
        * verify; CANCELLED never re-issues (report+complete only). NULL print
-       * is accepted upstream (synaptics/elanmoc NO_MATCH precedent). */
-      if (self->best_active < 64)
+       * is accepted upstream (synaptics/elanmoc NO_MATCH precedent).
+       * Ticket 102: the same burst-wide probe gate as verify. */
+      guint order[GOODIX_5E0A_FRAMES_PER_TOUCH];
+      guint probes = goodix5e0a_burst_probe_order (self, order);
+
+      if (probes == 0)
         {
           fp_dbg ("5e0a no usable frame, reporting identify no-match");
           fpi_device_identify_report (dev, NULL, NULL, NULL);
@@ -1483,7 +1575,9 @@ deliver:
  * the 64x80 normalized raster using Milan frame quality scoring with contrast
  * dynamic range and active touch area tiebreakers, eliminating intermediate
  * FpImage allocations. Re-issues GET_IMAGE on the same SSM while fewer than
- * GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked. */
+ * GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked.
+ * Ticket 102: every frame is also banked for burst-wide matching; the rank
+ * above only decides probe order and what enrollment submits. */
 static gboolean
 goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm,
                             guint16 declen, guint active, guint range)
@@ -1525,6 +1619,16 @@ goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm,
       memcpy (self->best_pixels, self->latest_norm_pixels, GOODIX_5E0A_FRAME_SIZE);
     }
 
+  /* Ticket 102: bank every frame of the burst, winner or not — frame_count
+   * is 1-based here. The engine probes them in goodix5e0a_burst_probe_order
+   * at deliver time; the winner stays in best_pixels for enrollment. */
+  if (self->frame_count <= GOODIX_5E0A_FRAMES_PER_TOUCH)
+    {
+      memcpy (self->burst_pixels[self->frame_count - 1], self->latest_norm_pixels,
+              GOODIX_5E0A_FRAME_SIZE);
+      self->burst_active[self->frame_count - 1] = active;
+    }
+
   /* Ticket 84: Optimistic Verify Fast-Path (Sub-50ms Post-Touch Unlock Latency).
    * During non-enroll actions (verify or identify), if frame 1 has strong contact
    * (active >= 1500 and range >= 500) and matches immediately, deliver it at once
@@ -1541,15 +1645,11 @@ goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm,
               int match_pts = 0;
               /* The engine's own verdict, not a re-derived one: the fast path
                * may only spend the burst earlier, never widen what counts as
-               * a hit. Re-deriving `match_pts > 0` here would also accept an
-               * engine reply whose winner index is not our single template. */
-              int is_match = goodix_milan_verify_image (self->best_pixels,
-                                                        GOODIX_5E0A_WIDTH,
-                                                        GOODIX_5E0A_HEIGHT,
-                                                        self->tmpl_blob,
-                                                        self->tmpl_len,
-                                                        &match_pts);
-              if (is_match)
+               * a hit. It probes the same burst-wide helper the deliver tail
+               * uses (one banked frame here), so the two cannot drift apart;
+               * re-deriving `match_pts > 0` here would also accept an engine
+               * reply whose winner index is not our single template. */
+              if (goodix5e0a_verify_burst (self, &match_pts))
                 {
                   g_message ("5e0a optimistic fast-path match on frame 1: pts=%d, skipping remaining burst",
                              match_pts);

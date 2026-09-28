@@ -82,14 +82,16 @@ class TestF77MultiFingerGallery(unittest.TestCase):
         # deliver has a dedicated IDENTIFY branch reporting the gallery object
         self.assertIn("action == FPI_DEVICE_ACTION_IDENTIFY || self->is_identify", src)
         self.assertIn("fpi_device_get_identify_data (dev, &prints);", src)
-        self.assertIn("goodix_milan_identify_image (self->best_pixels,", src)
         self.assertIn("fpi_device_identify_report (dev, winner, NULL, NULL);", src)
         self.assertIn("fpi_device_identify_report (dev, NULL, NULL, NULL);", src)
         self.assertIn("fpi_device_identify_complete (dev, NULL);", src)
         # One gallery reader and one engine call site: the deliver tail and the
-        # ticket-84 fast path must not be able to drift apart.
+        # ticket-84 fast path must not be able to drift apart. Ticket 102: the
+        # call site now probes each banked burst frame instead of only the
+        # single ranked winner.
         self.assertEqual(src.count("fpi_device_get_identify_data (dev, &prints);"), 1)
-        self.assertEqual(src.count("goodix_milan_identify_image (self->best_pixels,"), 1)
+        self.assertEqual(src.count("goodix_milan_identify_image ("), 1)
+        self.assertIn("goodix_milan_identify_image (self->burst_pixels[order[i]],", src)
         self.assertIn("goodix5e0a_identify_best_frame (dev, NULL, NULL, &winner);", src)
         self.assertIn("goodix5e0a_identify_best_frame (dev, &matched_idx, &match_pts, NULL)", src)
         # Unusable gallery templates and unusable frames fail closed as no-match;
@@ -102,8 +104,15 @@ class TestF77MultiFingerGallery(unittest.TestCase):
     def test_d_verify_and_guards_untouched(self):
         """One variable: verify path, FDT semantics, enroll floor unchanged."""
         src = _read(GOODIX5E0A_C)
-        # verify still single-template via tmpl_blob
-        self.assertIn("goodix_milan_verify_image (self->best_pixels,", src)
+        # verify still single-template via tmpl_blob; ticket 102 probes the
+        # whole banked burst through the shared helper, one engine call site.
+        helper = _slice(src, "goodix5e0a_verify_burst (FpiDeviceGoodixTls5e0a *self",
+                        "/* Ticket 77/84:")
+        self.assertIn("goodix_milan_verify_image (self->burst_pixels[order[i]],", helper)
+        self.assertIn("self->tmpl_blob,", helper)
+        self.assertIn("self->tmpl_len,", helper)
+        self.assertEqual(src.count("goodix_milan_verify_image ("), 1)
+        self.assertIn("goodix5e0a_verify_burst (self, &match_pts)", src)
         self.assertIn("fpi_device_verify_report (dev, FPI_MATCH_SUCCESS, NULL, NULL);", src)
         self.assertIn("fpi_device_verify_report (dev, FPI_MATCH_FAIL, NULL, NULL);", src)
         # FDT timeouts: DOWN blocking (0), UP finite guard/normal

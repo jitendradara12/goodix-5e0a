@@ -263,8 +263,13 @@ class TestIdentifySingleSourceOfTruth(unittest.TestCase):
         goodix5e0a_c = read("libfprint-driver", "goodix5e0a.c")
         self.assertEqual(
             goodix5e0a_c.count("fpi_device_get_identify_data (dev, &prints);"), 1)
+        # Ticket 102: still exactly one engine call site, now probing each
+        # banked burst frame instead of only the ranked winner.
         self.assertEqual(
-            goodix5e0a_c.count("goodix_milan_identify_image (self->best_pixels,"), 1)
+            goodix5e0a_c.count("goodix_milan_identify_image ("), 1)
+        self.assertIn(
+            "goodix_milan_identify_image (self->burst_pixels[order[i]],",
+            goodix5e0a_c)
         self.assertIn("goodix5e0a_identify_best_frame (dev, NULL, NULL, &winner);",
                       goodix5e0a_c)
         self.assertIn(

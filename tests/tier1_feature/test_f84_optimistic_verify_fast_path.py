@@ -5,8 +5,9 @@ Verifies without hardware (hermetic static & structural validation):
 (a) goodix5e0a.c implements optimistic verify fast-path in goodix5e0a_keep_best_frame:
     gated to non-enroll actions (verify or identify), frame_count == 1,
     active >= 1500, range >= 500;
-(b) speculative verify calls goodix_milan_verify_image for frame 1 and gates on its
-    verdict before logging a fast-path match and returning FALSE;
+(b) speculative verify gates on the shared burst-probe helper's engine verdict
+    (ticket 102: goodix5e0a_verify_burst, the single verifyImage call site)
+    before logging a fast-path match and returning FALSE;
 (c) speculative identify uses the shared gallery helper, which checks the engine verdict
     and validates the winner index before logging a fast-path match;
 (d) fallback to normal 4-frame burst loop intact when not matched or active < 1500 / range < 500;
@@ -43,6 +44,9 @@ class TestF84OptimisticVerifyFastPath(unittest.TestCase):
         keep_def = ("goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm,\n"
                     "                            guint16 declen, guint active, guint range)\n{")
         cls.keep_body = cls.c_src[cls.c_src.index(keep_def):cls.c_src.index("goodix5e0a_on_fdt_up_reply (FpDevice *dev")]
+        # Ticket 102: the shared burst probe owns the verifyImage call site.
+        cls.verify_helper = cls.c_src[cls.c_src.index("goodix5e0a_verify_burst (FpiDeviceGoodixTls5e0a *self"):]
+        cls.verify_helper = cls.verify_helper[:cls.verify_helper.index("/* Ticket 77/84:")]
 
     def test_a_fast_path_gate_and_thresholds(self):
         """Frame 1 fast-path is gated on non-enroll actions, frame 1, active >= 1500, range >= 500."""
@@ -53,12 +57,15 @@ class TestF84OptimisticVerifyFastPath(unittest.TestCase):
 
     def test_b_speculative_verify_fast_path(self):
         """Speculative verify matches frame 1, logs journal line, returns FALSE without read_image."""
-        self.assertIn("goodix_milan_verify_image (self->best_pixels,", self.keep_body)
-        self.assertIn("self->tmpl_blob,", self.keep_body)
-        self.assertIn("self->tmpl_len,", self.keep_body)
-        self.assertIn("&match_pts", self.keep_body)
+        # Ticket 102: the fast path spends the burst early through the same
+        # shared helper the deliver tail uses — never a local engine copy.
+        self.assertIn("goodix5e0a_verify_burst (self, &match_pts)", self.keep_body)
         self.assertIn("5e0a optimistic fast-path match on frame 1: pts=%d, skipping remaining burst", self.keep_body)
         self.assertIn("return FALSE;", self.keep_body)
+        # The engine call lives in that helper, with our single template.
+        self.assertIn("goodix_milan_verify_image (self->burst_pixels[order[i]],", self.verify_helper)
+        self.assertIn("self->tmpl_blob,", self.verify_helper)
+        self.assertIn("self->tmpl_len,", self.verify_helper)
 
     def test_c_speculative_identify_fast_path(self):
         """Speculative identify matches gallery on frame 1, logs journal line, returns FALSE."""
@@ -81,14 +88,15 @@ class TestF84OptimisticVerifyFastPath(unittest.TestCase):
         verdict plus a bounds-checked winner index. The fast path only buys time
         by spending the burst early; it must not widen what counts as a hit.
         """
-        verify = self.keep_body[self.keep_body.index("int is_match = goodix_milan_verify_image ("):]
+        verify = self.keep_body[self.keep_body.index("if (goodix5e0a_verify_burst (self, &match_pts))"):]
         verify = verify[:verify.index("5e0a optimistic fast-path match on frame 1")]
-        self.assertIn("int is_match = goodix_milan_verify_image (", verify)
-        self.assertIn("self->tmpl_blob,", verify)
-        self.assertIn("self->tmpl_len,", verify)
-        self.assertIn("&match_pts", verify)
-        self.assertIn("if (is_match)", verify)
+        # The shared helper reports exactly the engine's verdict, and the fast
+        # path only spends the burst early on that TRUE.
+        self.assertIn("if (goodix5e0a_verify_burst (self, &match_pts))", verify)
+        self.assertIn("gboolean matched = goodix_milan_verify_image (", self.verify_helper)
+        self.assertIn("if (matched)", self.verify_helper)
         self.assertNotIn("match_pts > 0", verify)
+        self.assertNotIn("match_pts > 0", self.verify_helper)
 
         identify = self.keep_body[self.keep_body.index("int matched_idx = -1, match_pts = 0;"):]
         identify = identify[:identify.index("5e0a optimistic fast-path identify match on frame 1")]
