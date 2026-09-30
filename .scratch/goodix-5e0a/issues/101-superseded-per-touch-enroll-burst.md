@@ -7,7 +7,7 @@ own 4-frame burst.
 
 **Blocked by:** none.
 
-**Status:** ready-for-hardware-verify
+**Status:** superseded (by ticket 102)
 
 ## Defect (code-level, independent of live data)
 

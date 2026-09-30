@@ -1,6 +1,6 @@
 # Ticket 100 — repo-wide code audit
 
-Status: closed (+verdict)
+Status: superseded (by ticket 102)
 
 Scope: full-repo audit of `libfprint-driver/`, the packaging (`.nix`, integration
 patch, `install.sh`), `scripts/`, and `tests/`, at commit `fd8314646b4703054d0df8bee71ba69bc914c1de`.
