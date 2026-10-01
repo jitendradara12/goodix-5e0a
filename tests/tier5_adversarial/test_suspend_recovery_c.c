@@ -302,9 +302,12 @@ static void test_frame_normalization (void)
   g_assert_cmpfloat (high, ==, 9.0f);
   for (int y = 0; y < 80; y++)
     for (int x = 0; x < 64; x++)
-      g_assert_cmpuint (normalized[y * 64 + x], ==,
-                        128 + (x == 0 ? -3 : x == 63 ? 3 : 0)
-                            + (y == 0 ? -6 : y == 79 ? 6 : 0));
+      {
+        float res = (x == 0 ? -3.0f : x == 63 ? 3.0f : 0.0f)
+                  + (y == 0 ? -6.0f : y == 79 ? 6.0f : 0.0f);
+        int expected = (int) roundf (GOODIX_5E0A_NORMALIZE_MIDPOINT + res * GOODIX_5E0A_CONTRAST_GAIN);
+        g_assert_cmpuint (normalized[y * 64 + x], ==, CLAMP (expected, 0, 255));
+      }
 
   for (guint i = 0; i < G_N_ELEMENTS (raw); i++)
     raw[i] = 1000;
@@ -316,7 +319,8 @@ static void test_frame_normalization (void)
       raw[40 * 64 + 32] = 1000 + delta;
       g_assert_true (goodix5e0a_normalize_raw_frame (raw, normalized, NULL, NULL));
       g_assert_cmpuint (normalized[40 * 64 + 32], ==, delta < 0 ? 0 : 255);
-      g_assert_cmpuint (normalized[40 * 64 + 31], ==, 128 - delta / 9);
+      int expected = (int) roundf (GOODIX_5E0A_NORMALIZE_MIDPOINT - (delta / 9.0f) * GOODIX_5E0A_CONTRAST_GAIN);
+      g_assert_cmpuint (normalized[40 * 64 + 31], ==, CLAMP (expected, 0, 255));
       g_assert_cmpuint (normalized[0], ==, 128);
     }
 }

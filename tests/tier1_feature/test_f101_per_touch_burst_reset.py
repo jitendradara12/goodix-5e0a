@@ -72,9 +72,9 @@ class TestF101PerTouchBurst(unittest.TestCase):
         self.assertIn("a stale burst winner must never survive across claims",
                       self.src_c.lower())
 
-    def test_contrast_gain_untouched(self):
-        """(c) Gain stays 1.0 (ticket 78 falsified gain as the live cause)."""
-        self.assertIn("#define GOODIX_5E0A_CONTRAST_GAIN (1.0f)", self.src_h)
+    def test_contrast_gain_calibrated(self):
+        """(c) Gain is calibrated to 1.5f for Milan matching engine (Ticket 104)."""
+        self.assertIn("#define GOODIX_5E0A_CONTRAST_GAIN (1.5f)", self.src_h)
 
 
 if __name__ == "__main__":

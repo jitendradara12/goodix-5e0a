@@ -170,10 +170,10 @@ class TestM1C1LifecycleAdversarial(unittest.TestCase):
         self.assertIn("fpi_image_device_image_captured (dev);", img_cb_body)
 
     def test_contrast_gain_calibration_value(self):
-        """Verify GOODIX_5E0A_CONTRAST_GAIN is calibrated to 1.0f for optimal ridge contrast."""
+        """Verify GOODIX_5E0A_CONTRAST_GAIN is calibrated to 1.5f for Milan matching engine."""
         with open(self.goodix5e0a_h, "r") as f:
             header_content = f.read()
-        self.assertIn("#define GOODIX_5E0A_CONTRAST_GAIN (1.0f)", header_content)
+        self.assertIn("#define GOODIX_5E0A_CONTRAST_GAIN (1.5f)", header_content)
 
         with open(self.goodix5e0a_c, "r") as f:
             source_content = f.read()

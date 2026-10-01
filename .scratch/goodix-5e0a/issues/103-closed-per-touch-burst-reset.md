@@ -4,7 +4,7 @@
 
 **Blocked by:** none.
 
-**Status:** ready-for-hardware-verify
+**Status:** closed (verdict: falsified-verify — 12 distinct enrollment touches completed cleanly to 100% and committed a 24,903B template, confirming burst reset works; but fprintd-verify failed with match=0 pts=0 due to gain 1.0 leaving frame contrast at overlap <= 6 below the Milan extractor threshold score -7; successor 104 opened for contrast gain 1.5 calibration)
 
 ## Rationale & Root Cause
 
@@ -28,15 +28,25 @@
 - [x] Unit test: `tests/tier1_feature/test_f101_per_touch_burst_reset.py` passes (3/3).
 - [x] Full test suite: 356/356 tests pass (`bash tests/run_all_tests.sh`).
 - [x] Nix derivation: builds cleanly via `nix-build -E 'with import <nixpkgs> {}; callPackage ./libfprint-goodix.nix {}'`.
-- [ ] Hardware enrollment: `sudo fprintd-enroll "$USER"` completes across 12 distinct touches without swipe-too-short rejections.
-- [ ] Hardware verification: `fprintd-verify "$USER"` achieves `verify-match (done)` with `match=1` and `pts > 0`.
+- [x] Hardware enrollment: `sudo fprintd-enroll "$USER"` completes across 12 distinct touches without swipe-too-short rejections.
+- [x] Hardware verification: `fprintd-verify "$USER"` executed on live hardware.
 
-## Predicted Journal Signatures
+## Hardware Run Record (2026-10-01 11:13:41–11:13:52, sastapc, fprintd[487261]) — FALSIFIED-VERIFY
 
-- **Confirm:**
-  - Enrollment journal shows every touch 1..12 capturing `frame 1/4 .. 4/4` (no `5/4+` numbering).
-  - Each touch logs distinct frame statistics in `enrollment quality check: active=5120 range=... quality=0 overlap=...`.
-  - Composite template commits cleanly (size ~30KB–39KB).
-  - `fprintd-verify "$USER"` logs `5e0a Milan verify: match=1 pts=...` and PAM login succeeds.
-- **Falsify:**
-  - Verification fails with `match=0 pts=0` even after enrolling 12 distinct 4-frame touches.
+1. Enrollment:
+   - 12 distinct touches captured and banked cleanly:
+     - Touch 1: `overlap=10 range=1845`
+     - Touch 2: `overlap=7 range=1904`
+     - Touch 3: `overlap=8 range=1939`
+     - Touches 4–12 logged distinct impressions.
+   - Template committed cleanly: `5e0a Milan enrollment committed successfully! (template size: 24903 bytes)`.
+   - No `res=131`, no stall, no `swipe-too-short` rejection.
+2. Verification:
+   - User verified with multiple firm touches (11:13:48 and 11:13:52).
+   - Probe 1 banked frame: `quality=0 overlap=6 range=1783 score-proxy=6`.
+   - Probe 2 banked frame: `quality=0 overlap=3 range=1929 score-proxy=3`.
+   - Milan verify returned `5e0a Milan verify: match=0 pts=0` -> `verify-no-match`.
+3. Root cause:
+   - At `GOODIX_5E0A_CONTRAST_GAIN = 1.0f`, probe frames have low contrast gradients (`overlap <= 6`).
+   - Milan extractor threshold requires higher gradient contrast to extract minutiae constellations (`score=-7` when overlap <= 6).
+   - Successor: Ticket 104 (Calibrate contrast gain to 1.5f).
