@@ -131,24 +131,11 @@ static void goodix5e0a_reset_touch_frames (FpiDeviceGoodixTls5e0a *self);
 
 // ---- ACTIVATE SECTION START ----
 
-/* Ticket 38 parked-TLS session: a deactivated claim leaves its negotiated
- * TLS context alive for GOODIX_5E0A_TLS_PARK_TTL_US; the next claim inside
- * the window sends ONE QUERY_MCU_STATE probe with a short
- * GOODIX_5E0A_TLS_PARK_HEALTH_TIMEOUT_MS timeout and reuses the session on
- * success instead of paying the full ladder. Suspend never parks. */
-/* Ticket 85: 300s — the ticket's design assumption (no journal trace yet)
- * is that desktop claims recur 1-3min apart, where a 30s window paid the
- * full ~800ms-1s ladder on nearly every such claim. Safety is unchanged:
- * reuse is still gated on the ONE 0xae probe (500ms), suspend never parks,
- * and a failed probe falls into the full ladder (ticket-38 settled fact:
- * the probe, not the TTL, is the guard). */
+/* Ticket 38 / 85: Parked-TLS session TTL (300s) and probe timeout (500ms) */
 #define GOODIX_5E0A_TLS_PARK_TTL_US (G_USEC_PER_SEC * 300)
 #define GOODIX_5E0A_TLS_PARK_HEALTH_TIMEOUT_MS 500
 
-/* Ticket 40 warm activation: a clean chip-enable inside this window on the
- * same device boot may skip RESET + CHIP_ID/OTP reads + config upload (the
- * FW check is kept as the warm-path discriminator). 60s outlasts the
- * back-to-back verify gap yet yields to idle/suspend drift. */
+/* Ticket 40: Warm activation TTL (60s) */
 #define GOODIX_5E0A_WARM_TTL_US (G_USEC_PER_SEC * 60)
 
 enum activate_states {
@@ -422,12 +409,7 @@ on_parked_health_reply (FpDevice *dev, gpointer user_data, GError *error)
           self->warm_ok = FALSE;
           self->warm_down_reason = "transport-miss";
         }
-      /* Ticket 40: crypto-grade miss — the device answered but the parked
-       * session key is dead, so MCU config recency still holds. A fresh
-       * warm ladder (FW check + new handshake) is the right next step, not
-       * a full reset; a stale/cold device falls through to the full ladder.
-       * (The taken + entry journal lines are the specified ticket-40 lines;
-       * no extra park-miss line is logged.) */
+      /* Ticket 40: crypto-grade miss — retry via warm activation if fresh */
       else if (goodix5e0a_warm_fresh (dev))
         {
           goodix5e0a_log_warm_taken (dev);
@@ -500,11 +482,7 @@ on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
   if (error)
     {
       goodix_session_mark_dirty (dev);
-      /* Ticket 40 warm fallback: a failed WARM handshake retries the FULL
-       * ladder once, silently (no user-visible error), loop-guarded by
-       * warm_retried — warmth costs at most one ladder, never a sticky
-       * dead session. The shutdown precedes the restart because
-       * goodix_tls_init asserts tls_hop == NULL. */
+      /* Ticket 40 warm fallback: retry full ladder once on failed warm handshake */
       if (self->warm_attempted && !self->warm_retried)
         {
           self->warm_ok = FALSE;
@@ -561,10 +539,7 @@ activate_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
   else
     {
       goodix_session_mark_dirty (dev);
-      /* Ticket 40 warm fallback: a failed WARM ladder (notably the kept FW
-       * check rejecting the device) retries the FULL ladder once, silently
-       * and loop-guarded — same shape as the TLS funnel above, minus the
-       * TLS teardown (no session exists yet on this path). */
+      /* Ticket 40 warm fallback: retry full ladder once on failed warm ladder */
       if (self->warm_attempted && !self->warm_retried)
         {
           self->warm_ok = FALSE;
@@ -628,11 +603,7 @@ dev_activate (FpImageDevice *img_dev)
       self->down_timeout = NULL;
       fp_dbg ("5e0a parked TLS session candidate fresh, health-checking (gen=%u)", new_gen);
       goodix_start_read_loop (dev);
-      /* ONE QUERY_MCU_STATE round-trip with a short timeout. NOTE: this
-       * deliberately bypasses goodix_send_query_mcu_state, whose timeout is
-       * hardcoded to GOODIX_TIMEOUT (1000ms); a dead parked session must
-       * fail fast into the full-ladder fallback. Payload matches
-       * goodix_send_query_mcu_state byte-for-byte. */
+      /* Ticket 38: Fast QUERY_MCU_STATE health probe */
       cb_info = g_new0 (GoodixCallbackInfo, 1);
       cb_info->callback = G_CALLBACK (on_parked_health_reply);
       cb_info->user_data = GUINT_TO_POINTER (new_gen);
@@ -647,9 +618,7 @@ dev_activate (FpImageDevice *img_dev)
 
   if (self->tls_parked)
     {
-      /* Ticket 38 fallback: the park is void — name the reason, shut the
-       * parked context down (goodix_tls_init asserts tls_hop == NULL), and
-       * run today's full ladder unchanged. */
+      /* Ticket 38 fallback: void parked session and run full ladder */
       const char *reason;
       if (self->tls_parked_gen != pre_gen)
         reason = "gen-mismatch";
@@ -2084,10 +2053,43 @@ goodix5e0a_resume (FpDevice *dev)
   fpi_device_resume_complete (dev, NULL);
 }
 
+static guint8 goodix_5e0a_psk_override[32];
+
+static void
+goodix_5e0a_load_psk_override (FpDevice *dev)
+{
+  FpiDeviceGoodixTls5xxClass *xx_cls = FPI_DEVICE_GOODIXTLS5XX_GET_CLASS (dev);
+  const char *path = "/etc/libfprint/goodix-5e0a.psk";
+  g_autofree gchar *content = NULL;
+  gsize length = 0;
+
+  if (!g_file_get_contents (path, &content, &length, NULL))
+    return;
+
+  gchar *str = g_strstrip (content);
+  if (strlen (str) != 64)
+    return;
+
+  for (size_t i = 0; i < 32; i++)
+    {
+      char hex_byte[3] = { str[i * 2], str[i * 2 + 1], '\0' };
+      char *endptr = NULL;
+      goodix_5e0a_psk_override[i] = (guint8) strtoul (hex_byte, &endptr, 16);
+      if (endptr && *endptr != '\0')
+        return;
+    }
+
+  xx_cls->psk = goodix_5e0a_psk_override;
+  xx_cls->psk_len = sizeof (goodix_5e0a_psk_override);
+  fp_info ("5e0a: Loaded per-device PSK override from %s", path);
+}
+
 static void
 dev_open (FpDevice *dev)
 {
   GError *error = NULL;
+
+  goodix_5e0a_load_psk_override (dev);
 
   if (!goodix_dev_init (dev, &error))
     {
