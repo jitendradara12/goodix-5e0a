@@ -164,15 +164,15 @@ try {
         $computedHashBytes = $sha.ComputeHash($plain)
         $computedHashHex = [System.BitConverter]::ToString($computedHashBytes).Replace("-", "").ToLower()
 
-        if ($computedHashHex -eq $expectedHash) {
-            Write-Host "[+] Hash verification MATCHED: $computedHashHex"
-        } else {
-            Write-Host "[-] WARNING: Decrypted key hash ($computedHashHex) does not match expected hash ($expectedHash)."
+        if ($computedHashHex -ne $expectedHash) {
+            Write-Error "[-] FATAL: Decrypted key hash ($computedHashHex) does NOT match hardware MCU hash ($expectedHash). Aborting without writing PSK file."
+            exit 1
         }
+        Write-Host "[+] Hash verification MATCHED: $computedHashHex"
     }
 
     [System.IO.File]::WriteAllText($ResolvedOutput, $hex + "`n")
-    Write-Host "[+] Written to $ResolvedOutput"
+    Write-Host "[+] Successfully generated $ResolvedOutput"
 } catch {
     Write-Error "Decryption failed under SYSTEM: $_"
     exit 1
