@@ -1,0 +1,405 @@
+{
+  "hardware_run": false,
+  "backend": "native-production-loader",
+  "scenario": "labeled",
+  "method": "current",
+  "dll_sha256": "9990ab24af01b8c5c575c73cf7a95a7d675655adfb4183b6c030de2912ec23de",
+  "provenance": {
+    "enrollment": [
+      [
+        "enroll/touch_02/frame_0005_raw.pgm",
+        "enroll/touch_02/frame_0006_raw.pgm",
+        "enroll/touch_02/frame_0007_raw.pgm",
+        "enroll/touch_02/frame_0008_raw.pgm"
+      ],
+      [
+        "enroll/touch_03/frame_0009_raw.pgm",
+        "enroll/touch_03/frame_0010_raw.pgm",
+        "enroll/touch_03/frame_0011_raw.pgm",
+        "enroll/touch_03/frame_0012_raw.pgm"
+      ],
+      [
+        "enroll/touch_04/frame_0013_raw.pgm",
+        "enroll/touch_04/frame_0014_raw.pgm",
+        "enroll/touch_04/frame_0015_raw.pgm",
+        "enroll/touch_04/frame_0016_raw.pgm"
+      ],
+      [
+        "enroll/touch_05/frame_0017_raw.pgm",
+        "enroll/touch_05/frame_0018_raw.pgm",
+        "enroll/touch_05/frame_0019_raw.pgm",
+        "enroll/touch_05/frame_0020_raw.pgm"
+      ],
+      [
+        "enroll/touch_06/frame_0021_raw.pgm",
+        "enroll/touch_06/frame_0022_raw.pgm",
+        "enroll/touch_06/frame_0023_raw.pgm",
+        "enroll/touch_06/frame_0024_raw.pgm"
+      ],
+      [
+        "enroll/touch_07/frame_0025_raw.pgm",
+        "enroll/touch_07/frame_0026_raw.pgm",
+        "enroll/touch_07/frame_0027_raw.pgm",
+        "enroll/touch_07/frame_0028_raw.pgm"
+      ],
+      [
+        "enroll/touch_08/frame_0029_raw.pgm",
+        "enroll/touch_08/frame_0030_raw.pgm",
+        "enroll/touch_08/frame_0031_raw.pgm",
+        "enroll/touch_08/frame_0032_raw.pgm"
+      ],
+      [
+        "enroll/touch_09/frame_0033_raw.pgm",
+        "enroll/touch_09/frame_0034_raw.pgm",
+        "enroll/touch_09/frame_0035_raw.pgm",
+        "enroll/touch_09/frame_0036_raw.pgm"
+      ],
+      [
+        "enroll/touch_10/frame_0037_raw.pgm",
+        "enroll/touch_10/frame_0038_raw.pgm",
+        "enroll/touch_10/frame_0039_raw.pgm",
+        "enroll/touch_10/frame_0040_raw.pgm"
+      ],
+      [
+        "enroll/touch_11/frame_0041_raw.pgm",
+        "enroll/touch_11/frame_0042_raw.pgm",
+        "enroll/touch_11/frame_0043_raw.pgm",
+        "enroll/touch_11/frame_0044_raw.pgm"
+      ],
+      [
+        "enroll/touch_12/frame_0045_raw.pgm",
+        "enroll/touch_12/frame_0046_raw.pgm",
+        "enroll/touch_12/frame_0047_raw.pgm",
+        "enroll/touch_12/frame_0048_raw.pgm"
+      ],
+      [
+        "enroll/touch_13/frame_0049_raw.pgm",
+        "enroll/touch_13/frame_0050_raw.pgm",
+        "enroll/touch_13/frame_0051_raw.pgm",
+        "enroll/touch_13/frame_0052_raw.pgm"
+      ]
+    ],
+    "probes": [
+      {
+        "id": "genuine/touch_01",
+        "label": "genuine",
+        "frames": [
+          "genuine/touch_01/frame_0053_raw.pgm",
+          "genuine/touch_01/frame_0054_raw.pgm",
+          "genuine/touch_01/frame_0055_raw.pgm",
+          "genuine/touch_01/frame_0056_raw.pgm"
+        ]
+      },
+      {
+        "id": "genuine/touch_02",
+        "label": "genuine",
+        "frames": [
+          "genuine/touch_02/frame_0057_raw.pgm"
+        ]
+      },
+      {
+        "id": "genuine/touch_03",
+        "label": "genuine",
+        "frames": [
+          "genuine/touch_03/frame_0058_raw.pgm"
+        ]
+      },
+      {
+        "id": "genuine/touch_04",
+        "label": "genuine",
+        "frames": [
+          "genuine/touch_04/frame_0059_raw.pgm"
+        ]
+      },
+      {
+        "id": "genuine/touch_05",
+        "label": "genuine",
+        "frames": [
+          "genuine/touch_05/frame_0060_raw.pgm"
+        ]
+      },
+      {
+        "id": "genuine/touch_06",
+        "label": "genuine",
+        "frames": [
+          "genuine/touch_06/frame_0061_raw.pgm",
+          "genuine/touch_06/frame_0062_raw.pgm",
+          "genuine/touch_06/frame_0063_raw.pgm",
+          "genuine/touch_06/frame_0064_raw.pgm"
+        ]
+      },
+      {
+        "id": "genuine/touch_07",
+        "label": "genuine",
+        "frames": [
+          "genuine/touch_07/frame_0065_raw.pgm"
+        ]
+      },
+      {
+        "id": "genuine/touch_08",
+        "label": "genuine",
+        "frames": [
+          "genuine/touch_08/frame_0066_raw.pgm",
+          "genuine/touch_08/frame_0067_raw.pgm",
+          "genuine/touch_08/frame_0068_raw.pgm",
+          "genuine/touch_08/frame_0069_raw.pgm"
+        ]
+      },
+      {
+        "id": "genuine/touch_09",
+        "label": "genuine",
+        "frames": [
+          "genuine/touch_09/frame_0070_raw.pgm",
+          "genuine/touch_09/frame_0071_raw.pgm",
+          "genuine/touch_09/frame_0072_raw.pgm",
+          "genuine/touch_09/frame_0073_raw.pgm"
+        ]
+      },
+      {
+        "id": "genuine/touch_10",
+        "label": "genuine",
+        "frames": [
+          "genuine/touch_10/frame_0074_raw.pgm",
+          "genuine/touch_10/frame_0075_raw.pgm",
+          "genuine/touch_10/frame_0076_raw.pgm",
+          "genuine/touch_10/frame_0077_raw.pgm"
+        ]
+      },
+      {
+        "id": "impostor/touch_01",
+        "label": "wrong",
+        "frames": [
+          "impostor/touch_01/frame_0078_raw.pgm",
+          "impostor/touch_01/frame_0079_raw.pgm",
+          "impostor/touch_01/frame_0080_raw.pgm",
+          "impostor/touch_01/frame_0081_raw.pgm"
+        ]
+      },
+      {
+        "id": "impostor/touch_02",
+        "label": "wrong",
+        "frames": [
+          "impostor/touch_02/frame_0082_raw.pgm",
+          "impostor/touch_02/frame_0083_raw.pgm",
+          "impostor/touch_02/frame_0084_raw.pgm",
+          "impostor/touch_02/frame_0085_raw.pgm"
+        ]
+      },
+      {
+        "id": "impostor/touch_03",
+        "label": "wrong",
+        "frames": [
+          "impostor/touch_03/frame_0086_raw.pgm",
+          "impostor/touch_03/frame_0087_raw.pgm",
+          "impostor/touch_03/frame_0088_raw.pgm",
+          "impostor/touch_03/frame_0089_raw.pgm"
+        ]
+      },
+      {
+        "id": "impostor/touch_04",
+        "label": "wrong",
+        "frames": [
+          "impostor/touch_04/frame_0090_raw.pgm",
+          "impostor/touch_04/frame_0091_raw.pgm",
+          "impostor/touch_04/frame_0092_raw.pgm",
+          "impostor/touch_04/frame_0093_raw.pgm"
+        ]
+      },
+      {
+        "id": "impostor/touch_05",
+        "label": "wrong",
+        "frames": [
+          "impostor/touch_05/frame_0094_raw.pgm",
+          "impostor/touch_05/frame_0095_raw.pgm",
+          "impostor/touch_05/frame_0096_raw.pgm",
+          "impostor/touch_05/frame_0097_raw.pgm"
+        ]
+      },
+      {
+        "id": "impostor/touch_06",
+        "label": "wrong",
+        "frames": [
+          "impostor/touch_06/frame_0098_raw.pgm",
+          "impostor/touch_06/frame_0099_raw.pgm",
+          "impostor/touch_06/frame_0100_raw.pgm",
+          "impostor/touch_06/frame_0101_raw.pgm"
+        ]
+      },
+      {
+        "id": "impostor/touch_07",
+        "label": "wrong",
+        "frames": [
+          "impostor/touch_07/frame_0102_raw.pgm",
+          "impostor/touch_07/frame_0103_raw.pgm",
+          "impostor/touch_07/frame_0104_raw.pgm",
+          "impostor/touch_07/frame_0105_raw.pgm"
+        ]
+      },
+      {
+        "id": "impostor/touch_08",
+        "label": "wrong",
+        "frames": [
+          "impostor/touch_08/frame_0106_raw.pgm",
+          "impostor/touch_08/frame_0107_raw.pgm",
+          "impostor/touch_08/frame_0108_raw.pgm",
+          "impostor/touch_08/frame_0109_raw.pgm"
+        ]
+      },
+      {
+        "id": "impostor/touch_09",
+        "label": "wrong",
+        "frames": [
+          "impostor/touch_09/frame_0110_raw.pgm",
+          "impostor/touch_09/frame_0111_raw.pgm",
+          "impostor/touch_09/frame_0112_raw.pgm",
+          "impostor/touch_09/frame_0113_raw.pgm"
+        ]
+      },
+      {
+        "id": "impostor/touch_10",
+        "label": "wrong",
+        "frames": [
+          "impostor/touch_10/frame_0114_raw.pgm",
+          "impostor/touch_10/frame_0115_raw.pgm",
+          "impostor/touch_10/frame_0116_raw.pgm",
+          "impostor/touch_10/frame_0117_raw.pgm"
+        ]
+      }
+    ],
+    "input_sha256": {
+      "enroll/touch_02/frame_0005_raw.pgm": "57b180284750569351db2d2bf0905a2b2851abaf8d5772a0d244e84378973759",
+      "enroll/touch_02/frame_0006_raw.pgm": "edc66cd8635d793049a91dcc6f92ee6f9b566d2810286251aba7d64930df06d4",
+      "enroll/touch_02/frame_0007_raw.pgm": "8d9353601a4f538a3f42d3582f7dceef84672e81e49c8219f3a8db30590bb341",
+      "enroll/touch_02/frame_0008_raw.pgm": "99c519b81eccd0e80859b7b168844823ab380fe1950a49aa00f44ea308bba46e",
+      "enroll/touch_03/frame_0009_raw.pgm": "e2aba045b40652f5b8c07365c6c77888e96a0f8cb76fbff56d0c1f27aab6191f",
+      "enroll/touch_03/frame_0010_raw.pgm": "eed259c2dc8d284ba5831697340ba610b9b6e8a110474cbf192d26d12344c95d",
+      "enroll/touch_03/frame_0011_raw.pgm": "cdfbc6541460a67aa531d45e02726e920e0037f1873911d4f052b576ce1270db",
+      "enroll/touch_03/frame_0012_raw.pgm": "903aac2d27cb1882e536a8d59c47b7e842c8f0a7a048350b2d9c942cbe409b29",
+      "enroll/touch_04/frame_0013_raw.pgm": "08c4816ef9d37d9ebe805131f52a3fe16f7e4356f5fd24138ffad97fb49a7ae2",
+      "enroll/touch_04/frame_0014_raw.pgm": "1d6bb9b552828af9c70341a1b09e8a76ea2b5da9e0f06e101a8f15178a4e5824",
+      "enroll/touch_04/frame_0015_raw.pgm": "dc3d3cb06cceb0f8474c84ee99d2db659f2f445459067c301feca14d450e3fcc",
+      "enroll/touch_04/frame_0016_raw.pgm": "51d912ed0969cdf6e242995ea1059bf368e2e2455bfeec6a162c0e68be40a318",
+      "enroll/touch_05/frame_0017_raw.pgm": "773ae6709c7fb99875b265ba5bca35d7b53abdc5829cf4268f3649a5ecfad490",
+      "enroll/touch_05/frame_0018_raw.pgm": "f81628b25f40ff2320ffa27518cd5e3e8a9c20f2d11fa53342b32c87368d665b",
+      "enroll/touch_05/frame_0019_raw.pgm": "6f3e13d1a2e2c5949ff93b627f0373ddd092bf6601d83e5430fccf76ba211fdb",
+      "enroll/touch_05/frame_0020_raw.pgm": "a0a1152facba1f13789f2bb83ff02dd9a54aea44e9287e36b27216fdf880c2ea",
+      "enroll/touch_06/frame_0021_raw.pgm": "a28749889903a81731cf3b04bcedc5222d0a12201e71aeffdc978168b898a768",
+      "enroll/touch_06/frame_0022_raw.pgm": "b0ca06f99fb283488a92a961086aa225a7f58d9530ff7500bd3f3de080ac485f",
+      "enroll/touch_06/frame_0023_raw.pgm": "905cc48777427bd29b1eb04cb0d726eee67ec8352b4b9c2bafa496686bae5094",
+      "enroll/touch_06/frame_0024_raw.pgm": "8eed37a92d3529482caa879d5b694e7fbe5b3850900dd6fbe7c872e9bc5197f7",
+      "enroll/touch_07/frame_0025_raw.pgm": "b81fb74f8ddf1c27e86499b603de786309fecfddacc6785fed0f1b7e940b2ac0",
+      "enroll/touch_07/frame_0026_raw.pgm": "45768c57fd1fd639cdd7f7a8e8c7125187b0d5a5e6e771f3832eaf820b09fecc",
+      "enroll/touch_07/frame_0027_raw.pgm": "4706f457231597ffc273bc41b604f17e606092b9ac1130188e359f5f12b37b2c",
+      "enroll/touch_07/frame_0028_raw.pgm": "54a4f88e131bff504cba1c334422284894f18fee71cad980d57dd8d9232aa422",
+      "enroll/touch_08/frame_0029_raw.pgm": "67c6f8294a40a535123ae0bdb425b76f77416b0ffa14036ed73d3a8ab2785bef",
+      "enroll/touch_08/frame_0030_raw.pgm": "ad5baa120ce74da73e1f994d481761ca1868821a96527802b70c90376ee0abfa",
+      "enroll/touch_08/frame_0031_raw.pgm": "e5a0713e75cd101e3a75be7e069bf40403d7bfd4fc02c2172067b9a58b3a5ede",
+      "enroll/touch_08/frame_0032_raw.pgm": "3d8998f61a17f00f3cf5af5d99e45255b2a8c949cc3caa4de0bc86774ff3ad74",
+      "enroll/touch_09/frame_0033_raw.pgm": "a9d5554f9c3a4f6d15e7cc3a14617f75783b1d3d1a6324aa37a637d8628e4632",
+      "enroll/touch_09/frame_0034_raw.pgm": "6738469d5d30db7fcd98ee1f04d29d871a1f119bf527e65757984e3295d5ed52",
+      "enroll/touch_09/frame_0035_raw.pgm": "0dd21ea67faf12dfa5b97e60c9f792118a4cb1e712db83cee28edb9a52e80128",
+      "enroll/touch_09/frame_0036_raw.pgm": "59fbc37620501975d3b7bbc4170e496c7bd26fe6f9e1fcc04ae91f2cd490965a",
+      "enroll/touch_10/frame_0037_raw.pgm": "80622c11958423225f8ae43bf65c045d63c4eab9378075d4fda1a2609ffffb3f",
+      "enroll/touch_10/frame_0038_raw.pgm": "7abd5bcb4f14e011e255c3fada353696ea47e7cfb3ac759631c0a6298a7c5636",
+      "enroll/touch_10/frame_0039_raw.pgm": "9749e3db917327f5ac78ce8d2d1c06d5db9ad2f7c3328355fcc1a576ab900419",
+      "enroll/touch_10/frame_0040_raw.pgm": "63a70f3ee79836ec2ab57629a79831ad318e9263c52a9116310c8d55a2594498",
+      "enroll/touch_11/frame_0041_raw.pgm": "22ae73f73a1ec837d8513a4c4d6524eb2ab0cb91a73b33103ed9a5887220e606",
+      "enroll/touch_11/frame_0042_raw.pgm": "8fad406046d9fcb3639b9b610c6fbd088047b4a9138354782ba961b54796f2e7",
+      "enroll/touch_11/frame_0043_raw.pgm": "fed50501450dca3d2734d6cf124246af7cc061a22a31f3f5d1a3e1d6281961e7",
+      "enroll/touch_11/frame_0044_raw.pgm": "cf2692ccdaea1c97996a0f18f4d15b552442bfe1ffa9a85ef78e96fde2c4ae11",
+      "enroll/touch_12/frame_0045_raw.pgm": "d5377d4bb67d52c25fe9d11c5807f254819db0073385150c6cd98910d61d991e",
+      "enroll/touch_12/frame_0046_raw.pgm": "e8fdfb742f9fffea28049bc342b5aee02e2f238f70ebd19823078f3f868f1d77",
+      "enroll/touch_12/frame_0047_raw.pgm": "2b3b3d897843e9686a36ca8b92d7d6dd968dc2008f87c42f53a67a0940b6f029",
+      "enroll/touch_12/frame_0048_raw.pgm": "896c2dc2fe84c9f21c07fc1ae57a847258390f6efbaf57748b7b720ebc8b5f46",
+      "enroll/touch_13/frame_0049_raw.pgm": "f582d1adcbc20ac584a6e3962fa61c5fada2d0b6ca9ba235480d3fbf76bf3aeb",
+      "enroll/touch_13/frame_0050_raw.pgm": "36203569e33b7bdfe19fe7dd88cd9522b470b66abefe109272b2a38bbea27e49",
+      "enroll/touch_13/frame_0051_raw.pgm": "cb80138f60478f1d17a5300961fa4270173df14b8a34d97ad074a938a6d5cb26",
+      "enroll/touch_13/frame_0052_raw.pgm": "674c00009b1b794cf077f1938ab749225d863d6abc9887fa045ebca08b7a3eb5",
+      "genuine/touch_01/frame_0053_raw.pgm": "ddbfd3c8fb0aa4e543d4c5788b496a89521bb3cc101b2ff66eaef85ae9c0a9c1",
+      "genuine/touch_01/frame_0054_raw.pgm": "ced63be2a5acfbdebcdb3c9f886d5e04777e749519d69b404522685d28d744ba",
+      "genuine/touch_01/frame_0055_raw.pgm": "957aa13dbec978d049fbfc5dcb89f93095f7977cb8a43b0fbf0432c4023dadaa",
+      "genuine/touch_01/frame_0056_raw.pgm": "297a85344a13284bf017107cdff6e1722ea794146cd10f5da5bb4f90e8502843",
+      "genuine/touch_02/frame_0057_raw.pgm": "4f409fd46cee3bf6841ca7fa851aeb94aa63f134ec35125ac97dbbb005438fe5",
+      "genuine/touch_03/frame_0058_raw.pgm": "743ca0ecf7a346a94731104efb30fc2d7cb40ff7a991b24737d05d03ceedeb96",
+      "genuine/touch_04/frame_0059_raw.pgm": "e0ec5a21f63167e775b24e551ee4ef759c8fb3d72ba2238d7bc0dac26a89a494",
+      "genuine/touch_05/frame_0060_raw.pgm": "0cb587cd31b4aa0f3667e9e5de4029da38d4afc37fba0c6a5736cdc09076636e",
+      "genuine/touch_06/frame_0061_raw.pgm": "caf525bb68f0094a40c3d0e3b31e6f385bfb9720aa7cda22206b33e5eb58e80b",
+      "genuine/touch_06/frame_0062_raw.pgm": "b14a014b01b91a1e7b00134251f17bb371606aacd2b2c3a60cd6ce4f4b1c43f6",
+      "genuine/touch_06/frame_0063_raw.pgm": "1a3dae5e9c29be35f7b4704020cc3ad7069d6a63d6412de20016706e5c5ecfb3",
+      "genuine/touch_06/frame_0064_raw.pgm": "82f64274da92f720329c0c8793bd3d5733c153002ee774c8067cf1656bc92c00",
+      "genuine/touch_07/frame_0065_raw.pgm": "4cda6d14389be12907cbf60da3bf44335c9b2aa6115d58cb8875b00ff54071c9",
+      "genuine/touch_08/frame_0066_raw.pgm": "d8bab46c8a75e18dfa979b7a36842c26755ebe0270ccb8a0f01dc83e94751bdb",
+      "genuine/touch_08/frame_0067_raw.pgm": "e481553e3b9b3544237690011376388938a42cf783db044e1dc3f8cae6e9bded",
+      "genuine/touch_08/frame_0068_raw.pgm": "59ed8b11ccd833b83fb49f3eae204acdaaa9802e14346afb71806ab9614b5027",
+      "genuine/touch_08/frame_0069_raw.pgm": "3ec66ecf757a97568e47774f4f6e8145c59341ba0329edadc3de888eb8782999",
+      "genuine/touch_09/frame_0070_raw.pgm": "3bc5bb743a1117ea690ff666656e61921e9b5577fe0518eb5a05bfc1416d357e",
+      "genuine/touch_09/frame_0071_raw.pgm": "b86bf1fcef5a5e504137af2fdcb7a0ec1ebb3a0308c0807fa3e176099b59ebbc",
+      "genuine/touch_09/frame_0072_raw.pgm": "978169e3557d130e47f06bd7b09e2c907caa9a530b2926a48f6b290e72218d00",
+      "genuine/touch_09/frame_0073_raw.pgm": "aa298fc220ab00b00e6673f3e7b18d5e3cd914b2b4f598316ab8c10f21a6b2cb",
+      "genuine/touch_10/frame_0074_raw.pgm": "1dd7ffc229f96f2eb69c19622fce7d5bd2db31515daae5e04bed5cb085744c91",
+      "genuine/touch_10/frame_0075_raw.pgm": "b8120ef3a9f975355eb0982fcda2b0807876acff361bb5e730b2672e62059242",
+      "genuine/touch_10/frame_0076_raw.pgm": "51affbfc9c71fbaac2e3fc6529c49cfe8c4ff2242aa2dfb77c3cf5d80a10d705",
+      "genuine/touch_10/frame_0077_raw.pgm": "6d70c9ffb568b5b8c6e63f1539a2465adef8452ce8831fd56e858b52364015f3",
+      "impostor/touch_01/frame_0078_raw.pgm": "31edd713ec7bb9a34cc794646e1380b3590752a38a4fa0e844c650304485ba32",
+      "impostor/touch_01/frame_0079_raw.pgm": "dbe18b463218c88c44858fc421c0a60adff8d97a8c1e3b387aeca326972a9bcc",
+      "impostor/touch_01/frame_0080_raw.pgm": "469a15090b5cba1b13ea95e6db6b92138c9b86a06fae13d14dc69d751c4cfd03",
+      "impostor/touch_01/frame_0081_raw.pgm": "356e6bf646d611bbf03f241c9a7447a020e61e8227519b5e93963638f75ec803",
+      "impostor/touch_02/frame_0082_raw.pgm": "d5929d54b8ff104330889ed8dfe5f25a8eeef5a9f4b6c0e7cb43c0815da4b2bf",
+      "impostor/touch_02/frame_0083_raw.pgm": "172f96618baab98b80be75451e1ab8b0ca24be7bf620022fdcbfebdfb7628f62",
+      "impostor/touch_02/frame_0084_raw.pgm": "d708a4d0a6648fdca8c8f3ead9bcff80cd727e8bc735babefb6aab3239742f6b",
+      "impostor/touch_02/frame_0085_raw.pgm": "bdcc8b6c8495ab324d5692665959aface3ae99ab3904f38ec60fcfe3979afa36",
+      "impostor/touch_03/frame_0086_raw.pgm": "db046157126f45e0324040e6496cf93ffd49d9abb6844e9569cd6c12dad7cb94",
+      "impostor/touch_03/frame_0087_raw.pgm": "ec299b5a7f2273a92b1ff16be43f52c0d69a9e745c1e9a982294458574f9e4d7",
+      "impostor/touch_03/frame_0088_raw.pgm": "0388713f16201c2ebdde5fde0520e13d9689efdd9933d9b198505971aa142459",
+      "impostor/touch_03/frame_0089_raw.pgm": "b189cab24857ec220f757e152ba2460f60bc34b88f7b71b050337bd59ca412c2",
+      "impostor/touch_04/frame_0090_raw.pgm": "e1f035c18b5ede0b723b2eba5a02a4403a4c073c9f1f46206da37bcff116d2e9",
+      "impostor/touch_04/frame_0091_raw.pgm": "df2097bb2b98740b4f50bebe6030dfae5114798613e0d954707675b7f2e8aa45",
+      "impostor/touch_04/frame_0092_raw.pgm": "d217327334e200a59cac070a607dd4e7bfce75c05f216b35157896012718dfc4",
+      "impostor/touch_04/frame_0093_raw.pgm": "2bcba397881d2df178526439c41b03f02a823229824c5792f11a82328b2c9a9e",
+      "impostor/touch_05/frame_0094_raw.pgm": "9319ddfeb8088da77fec6c8dd9274640708c023f25b33ca51f9a5243a00aeee9",
+      "impostor/touch_05/frame_0095_raw.pgm": "ffe587211918674d3165d5164a100a35265af8d441bb9e0d32df7438fb71c51c",
+      "impostor/touch_05/frame_0096_raw.pgm": "63c28c194ca20ddd5085227a782facf1f2b141fa7bf5c5059815528dbf194f4f",
+      "impostor/touch_05/frame_0097_raw.pgm": "b14e77f3b26fe80f021f8866e2da1aad420cb9b9fa1dc4a13ca2fd65cb17d734",
+      "impostor/touch_06/frame_0098_raw.pgm": "c510661d95e10000ba305f64d9a57fa1183ad18539af596ce2cf44fb2948e6a1",
+      "impostor/touch_06/frame_0099_raw.pgm": "8101fa2313d028fda2b6cf3c23e6cb98eacae4008d7745983c0de322b35e55f2",
+      "impostor/touch_06/frame_0100_raw.pgm": "9f3afd5fd3bd4886d6077625cb997a9d1588720c354f870cea4021ed7043e9ca",
+      "impostor/touch_06/frame_0101_raw.pgm": "78b6e2a8d1ac94611d4c98654288949a1a7b06a1cac821002c6b5b12875d3200",
+      "impostor/touch_07/frame_0102_raw.pgm": "d100944ad1f51d707344bbbfa690a9e090006ba63a17e884ef74acfaead2627f",
+      "impostor/touch_07/frame_0103_raw.pgm": "f7b80be1271abe0693a0085a389c9f1865149064de2c697cada84d73b9109d25",
+      "impostor/touch_07/frame_0104_raw.pgm": "a3fe2b2adb2cb02e931f9486150539dafb082d87b7f8bc67574c405a5782fc53",
+      "impostor/touch_07/frame_0105_raw.pgm": "4f9fe4f2994361e4f28084880453eae064877dec50afb45c7e405625970526e5",
+      "impostor/touch_08/frame_0106_raw.pgm": "48955b79595913c4c926555318d71f05a4f5afa0d548d7fe385aaf53c71146d7",
+      "impostor/touch_08/frame_0107_raw.pgm": "9626f734550ae7e5f6ea5de2962254c772235f484d79ce6f7867e75aaad82f33",
+      "impostor/touch_08/frame_0108_raw.pgm": "f5ae656efb8b08aaa03000da9b8f6d4ae5e7317bb95a3b9fc8e6ad6cb588f780",
+      "impostor/touch_08/frame_0109_raw.pgm": "a8f850f9bac98e7f6558a8d614ee1bc2538071a4a718470d4bcb94ac580e6fe6",
+      "impostor/touch_09/frame_0110_raw.pgm": "f2345c70a056c92f21a6d138b1dfb6650d078fc282f9c6cec12200da6a86e5d1",
+      "impostor/touch_09/frame_0111_raw.pgm": "0d8720693d37e38f0130bce89d8c3f258930781120a1e3666b4dbf19a587b3f0",
+      "impostor/touch_09/frame_0112_raw.pgm": "64b9c78838dda0cc61ce8490c94c374f762795cee9d1e90115c686e414880249",
+      "impostor/touch_09/frame_0113_raw.pgm": "c32a66547c24827ebd1fb929ca02b38a0a41ad23048671634fc493133846161b",
+      "impostor/touch_10/frame_0114_raw.pgm": "6eacfe2ecb7224430731eb40462d7ebaa95aafb20c3108d6c711058fd855fb25",
+      "impostor/touch_10/frame_0115_raw.pgm": "3cd7b6b34ba7b93934f0c25b4cc2db963aa26478ed1b7fd68b65fb64ea50aae2",
+      "impostor/touch_10/frame_0116_raw.pgm": "0ddfe727e18f37107aeeb49d1db0f7313e4ea8ec95688990312a72dc8b6d7bb3",
+      "impostor/touch_10/frame_0117_raw.pgm": "5fcb06f429be664d11748958d204ee72d83284cf0597b85808871776b66ee0fd"
+    },
+    "probe_policy": "driver",
+    "calibration": "none; optional proxy derived only from listed enrollment frames",
+    "synthetic_controls": "PCG64 seed 20261018; flat, Gaussian sigma80, enrollment-FPN + same noise",
+    "matcher_layout": "profile10"
+  },
+  "result": {
+    "enrollment_complete": false,
+    "failed_touch": 1,
+    "enrollment": [
+      {
+        "touch": 1,
+        "return_code": 131,
+        "accepted": 0,
+        "progress": 0,
+        "quality": 0,
+        "overlap": 0,
+        "selected_frame": 4
+      }
+    ],
+    "frame_errors": []
+  }
+}

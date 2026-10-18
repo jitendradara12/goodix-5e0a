@@ -1,5 +1,8 @@
 # Goodix 27c6:5e0a Linux Driver
 
+**Issue #12 / PR #13 testers:** use the [temporary hardware test](docs/HARDWARE_TEST.md).
+This branch is an experiment workbench; the test does not install a driver or replace existing enrollments.
+
 Linux fingerprint driver for Goodix 27c6:5e0a sensors (found in laptops like the Realme Book Prime).
 
 Runs as a libfprint module and loads Goodix's Windows engine (`GoodixEngineAdapter.dll`) via a PE loader.

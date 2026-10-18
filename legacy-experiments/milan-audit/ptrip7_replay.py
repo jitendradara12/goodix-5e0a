@@ -24,6 +24,7 @@ SOURCE = (
 )
 METHODS = ("current", "bandpass", "fpn-bandpass-s0-std60", "vendor-enrollment-estimate")
 WINDOWS_METHOD = "vendor-windows-cache"
+CACHE_FPN_METHODS = ("cache-fpn-bandpass-std60", "cache-fpn-scaled-bandpass-std60")
 
 
 def frames(directory):
@@ -205,10 +206,18 @@ def worker(args):
     dataset, policy, provenance = selection(args.dataset, args.scenario)
     if args.scenario == "labeled":
         provenance["synthetic_controls"] = synthetic_controls(dataset)
-    factory = lambda: NativeEngine(DLL, args.native_library)
+    class AuditEngine(NativeEngine):
+        def image(self, pixels, w=64, h=80, bits=8):
+            if args.matcher_layout == "profile10":
+                pixels = np.frombuffer(pixels, dtype=np.uint8).reshape(80, 64).T.copy().tobytes()
+                w, h = 80, 64
+            return super().image(pixels, w, h, bits)
+
+    factory = lambda: AuditEngine(DLL, args.native_library)
+    provenance["matcher_layout"] = args.matcher_layout
     normalizer = None
     method = args.method
-    if method == WINDOWS_METHOD:
+    if method in (WINDOWS_METHOD, *CACHE_FPN_METHODS):
         if args.windows_calibration is None:
             raise ValueError("vendor-windows-cache requires --windows-calibration")
         root = args.windows_calibration.resolve()
@@ -227,9 +236,13 @@ def worker(args):
                     f"Windows calibration export checksum mismatch: {name}"
                 )
         dataset["calibration"] = read_pgm(root / "background_raw.pgm")
+        if args.windows_background_layout == "transpose":
+            dataset["calibration"] = np.ascontiguousarray(
+                dataset["calibration"].reshape(64, 80).T
+            )
         dataset["calibration_state"] = (
             (root / "calibration_state.bin").read_bytes()
-            if "calibration_state.bin" in exported
+            if "calibration_state.bin" in exported and args.windows_state == "load"
             else None
         )
         provenance["calibration"] = {
@@ -240,8 +253,33 @@ def worker(args):
             "source_sha256": metadata["source_sha256"],
             "export_sha256": exported,
             "calibration_state_loaded": dataset["calibration_state"] is not None,
+            "background_layout": args.windows_background_layout,
+            "vendor_layout": args.vendor_layout,
         }
-        method = "vendor"
+        if method in CACHE_FPN_METHODS:
+            background = dataset["calibration"].astype(np.float32)
+            fpn = background - box_mean(background, 1)
+            gain = 1.0
+            if method == "cache-fpn-scaled-bandpass-std60":
+                # Fit one scalar on enrollment only. No probe labels/scores enter.
+                target = estimate_fpn(dataset["enrollment"]).astype(np.float64)
+                x = fpn.astype(np.float64) - np.mean(fpn, dtype=np.float64)
+                target -= target.mean()
+                denominator = float(np.sum(x * x))
+                if denominator <= 0:
+                    raise ValueError("No background residual variance for gain fit")
+                gain = float(np.sum(x * target) / denominator)
+                if not np.isfinite(gain) or gain <= 0:
+                    raise ValueError("Invalid fitted calibration gain")
+            provenance["background_fpn_gain"] = gain
+            provenance["background_fpn_gain_fit"] = (
+                "single least-squares scalar fitted to 48 enrollment residuals only"
+                if method == "cache-fpn-scaled-bandpass-std60" else "fixed unit gain"
+            )
+            normalizer = lambda raw: fpn_bandpass(raw, fpn * np.float32(gain))
+            method = "cache-fpn"
+        else:
+            method = "vendor"
     if method in {"fpn-bandpass-s0-std60", "vendor-enrollment-estimate"}:
         fpn = estimate_fpn(dataset["enrollment"])
         provenance["fpn_estimator"] = "mean 3x3 residual of enrollment frames only"
@@ -257,7 +295,8 @@ def worker(args):
             )
             method = "vendor"
     result = run_method(
-        dataset, method, factory, normalizer=normalizer, probe_policy=policy
+        dataset, method, factory, normalizer=normalizer, probe_policy=policy,
+        vendor_layout=args.vendor_layout,
     )
     output = {
         "hardware_run": False,
@@ -292,7 +331,12 @@ def main():
     parser.add_argument("--native-library", type=Path, required=True)
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--scenario", choices=("labeled", "fold1", "fold2"))
-    parser.add_argument("--method", choices=(*METHODS, WINDOWS_METHOD))
+    parser.add_argument("--method", choices=(*METHODS, WINDOWS_METHOD, *CACHE_FPN_METHODS))
+    parser.add_argument("--windows-background-layout", choices=("as-exported", "transpose"), default="as-exported")
+    parser.add_argument("--windows-state", choices=("load", "omit"), default="load")
+    parser.add_argument("--vendor-layout", choices=("legacy", "profile10"), default="legacy")
+    parser.add_argument("--matcher-layout", choices=("canonical", "profile10"), default="canonical",
+                        help="Offline geometry diagnostic only; production remains 64x80")
     parser.add_argument(
         "--windows-calibration",
         type=Path,
@@ -323,6 +367,10 @@ def main():
                 str(args.out_dir),
                 "--scenario",
                 scenario,
+                "--windows-background-layout", args.windows_background_layout,
+                "--windows-state", args.windows_state,
+                "--vendor-layout", args.vendor_layout,
+                "--matcher-layout", args.matcher_layout,
                 "--method",
                 method,
             ]

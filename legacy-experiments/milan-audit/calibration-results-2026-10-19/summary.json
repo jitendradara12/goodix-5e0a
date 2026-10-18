@@ -1,0 +1,374 @@
+{
+  "source": "https://github.com/jitendradara12/goodix-5e0a/issues/12#issuecomment-6251730042",
+  "archive_sha256": "c800c443b6bacbf4ba8f028c1bd7669e96ffa890ff400d07f0cbdbcf22de75a7",
+  "export_metadata_sha256": "cdcf5ea3960cabe08751f1143c453033f75b91fcd72a01781cd1d17379ac893f",
+  "source_cache_sha256": "fd5a01890d58f44f932d797e4360b64b0c44a8adad191be15c851fad0f19098b",
+  "export_sha256": {
+    "background_raw.pgm": "2ae1d212f45f0cd5b8ddbfb029603926962ed08e15e72000a69d1c80048264a2",
+    "calibration_state.bin": "045a4339ce468e39c0b937d86e48aa198e21905065bf76b6863a7d465d800112"
+  },
+  "same_sensor_provenance": "contributor confirms original Windows install on same laptop; cache last written 2026-10-17 02:32, per comment",
+  "alignment_3x3_residual_correlation": {
+    "enrollment_only_as_exported": -0.060016040109532494,
+    "enrollment_only_transposed": 0.7996190380681667,
+    "all_213_as_exported": -0.05914792327090423,
+    "all_213_transposed": 0.8032507775160301
+  },
+  "experiments": [
+    {
+      "variant": "as-exported",
+      "scenario": "labeled",
+      "method": "vendor-windows-cache",
+      "enrollment_complete": true,
+      "counts": {
+        "blank": {
+          "touch_groups": 1,
+          "matched": 0
+        },
+        "genuine": {
+          "touch_groups": 10,
+          "matched": 0
+        },
+        "noise": {
+          "touch_groups": 2,
+          "matched": 0
+        },
+        "wrong": {
+          "touch_groups": 10,
+          "matched": 0
+        }
+      },
+      "result": "as-exported-labeled-vendor-windows-cache.json",
+      "background_fpn_gain": null
+    },
+    {
+      "variant": "legacy-transpose-state",
+      "scenario": "labeled",
+      "method": "vendor-windows-cache",
+      "enrollment_complete": true,
+      "counts": {
+        "blank": {
+          "touch_groups": 1,
+          "matched": 0
+        },
+        "genuine": {
+          "touch_groups": 10,
+          "matched": 2
+        },
+        "noise": {
+          "touch_groups": 2,
+          "matched": 0
+        },
+        "wrong": {
+          "touch_groups": 10,
+          "matched": 0
+        }
+      },
+      "result": "legacy-transpose-state-labeled-vendor-windows-cache.json",
+      "background_fpn_gain": null
+    },
+    {
+      "variant": "legacy-transpose-no-state",
+      "scenario": "labeled",
+      "method": "vendor-windows-cache",
+      "enrollment_complete": true,
+      "counts": {
+        "blank": {
+          "touch_groups": 1,
+          "matched": 0
+        },
+        "genuine": {
+          "touch_groups": 10,
+          "matched": 2
+        },
+        "noise": {
+          "touch_groups": 2,
+          "matched": 0
+        },
+        "wrong": {
+          "touch_groups": 10,
+          "matched": 0
+        }
+      },
+      "result": "legacy-transpose-no-state-labeled-vendor-windows-cache.json",
+      "background_fpn_gain": null
+    },
+    {
+      "variant": "profile10-transpose-state",
+      "scenario": "labeled",
+      "method": "vendor-windows-cache",
+      "enrollment_complete": true,
+      "counts": {
+        "blank": {
+          "touch_groups": 1,
+          "matched": 0
+        },
+        "genuine": {
+          "touch_groups": 10,
+          "matched": 1
+        },
+        "noise": {
+          "touch_groups": 2,
+          "matched": 0
+        },
+        "wrong": {
+          "touch_groups": 10,
+          "matched": 0
+        }
+      },
+      "result": "profile10-transpose-state-labeled-vendor-windows-cache.json",
+      "background_fpn_gain": null
+    },
+    {
+      "variant": "profile10-transpose-no-state",
+      "scenario": "labeled",
+      "method": "vendor-windows-cache",
+      "enrollment_complete": true,
+      "counts": {
+        "blank": {
+          "touch_groups": 1,
+          "matched": 0
+        },
+        "genuine": {
+          "touch_groups": 10,
+          "matched": 2
+        },
+        "noise": {
+          "touch_groups": 2,
+          "matched": 0
+        },
+        "wrong": {
+          "touch_groups": 10,
+          "matched": 0
+        }
+      },
+      "result": "profile10-transpose-no-state-labeled-vendor-windows-cache.json",
+      "background_fpn_gain": null
+    },
+    {
+      "variant": "vendor-native-state",
+      "scenario": "labeled",
+      "method": "vendor-windows-cache",
+      "enrollment_complete": true,
+      "counts": {
+        "blank": {
+          "touch_groups": 1,
+          "matched": 0
+        },
+        "genuine": {
+          "touch_groups": 10,
+          "matched": 10
+        },
+        "noise": {
+          "touch_groups": 2,
+          "matched": 0
+        },
+        "wrong": {
+          "touch_groups": 10,
+          "matched": 0
+        }
+      },
+      "result": "vendor-native-state-labeled-vendor-windows-cache.json",
+      "background_fpn_gain": null
+    },
+    {
+      "variant": "vendor-native-no-state",
+      "scenario": "labeled",
+      "method": "vendor-windows-cache",
+      "enrollment_complete": true,
+      "counts": {
+        "blank": {
+          "touch_groups": 1,
+          "matched": 0
+        },
+        "genuine": {
+          "touch_groups": 10,
+          "matched": 10
+        },
+        "noise": {
+          "touch_groups": 2,
+          "matched": 0
+        },
+        "wrong": {
+          "touch_groups": 10,
+          "matched": 0
+        }
+      },
+      "result": "vendor-native-no-state-labeled-vendor-windows-cache.json",
+      "background_fpn_gain": null
+    },
+    {
+      "variant": "bandpass-native",
+      "scenario": "labeled",
+      "method": "bandpass",
+      "enrollment_complete": true,
+      "counts": {
+        "blank": {
+          "touch_groups": 1,
+          "matched": 0
+        },
+        "genuine": {
+          "touch_groups": 10,
+          "matched": 10
+        },
+        "noise": {
+          "touch_groups": 2,
+          "matched": 0
+        },
+        "wrong": {
+          "touch_groups": 10,
+          "matched": 0
+        }
+      },
+      "result": "bandpass-native-labeled-bandpass.json",
+      "background_fpn_gain": null
+    },
+    {
+      "variant": "cache-fpn",
+      "scenario": "labeled",
+      "method": "cache-fpn-bandpass-std60",
+      "enrollment_complete": true,
+      "counts": {
+        "blank": {
+          "touch_groups": 1,
+          "matched": 0
+        },
+        "genuine": {
+          "touch_groups": 10,
+          "matched": 5
+        },
+        "noise": {
+          "touch_groups": 2,
+          "matched": 0
+        },
+        "wrong": {
+          "touch_groups": 10,
+          "matched": 0
+        }
+      },
+      "result": "cache-fpn-labeled-cache-fpn-bandpass-std60.json",
+      "background_fpn_gain": 1.0
+    },
+    {
+      "variant": "cache-fpn",
+      "scenario": "labeled",
+      "method": "cache-fpn-scaled-bandpass-std60",
+      "enrollment_complete": true,
+      "counts": {
+        "blank": {
+          "touch_groups": 1,
+          "matched": 0
+        },
+        "genuine": {
+          "touch_groups": 10,
+          "matched": 6
+        },
+        "noise": {
+          "touch_groups": 2,
+          "matched": 0
+        },
+        "wrong": {
+          "touch_groups": 10,
+          "matched": 0
+        }
+      },
+      "result": "cache-fpn-labeled-cache-fpn-scaled-bandpass-std60.json",
+      "background_fpn_gain": 0.8053579924431289
+    },
+    {
+      "variant": "native-validation",
+      "scenario": "fold1",
+      "method": "bandpass",
+      "enrollment_complete": true,
+      "counts": {
+        "genuine": {
+          "touch_groups": 48,
+          "matched": 46
+        }
+      },
+      "result": "native-validation-fold1-bandpass.json",
+      "background_fpn_gain": null
+    },
+    {
+      "variant": "native-validation",
+      "scenario": "fold1",
+      "method": "vendor-windows-cache",
+      "enrollment_complete": true,
+      "counts": {
+        "genuine": {
+          "touch_groups": 48,
+          "matched": 41
+        }
+      },
+      "result": "native-validation-fold1-vendor-windows-cache.json",
+      "background_fpn_gain": null
+    },
+    {
+      "variant": "native-validation",
+      "scenario": "fold2",
+      "method": "bandpass",
+      "enrollment_complete": true,
+      "counts": {
+        "genuine": {
+          "touch_groups": 48,
+          "matched": 36
+        }
+      },
+      "result": "native-validation-fold2-bandpass.json",
+      "background_fpn_gain": null
+    },
+    {
+      "variant": "native-validation",
+      "scenario": "fold2",
+      "method": "vendor-windows-cache",
+      "enrollment_complete": true,
+      "counts": {
+        "genuine": {
+          "touch_groups": 48,
+          "matched": 37
+        }
+      },
+      "result": "native-validation-fold2-vendor-windows-cache.json",
+      "background_fpn_gain": null
+    },
+    {
+      "variant": "native-validation",
+      "scenario": "labeled",
+      "method": "current",
+      "enrollment_complete": false,
+      "counts": null,
+      "result": "native-validation-labeled-current.json",
+      "background_fpn_gain": null
+    },
+    {
+      "variant": "native-validation",
+      "scenario": "labeled",
+      "method": "fpn-bandpass-s0-std60",
+      "enrollment_complete": true,
+      "counts": {
+        "blank": {
+          "touch_groups": 1,
+          "matched": 0
+        },
+        "genuine": {
+          "touch_groups": 10,
+          "matched": 9
+        },
+        "noise": {
+          "touch_groups": 2,
+          "matched": 0
+        },
+        "wrong": {
+          "touch_groups": 10,
+          "matched": 0
+        }
+      },
+      "result": "native-validation-labeled-fpn-bandpass-s0-std60.json",
+      "background_fpn_gain": null
+    }
+  ],
+  "hardware_run": false,
+  "production_defaults_changed": false,
+  "candidate_patch_sha256": "09c138bff5f4e6f4948fca565b0d5c025186027d96e63aca04249375facfef85",
+  "packaging_note": "The session packaging adds opt-in numerical diagnostic messages; image processing and matching are unchanged. Historical build is preserved separately."
+}

@@ -1,0 +1,27 @@
+{
+  "hardware_session_tests": 10,
+  "calibration_export_tests": 7,
+  "read_only_preflight": "passed on sastapc",
+  "actual_systemd_namespace_probe": "passed; no fprintd or USB use",
+  "normal_fprintd_pid_and_start_time_unchanged": true,
+  "failure_injection_cases": [
+    "interrupt",
+    "startup failure",
+    "invalid live storage",
+    "namespace failure",
+    "client cleanup failure",
+    "changed foreign override",
+    "initial manifest interruption"
+  ],
+  "report_payloads": "ZIP member allowlist; numerical log projection; no templates/images/keys",
+  "hardware_run": false,
+  "full_build_via_runner": "passed through documented --prepare-only entry point, without sudo/service/USB",
+  "runner_build_metadata": {
+    "revision": "5e0430ff71da3e2c705dd2f1bf2090ff73a1518d",
+    "experiment": "bandpass80-native-raster",
+    "patch_sha256": "09c138bff5f4e6f4948fca565b0d5c025186027d96e63aca04249375facfef85",
+    "library_sha256": "dad857c64dc9f61b6f5acdc9da1da632b91719e9711207dc8084096e395a807d",
+    "kernel": "7.2.10",
+    "architecture": "x86_64"
+  }
+}

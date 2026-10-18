@@ -1,0 +1,12 @@
+{
+  "full_driver_build": "passed through contributor runner --prepare-only",
+  "package_library_sha256": "dad857c64dc9f61b6f5acdc9da1da632b91719e9711207dc8084096e395a807d",
+  "build_command": "bash tools/test-native-raster.sh --prepare-only /tmp/goodix-contributor-build-check-20261019",
+  "baseline_git_head": "46e85d8ab627964141659d1e0e56f310cff12764",
+  "candidate_patch_sha256": "09c138bff5f4e6f4948fca565b0d5c025186027d96e63aca04249375facfef85",
+  "offline_probe_build": "passed -Wall -Wextra -Werror",
+  "hardware_run": false,
+  "installed": false,
+  "services_restarted": false,
+  "runner_revision_tested": "5e0430ff71da3e2c705dd2f1bf2090ff73a1518d"
+}

@@ -1,0 +1,256 @@
+diff --git a/libfprint-driver/goodix5e0a.c b/libfprint-driver/goodix5e0a.c
+--- a/libfprint-driver/goodix5e0a.c
++++ b/libfprint-driver/goodix5e0a.c
+@@ -915,12 +915,109 @@
+   return pixel_idx;
+ }
+ 
++#define goodix5e0a_candidate_log(...) \
++  G_STMT_START { \
++    if (g_strcmp0 (g_getenv ("GOODIX_5E0A_NATIVE_RASTER"), "1") == 0) \
++      g_message (__VA_ARGS__); \
++    else \
++      fp_dbg (__VA_ARGS__); \
++  } G_STMT_END
++
++/* Mean over a (2r+1)x(2r+1) window, clipped at the frame edges. */
++static void
++goodix5e0a_box_mean (const float *in, float *out, int W, int H, int r)
++{
++  for (int y = 0; y < H; y++)
++    for (int x = 0; x < W; x++)
++      {
++        float sum = 0.0f;
++        guint count = 0;
++        for (int yy = MAX (0, y - r); yy <= MIN (H - 1, y + r); yy++)
++          for (int xx = MAX (0, x - r); xx <= MIN (W - 1, x + r); xx++)
++            {
++              sum += in[yy * W + xx];
++              count++;
++            }
++        out[y * W + x] = sum / count;
++      }
++}
++
++static gboolean
++goodix5e0a_normalize_bandpass_candidate (const GoodixTls5xxPix *pix, guint8 *out_norm,
++                                float *out_min, float *out_max)
++{
++  if (!pix || !out_norm)
++    return FALSE;
++
++  const int W = GOODIX_5E0A_WIDTH, H = GOODIX_5E0A_HEIGHT;
++  guint active = 0;
++
++  for (int i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
++    if (pix[i] > 30)
++      active++;
++
++  if (active < 64)
++    {
++      memset (out_norm, 0, GOODIX_5E0A_FRAME_SIZE);
++      return FALSE;
++    }
++
++  /* Issue #12: band-pass instead of a pure 3x3 high-pass. Some units carry
++   * strong pixel-to-pixel noise that a 3x3 residual keeps in full while the
++   * ~8-10 px ridge period mostly cancels, so smooth first (noise) and subtract
++   * an 11x11 background (illumination), then scale to a fixed residual std. */
++  g_autofree float *raw = g_new (float, GOODIX_5E0A_FRAME_SIZE);
++  g_autofree float *smooth = g_new (float, GOODIX_5E0A_FRAME_SIZE);
++  g_autofree float *background = g_new (float, GOODIX_5E0A_FRAME_SIZE);
++  g_autofree float *residual = g_new (float, GOODIX_5E0A_FRAME_SIZE);
++  float residual_min = G_MAXFLOAT, residual_max = -G_MAXFLOAT;
++
++  for (int i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
++    raw[i] = pix[i];
++  goodix5e0a_box_mean (raw, smooth, W, H, GOODIX_5E0A_BANDPASS_SMOOTH_RADIUS);
++  goodix5e0a_box_mean (smooth, background, W, H, GOODIX_5E0A_BANDPASS_BACKGROUND_RADIUS);
++
++  double sum_sq = 0.0;
++  for (int i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
++    {
++      float value = smooth[i] - background[i];
++      residual[i] = value;
++      sum_sq += (double) value * value;
++      residual_min = MIN (residual_min, value);
++      residual_max = MAX (residual_max, value);
++    }
++
++  float residual_range = residual_max - residual_min;
++  float residual_std = sqrtf ((float) (sum_sq / GOODIX_5E0A_FRAME_SIZE));
++  if (out_min)
++    *out_min = residual_min;
++  if (out_max)
++    *out_max = residual_max;
++
++  if (residual_range < 1.0f || residual_std < 0.5f)
++    {
++      memset (out_norm, 0, GOODIX_5E0A_FRAME_SIZE);
++      return FALSE;
++    }
++
++  float gain = GOODIX_5E0A_BANDPASS_TARGET_STD / residual_std;
++  for (guint i = 0; i < GOODIX_5E0A_FRAME_SIZE; i++)
++    {
++      int value = (int) roundf (GOODIX_5E0A_NORMALIZE_MIDPOINT + residual[i] * gain);
++      out_norm[i] = (guint8) CLAMP (value, 0, 255);
++    }
++  return TRUE;
++}
++
+ static gboolean
+ goodix5e0a_normalize_raw_frame (const GoodixTls5xxPix *pix, guint8 *out_norm,
+                                 float *out_min, float *out_max)
+ {
+   if (!pix || !out_norm)
+     return FALSE;
++
++  if (g_strcmp0 (g_getenv ("GOODIX_5E0A_NATIVE_RASTER"), "1") == 0)
++    return goodix5e0a_normalize_bandpass_candidate (pix, out_norm, out_min, out_max);
+ 
+   const int W = GOODIX_5E0A_WIDTH, H = GOODIX_5E0A_HEIGHT;
+   guint active = 0;
+@@ -1058,7 +1155,7 @@
+                                                    self->tmpl_blob,
+                                                    self->tmpl_len,
+                                                    &match_pts);
+-          fp_dbg ("5e0a Milan verify: match=%d pts=%d", is_match, match_pts);
++          goodix5e0a_candidate_log ("5e0a Milan verify: match=%d pts=%d", is_match, match_pts);
+           if (is_match)
+             fpi_device_verify_report (dev, FPI_MATCH_SUCCESS, NULL, NULL);
+           else
+@@ -1119,7 +1216,7 @@
+                                                         GOODIX_5E0A_HEIGHT,
+                                                         blobs, lens, m,
+                                                         &match_idx, &match_pts);
+-              fp_dbg ("5e0a Milan identify: match=%d idx=%d pts=%d (gallery=%u usable=%u)",
++              goodix5e0a_candidate_log ("5e0a Milan identify: match=%d idx=%d pts=%d (gallery=%u usable=%u)",
+                       is_match, match_idx, match_pts, n, m);
+               if (is_match && match_idx >= 0 && (guint) match_idx < m)
+                 fpi_device_identify_report (dev, owners[match_idx], NULL, NULL);
+@@ -1148,7 +1245,7 @@
+                                                    GOODIX_5E0A_HEIGHT,
+                                                    &enrolled_count,
+                                                    &progress_pct);
+-      fp_dbg ("5e0a Milan enrollAddImage: res=%d enrolled=%d progress=%d%% (stage %u/%d)",
++      goodix5e0a_candidate_log ("5e0a Milan enrollAddImage: res=%d enrolled=%d progress=%d%% (stage %u/%d)",
+               add_res, enrolled_count, progress_pct,
+               self->enroll_stage + 1, FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages);
+ 
+@@ -1181,7 +1278,7 @@
+               fpi_print_set_type (print, FPI_PRINT_RAW);
+               g_object_set (print, "fpi-data", blob_var, NULL);
+               free (packed_blob);
+-              fp_dbg ("5e0a Milan enrollment committed successfully! (template size: %zu bytes)",
++              goodix5e0a_candidate_log ("5e0a Milan enrollment committed successfully! (template size: %zu bytes)",
+                       packed_len);
+               fpi_device_enroll_complete (dev, g_object_ref (print), NULL);
+             }
+@@ -1936,8 +2033,11 @@
+     return NULL;
+ 
+   float residual_range = residual_max - residual_min;
+-  g_message ("5e0a local contrast: min=%.2f max=%.2f range=%.2f window=3x3 gain=%.2f",
+-             residual_min, residual_max, residual_range, GOODIX_5E0A_CONTRAST_GAIN);
++  g_message ("5e0a local contrast: min=%.2f max=%.2f range=%.2f bandpass=%dx%d-%dx%d target_std=%.1f",
++             residual_min, residual_max, residual_range,
++             2 * GOODIX_5E0A_BANDPASS_SMOOTH_RADIUS + 1, 2 * GOODIX_5E0A_BANDPASS_SMOOTH_RADIUS + 1,
++             2 * GOODIX_5E0A_BANDPASS_BACKGROUND_RADIUS + 1, 2 * GOODIX_5E0A_BANDPASS_BACKGROUND_RADIUS + 1,
++             GOODIX_5E0A_BANDPASS_TARGET_STD);
+ 
+   /* Create the scaled 128x160 image directly via bilinear upscaling.
+    * Use FPI_IMAGE_COLORS_INVERTED for capacitive ridges (high ADC = black).
+diff --git a/libfprint-driver/goodix5e0a.h b/libfprint-driver/goodix5e0a.h
+--- a/libfprint-driver/goodix5e0a.h
++++ b/libfprint-driver/goodix5e0a.h
+@@ -45,6 +45,12 @@
+  * gain 1.5 accepts every recoverable one (overlap jumps to 60-90) with
+  * impostors + garbage frames remaining at 0 at every level. */
+ #define GOODIX_5E0A_CONTRAST_GAIN (1.5f)
++
++/* Issue #12: band-pass normalization (smooth radius, background radius, and
++ * the residual std the output is scaled to around the 128 midpoint). */
++#define GOODIX_5E0A_BANDPASS_SMOOTH_RADIUS (1)
++#define GOODIX_5E0A_BANDPASS_BACKGROUND_RADIUS (5)
++#define GOODIX_5E0A_BANDPASS_TARGET_STD (80.0f)
+ 
+ /* FDT_UP guard 2000ms / normal 5000ms (ticket 47: a 0x34 timeout means the
+  * finger is still down, so the guard path re-issues; success means genuine
+diff --git a/libfprint-driver/goodix_milan.c b/libfprint-driver/goodix_milan.c
+--- a/libfprint-driver/goodix_milan.c
++++ b/libfprint-driver/goodix_milan.c
+@@ -1127,7 +1127,7 @@
+     return g_milan_version;
+ }
+ 
+-static void make_goodix_image(GoodixImage *img, const uint8_t *pix, int width, int height, int sensor_type) {
++static guint8 *make_goodix_image(GoodixImage *img, const uint8_t *pix, int width, int height, int sensor_type) {
+     memset(img, 0, sizeof(GoodixImage));
+     img->data = (uint8_t*)pix;
+     img->width = width;
+@@ -1138,6 +1138,20 @@
+     img->sensor_type = sensor_type;
+     img->quality = 100;
+     img->overlap = 100;
++    /* Offline issue-12 candidate. Public driver inputs remain canonical 64x80.
++     * A new enrollment is required when enabling this processing path. */
++    if (width == 64 && height == 80 &&
++        g_strcmp0(g_getenv("GOODIX_5E0A_NATIVE_RASTER"), "1") == 0) {
++        guint8 *native = g_malloc(64 * 80);
++        for (int y = 0; y < 80; y++)
++            for (int x = 0; x < 64; x++)
++                native[x * 80 + y] = pix[y * 64 + x];
++        img->data = native;
++        img->width = 80;
++        img->height = 64;
++        return native;
++    }
++    return NULL;
+ }
+ 
+ /* Ticket 76: native quality probe. Ticket-72 offline ranges: good
+@@ -1165,7 +1179,7 @@
+     ensure_gs();
+ 
+     GoodixImage img;
+-    make_goodix_image(&img, pixels, width, height, 10);
++    g_autofree guint8 *image_storage = make_goodix_image(&img, pixels, width, height, 10);
+     u32 qout[2] = {0};
+     m_getQuality(&img, qout);
+ 
+@@ -1204,7 +1218,7 @@
+     ensure_gs();
+ 
+     GoodixImage img;
+-    make_goodix_image(&img, pixels, width, height, 10);
++    g_autofree guint8 *image_storage = make_goodix_image(&img, pixels, width, height, 10);
+     u32 status_out[2] = {0};
+ 
+     int add_res = m_enrolAddImage(ctx, &img, NULL, NULL, 0, status_out);
+@@ -1287,7 +1301,7 @@
+     }
+ 
+     GoodixImage probe;
+-    make_goodix_image(&probe, pixels, width, height, 10);
++    g_autofree guint8 *image_storage = make_goodix_image(&probe, pixels, width, height, 10);
+     void *active_templates[1] = { unpacked_template };
+     int matched_idx = -999;
+     int match_score = -999;
+@@ -1326,6 +1340,7 @@
+     g_rec_mutex_lock (&g_milan_mutex);
+     ensure_gs();
+ 
++    g_autofree guint8 *image_storage = NULL;
+     void **unpacked = g_new0 (void *, n_templates);
+     for (int i = 0; i < n_templates; i++) {
+         if (!template_blobs[i] || template_lens[i] == 0) goto fail_closed;
+@@ -1335,7 +1350,7 @@
+     }
+ 
+     GoodixImage probe;
+-    make_goodix_image(&probe, pixels, width, height, 10);
++    image_storage = make_goodix_image(&probe, pixels, width, height, 10);
+     int matched_idx = -999, match_score = -999;
+     u32 details[2] = {0};
+     m_identifyImage (&probe, NULL, unpacked, n_templates,

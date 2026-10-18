@@ -182,7 +182,7 @@ def load_dataset(manifest_path):
 
 
 def run_method(
-    dataset, method, engine_factory, *, normalizer=None, probe_policy="driver"
+    dataset, method, engine_factory, *, normalizer=None, probe_policy="driver", vendor_layout="legacy"
 ):
     engine = engine_factory()
     if engine.call("ppp_param_init", [10]) != 0:
@@ -198,6 +198,7 @@ def run_method(
             engine,
             dataset["calibration"],
             calibration_state=dataset.get("calibration_state"),
+            layout=vendor_layout,
         )
         if method == "vendor"
         else None
@@ -368,8 +369,8 @@ def run_method(
     }
 
 
-def compare(dataset, engine_factory, methods=("current", "bandpass", "vendor")):
-    return {method: run_method(dataset, method, engine_factory) for method in methods}
+def compare(dataset, engine_factory, methods=("current", "bandpass", "vendor"), *, vendor_layout="legacy"):
+    return {method: run_method(dataset, method, engine_factory, vendor_layout=vendor_layout) for method in methods}
 
 
 def main():

@@ -81,7 +81,7 @@ def build_dataset(directory):
     return path
 
 
-def input_and_guard_checks(directory, factory):
+def input_and_guard_checks(directory, factory, layout="legacy"):
     frame = np.arange(5120, dtype=np.uint16).reshape(80, 64) % 4096
     for binary in (False, True):
         path = directory / "roundtrip.pgm"
@@ -103,7 +103,7 @@ def input_and_guard_checks(directory, factory):
         pass
     else:
         raise AssertionError("Buffer guard did not detect overwrite")
-    processor = VendorPreprocessor(engine, np.full((80, 64), 1500, dtype=np.uint16))
+    processor = VendorPreprocessor(engine, np.full((80, 64), 1500, dtype=np.uint16), layout=layout)
     for invalid in (
         np.zeros((64, 80), dtype=np.uint16),
         np.full((80, 64), 4096),
@@ -123,18 +123,18 @@ def input_and_guard_checks(directory, factory):
     }
 
 
-def calibration_state_checks(dataset, factory):
+def calibration_state_checks(dataset, factory, layout="legacy"):
     background = dataset["calibration"]
     raw = dataset["probes"][0]["frames"][0]
-    processor = VendorPreprocessor(factory(), background)
+    processor = VendorPreprocessor(factory(), background, layout=layout)
     before = processor.process(raw)
     assert before["return_code"] == 0
     state = processor.save_state()
-    restored = VendorPreprocessor(factory(), background, calibration_state=state)
+    restored = VendorPreprocessor(factory(), background, calibration_state=state, layout=layout)
     after = restored.process(raw)
     assert after == before, "Restored vendor state changed the synthetic output"
     try:
-        VendorPreprocessor(factory(), background, calibration_state=state[:-1])
+        VendorPreprocessor(factory(), background, calibration_state=state[:-1], layout=layout)
     except ValueError:
         pass
     else:
@@ -143,7 +143,7 @@ def calibration_state_checks(dataset, factory):
         damaged = bytearray(state)
         damaged[index] ^= 1
         try:
-            VendorPreprocessor(factory(), background, calibration_state=bytes(damaged))
+            VendorPreprocessor(factory(), background, calibration_state=bytes(damaged), layout=layout)
         except RuntimeError as error:
             assert "rejected with 0x80" in str(error), error
         else:
@@ -164,6 +164,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--native-library", type=Path)
+    parser.add_argument("--vendor-layout", choices=("legacy", "profile10"), default="legacy")
     args = parser.parse_args()
     if hashlib.sha256(DLL.read_bytes()).hexdigest() != DLL_SHA256:
         raise ValueError("Unreviewed engine DLL")
@@ -179,14 +180,14 @@ def main():
         directory = Path(temporary)
         path = build_dataset(directory)
         dataset = load_dataset(path)
-        checks = input_and_guard_checks(directory, factory)
-        checks["calibration_state"], state = calibration_state_checks(dataset, factory)
-        results = compare(dataset, factory)
+        checks = input_and_guard_checks(directory, factory, args.vendor_layout)
+        checks["calibration_state"], state = calibration_state_checks(dataset, factory, args.vendor_layout)
+        results = compare(dataset, factory, vendor_layout=args.vendor_layout)
         (directory / "calibration-state.bin").write_bytes(state)
         manifest = json.loads(path.read_text())
         manifest["calibration_state"] = "calibration-state.bin"
         path.write_text(json.dumps(manifest))
-        restored = run_method(load_dataset(path), "vendor", factory)
+        restored = run_method(load_dataset(path), "vendor", factory, vendor_layout=args.vendor_layout)
         assert restored == results["vendor"], "State-loaded manifest replay differs"
         checks["calibration_state"]["manifest_replay_identical"] = True
     vendor = results["vendor"]
@@ -203,6 +204,7 @@ def main():
         "backend": "native-production-loader" if args.native_library else "emulated",
         "kind": "synthetic-controls-not-human-accuracy",
         "hardware_run": False,
+        "vendor_layout": args.vendor_layout,
         "checks": checks,
         "methods": results,
     }

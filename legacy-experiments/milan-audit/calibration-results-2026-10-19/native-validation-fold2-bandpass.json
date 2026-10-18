@@ -1,0 +1,1797 @@
+{
+  "hardware_run": false,
+  "backend": "native-production-loader",
+  "scenario": "fold2",
+  "method": "bandpass",
+  "dll_sha256": "9990ab24af01b8c5c575c73cf7a95a7d675655adfb4183b6c030de2912ec23de",
+  "provenance": {
+    "enrollment": [
+      [
+        "session1_left_little_aborted_enroll/frame_0049_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0050_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0051_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0052_raw.pgm"
+      ],
+      [
+        "session1_left_little_aborted_enroll/frame_0053_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0054_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0055_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0056_raw.pgm"
+      ],
+      [
+        "session1_left_little_aborted_enroll/frame_0057_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0058_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0059_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0060_raw.pgm"
+      ],
+      [
+        "session1_left_little_aborted_enroll/frame_0061_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0062_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0063_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0064_raw.pgm"
+      ],
+      [
+        "session1_left_little_aborted_enroll/frame_0065_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0066_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0067_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0068_raw.pgm"
+      ],
+      [
+        "session1_left_little_aborted_enroll/frame_0069_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0070_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0071_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0072_raw.pgm"
+      ],
+      [
+        "session1_left_little_aborted_enroll/frame_0073_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0074_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0075_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0076_raw.pgm"
+      ],
+      [
+        "session1_left_little_aborted_enroll/frame_0077_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0078_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0079_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0080_raw.pgm"
+      ],
+      [
+        "session1_left_little_aborted_enroll/frame_0081_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0082_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0083_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0084_raw.pgm"
+      ],
+      [
+        "session1_left_little_aborted_enroll/frame_0085_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0086_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0087_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0088_raw.pgm"
+      ],
+      [
+        "session1_left_little_aborted_enroll/frame_0089_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0090_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0091_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0092_raw.pgm"
+      ],
+      [
+        "session1_left_little_aborted_enroll/frame_0093_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0094_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0095_raw.pgm",
+        "session1_left_little_aborted_enroll/frame_0096_raw.pgm"
+      ]
+    ],
+    "probes": [
+      {
+        "id": "touch_01/frame_0001_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0001_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_01/frame_0002_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0002_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_01/frame_0003_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0003_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_01/frame_0004_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0004_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_02/frame_0005_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0005_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_02/frame_0006_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0006_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_02/frame_0007_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0007_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_02/frame_0008_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0008_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_03/frame_0009_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0009_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_03/frame_0010_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0010_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_03/frame_0011_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0011_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_03/frame_0012_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0012_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_04/frame_0013_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0013_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_04/frame_0014_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0014_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_04/frame_0015_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0015_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_04/frame_0016_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0016_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_05/frame_0017_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0017_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_05/frame_0018_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0018_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_05/frame_0019_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0019_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_05/frame_0020_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0020_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_06/frame_0021_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0021_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_06/frame_0022_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0022_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_06/frame_0023_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0023_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_06/frame_0024_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0024_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_07/frame_0025_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0025_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_07/frame_0026_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0026_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_07/frame_0027_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0027_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_07/frame_0028_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0028_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_08/frame_0029_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0029_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_08/frame_0030_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0030_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_08/frame_0031_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0031_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_08/frame_0032_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0032_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_09/frame_0033_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0033_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_09/frame_0034_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0034_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_09/frame_0035_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0035_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_09/frame_0036_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0036_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_10/frame_0037_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0037_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_10/frame_0038_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0038_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_10/frame_0039_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0039_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_10/frame_0040_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0040_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_11/frame_0041_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0041_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_11/frame_0042_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0042_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_11/frame_0043_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0043_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_11/frame_0044_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0044_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_12/frame_0045_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0045_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_12/frame_0046_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0046_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_12/frame_0047_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0047_raw.pgm"
+        ]
+      },
+      {
+        "id": "touch_12/frame_0048_raw.pgm",
+        "label": "genuine",
+        "frames": [
+          "session1_left_little_aborted_enroll/frame_0048_raw.pgm"
+        ]
+      }
+    ],
+    "input_sha256": {
+      "session1_left_little_aborted_enroll/frame_0001_raw.pgm": "88714a65b6ec32d4bfb0da528f9fc87df3b6563fd8f7cf32af9b864e8ccc1023",
+      "session1_left_little_aborted_enroll/frame_0002_raw.pgm": "1ad83a51d28d50742e612875a9122c08c6aeea02ff1ce331cb31b5611442b71d",
+      "session1_left_little_aborted_enroll/frame_0003_raw.pgm": "9b9bfdf24d8c2626116255bd4957016045e6653009d185bcbbc0b59bf01d062a",
+      "session1_left_little_aborted_enroll/frame_0004_raw.pgm": "6e5015ad393bc5e0423d373222549ee45dd8305377d601b4bf7f9c76aa522100",
+      "session1_left_little_aborted_enroll/frame_0005_raw.pgm": "18e804bfaf703d472940a83a3f890a370cd76e4a9da91e2e3ee2ebfb35ab2e03",
+      "session1_left_little_aborted_enroll/frame_0006_raw.pgm": "4ea3fe3a5ef284fe8914006af623b55f10769e8167ebb4471542021c1ebe8844",
+      "session1_left_little_aborted_enroll/frame_0007_raw.pgm": "1b8a073e8ac7d344816017b6bbb47a57b3aba78719b81941d9555dcb34f1942a",
+      "session1_left_little_aborted_enroll/frame_0008_raw.pgm": "0a21c11ef785115bc2d3d31274306dc4f102b32cc2f993ba0d11aa4220c3a275",
+      "session1_left_little_aborted_enroll/frame_0009_raw.pgm": "491657a5408c0b2034ceca0a2479695ff18f65b9a8f7a5abc766c9b5379588bb",
+      "session1_left_little_aborted_enroll/frame_0010_raw.pgm": "0dd4d1572522c96bfb8cf12a12ac204e08f198969864d0704a19c61db04a166f",
+      "session1_left_little_aborted_enroll/frame_0011_raw.pgm": "bf19f485a7c4c6f10acf8207665423a8932e4c40cda7a02fe9328ce50cbbc9c8",
+      "session1_left_little_aborted_enroll/frame_0012_raw.pgm": "8eb2495ef8f6bc6fbdae8ac32e1d9a69f0abacdf58a0592af1b19fa792afad32",
+      "session1_left_little_aborted_enroll/frame_0013_raw.pgm": "f7f0913686bfef5fee628f16588202f17e0db2408ff047203d2288df5b475a02",
+      "session1_left_little_aborted_enroll/frame_0014_raw.pgm": "226b29b1bad3b7623dfe800aca02fd95c319b23fe712151eff39c4392d263946",
+      "session1_left_little_aborted_enroll/frame_0015_raw.pgm": "edf71d57801a087fb2a2e48c19932924c743898593c51dc37f112085b5f148e0",
+      "session1_left_little_aborted_enroll/frame_0016_raw.pgm": "be6ecaa75f11be96ef275a47a5de9a5a7d82b12331a08fda6656af30731738c3",
+      "session1_left_little_aborted_enroll/frame_0017_raw.pgm": "df6ac828636bf655ddb1d1acd95eb48d05a9190316110430cfbc7af4fcd02062",
+      "session1_left_little_aborted_enroll/frame_0018_raw.pgm": "e1e0a5b1dd6e3f316c4a603f0643e7eab97e5b308a077817eeb9b4a0922811b1",
+      "session1_left_little_aborted_enroll/frame_0019_raw.pgm": "df143289ae9f656b95597d16e308dc9fb1458b42d8ba336deccb83511f5d640e",
+      "session1_left_little_aborted_enroll/frame_0020_raw.pgm": "6991b3fd01c3dbf825df97d045270f6d14c7ae37bfbc373ce7404ef6b0fc8603",
+      "session1_left_little_aborted_enroll/frame_0021_raw.pgm": "a267011207afaf7a516bd62d889a8c948c90528c9f421e3358edde8d3e7b7d9c",
+      "session1_left_little_aborted_enroll/frame_0022_raw.pgm": "9277bd2b4ee12d9960938d4b438542da191d8cd45991eb85834a20423057170b",
+      "session1_left_little_aborted_enroll/frame_0023_raw.pgm": "6a6816bbc36449653a975d6001bc4476005a5daf426d9cb75b1b83153697cb00",
+      "session1_left_little_aborted_enroll/frame_0024_raw.pgm": "5ba31786c5b5506c689d546f1cba5fe6b265f19d63df3bb4e9b7676266eadc73",
+      "session1_left_little_aborted_enroll/frame_0025_raw.pgm": "ccedbd81d6372df567bed117834afbb84b3f61d871729c63910ff784fe26c252",
+      "session1_left_little_aborted_enroll/frame_0026_raw.pgm": "a11765357ab11fc2576321716fe792e766a1d46af15ee236ab0ef444916e0d56",
+      "session1_left_little_aborted_enroll/frame_0027_raw.pgm": "eed6c7c5b2458b0975aafe8ab023015d364ced8881d4d5a9a94e8e6721efc287",
+      "session1_left_little_aborted_enroll/frame_0028_raw.pgm": "b52d744251e3137aaea68a18cda95f5edbb6e8998b7353d921abe3380162123e",
+      "session1_left_little_aborted_enroll/frame_0029_raw.pgm": "49542b845927822ed68a8bcf8c35d2c193fa6f3093955cfc9865b60584e7cd03",
+      "session1_left_little_aborted_enroll/frame_0030_raw.pgm": "8cfa7daf7151a0f2aaf9713415305faf4018e20ee90e352c6f6998defd193636",
+      "session1_left_little_aborted_enroll/frame_0031_raw.pgm": "b9ce768f1496920968bee5231f7cbee3b3522ca2f064cb7d8d56f18766ef84de",
+      "session1_left_little_aborted_enroll/frame_0032_raw.pgm": "4a73f388cbf677e569863fb14c67a625451c82ccf76f1270f56094fd3c7fb8bc",
+      "session1_left_little_aborted_enroll/frame_0033_raw.pgm": "63ef2fb953540cc6e8c2bb053e0d687fb66886ddc47aa2c96ecb1650544fcf6e",
+      "session1_left_little_aborted_enroll/frame_0034_raw.pgm": "fcc957c9b2395632c5844719f43462f112a1a111cb766d6be8e7188ec1152329",
+      "session1_left_little_aborted_enroll/frame_0035_raw.pgm": "65b869406ee90a41d371984828624bcf254036a4b364757f9fba7b4b950e6404",
+      "session1_left_little_aborted_enroll/frame_0036_raw.pgm": "62cc03e37ccd24f67daaffd71e62dab0b5bed6723305b376677533886d445aa4",
+      "session1_left_little_aborted_enroll/frame_0037_raw.pgm": "b6280860e8f41c9eeeb6e3f4a64d0df3c554c730904c546226459b43987a1e05",
+      "session1_left_little_aborted_enroll/frame_0038_raw.pgm": "def59047b9712c45c46b3a5da83977b805c7f04c83b301d0440592edb1d6804f",
+      "session1_left_little_aborted_enroll/frame_0039_raw.pgm": "547ff88839bc56b7adb7aedc09ed4719c9718e330bd75f97614e643ae563d37c",
+      "session1_left_little_aborted_enroll/frame_0040_raw.pgm": "e770de789cb8bb091961cab2e217c2bb98486053c8afb37dc9e519d9068d9aa2",
+      "session1_left_little_aborted_enroll/frame_0041_raw.pgm": "ae34b864401cadbff15798e12c486a74c0f8fec3555ba0a5e29ff2cbad904e1d",
+      "session1_left_little_aborted_enroll/frame_0042_raw.pgm": "ceaac60d2eaf23c9936fa1a3b43a4f88e495ad0777a4c0e5c0572a10e92481dc",
+      "session1_left_little_aborted_enroll/frame_0043_raw.pgm": "c5fdf89d0cb5fd0856fa600fca8ee14f1518533f50b108cfdd704806c0a84966",
+      "session1_left_little_aborted_enroll/frame_0044_raw.pgm": "7524f094d349a55abf8a34b48bb45b552af2eefa390253ba63b0888598815efd",
+      "session1_left_little_aborted_enroll/frame_0045_raw.pgm": "e9bc2bbc40768c10d0dfb9873c1550279354ecf946dd3b75b82ffce8abc3068a",
+      "session1_left_little_aborted_enroll/frame_0046_raw.pgm": "0585e4c61ffe8b675d4743d3b6c89ca039cdf08ffcc875f7d1c3cc36ee5c767f",
+      "session1_left_little_aborted_enroll/frame_0047_raw.pgm": "0947ef8593da2e78fb3aadd81bff99bb2f3aa46967e2c6609d95743347e10fe3",
+      "session1_left_little_aborted_enroll/frame_0048_raw.pgm": "2074fd7b5e7f1111d171f9b73e00caa037b8a89b326bbba16487f58395bfb154",
+      "session1_left_little_aborted_enroll/frame_0049_raw.pgm": "56a68ab804cb7dfbdc907731dd7a15da95922576de7532cd7fae1aa64161074d",
+      "session1_left_little_aborted_enroll/frame_0050_raw.pgm": "f7361c61e581c33e3bb02505dded2187c1c62984cfd0855c15d0a813474263b6",
+      "session1_left_little_aborted_enroll/frame_0051_raw.pgm": "084cdbe6361f8971f083c06ddab285f3fa582054f36a0d811264181e348172ad",
+      "session1_left_little_aborted_enroll/frame_0052_raw.pgm": "bdf1ec76b01edd05fb43593aa3609f4001d2b832dc16e3b7df3a21942f21d907",
+      "session1_left_little_aborted_enroll/frame_0053_raw.pgm": "9bf0ff7cabff0f922f054e9531bbb456a14f614bbe936bd95844b72dcf6e148a",
+      "session1_left_little_aborted_enroll/frame_0054_raw.pgm": "51d8926c0ce106432ab63c0ff3d311c1ae974a412263404d4336732bddfd4afa",
+      "session1_left_little_aborted_enroll/frame_0055_raw.pgm": "9ec11c64ccd9bb5df39f9c1b574fdd7cfe2b829fd4a8fc800d9543d9042396a1",
+      "session1_left_little_aborted_enroll/frame_0056_raw.pgm": "c1f070d3feaf0e46bd899bf65fc3c52339a37a2cdd09b1bf42e558bda4a5f152",
+      "session1_left_little_aborted_enroll/frame_0057_raw.pgm": "fd41667a106568ac962da0136a4d3fa67fde54dac0b94810fb1548671462e8fc",
+      "session1_left_little_aborted_enroll/frame_0058_raw.pgm": "9be855e98ce8f35bd3ee7f3e2ec890da1c2d1f7e323225e3dd709caa0b09d384",
+      "session1_left_little_aborted_enroll/frame_0059_raw.pgm": "32dabf1a2862d3ed68c744dede4a929eab4a82a34c3e74b4e4dfb14b68034fdc",
+      "session1_left_little_aborted_enroll/frame_0060_raw.pgm": "23d3d9e06d4132eb152154caa73d7ec13d0e8626950126c22096edf3884f8799",
+      "session1_left_little_aborted_enroll/frame_0061_raw.pgm": "850598edb3a37c83395339ca7d9a2736a9e054ca36adadf6182aae0f084a99d2",
+      "session1_left_little_aborted_enroll/frame_0062_raw.pgm": "d6245dc542e660dc6a5f0f7f2d3779317bdd961a2a4e21674229f4e9f852b0d5",
+      "session1_left_little_aborted_enroll/frame_0063_raw.pgm": "13b74cb12eba695fd93f879f8a66ebd3f61883cd27cd25637f02690632c78231",
+      "session1_left_little_aborted_enroll/frame_0064_raw.pgm": "8dc29a20c72eeb4b2c2d1248bc6e16820629d708046f8d1d3cc0b3705de77a9f",
+      "session1_left_little_aborted_enroll/frame_0065_raw.pgm": "b564192567d77f981e237b771320a1ec1260f98cf7f7966a75d2a13364cc2289",
+      "session1_left_little_aborted_enroll/frame_0066_raw.pgm": "c93d2125b856c975d4a4e26405b2416a17265532bd71fbc3496fc825173fdc34",
+      "session1_left_little_aborted_enroll/frame_0067_raw.pgm": "2039be64e36dd2642a2cd1efa2ddbd661c7c7cf7aeeebd841d590820e0731e58",
+      "session1_left_little_aborted_enroll/frame_0068_raw.pgm": "f1415a41e11eaedb53cf6fc3e35223c756fabf3550ca973bfe920217157ea284",
+      "session1_left_little_aborted_enroll/frame_0069_raw.pgm": "f2595e1c049a2edaf05bec2d9041f990eebd096f8532465538c6528920e8d401",
+      "session1_left_little_aborted_enroll/frame_0070_raw.pgm": "ebfa61b3b9790284bff8248717e0e415c468a6662f0599e3e3fc6bb06a8784ef",
+      "session1_left_little_aborted_enroll/frame_0071_raw.pgm": "45d8352e72d3063bca5b93e1b5072b91b4ae2f6f6f66fe39a12f0dd830cd35fa",
+      "session1_left_little_aborted_enroll/frame_0072_raw.pgm": "ee14d110fd3822252ff2453cc8f9835786f1e2266d8937709bc56bd931079b92",
+      "session1_left_little_aborted_enroll/frame_0073_raw.pgm": "6a41541e1e54f37e89d3801f185ce4f865c991f9c2c6a20ddbac75497a50c36b",
+      "session1_left_little_aborted_enroll/frame_0074_raw.pgm": "2cd69102d60a2bef51b11a6467c1a796ee2416d686ff7e810f781b0dc5c43ccf",
+      "session1_left_little_aborted_enroll/frame_0075_raw.pgm": "08e049eb3407b385ea2bcf14c3123f03b9cf2cfea25ad2923e3e83e1c8bc02b5",
+      "session1_left_little_aborted_enroll/frame_0076_raw.pgm": "a334eec88897121c7b7405da37de0512c4c5c445d75d87f217d2b8348d7d9263",
+      "session1_left_little_aborted_enroll/frame_0077_raw.pgm": "f5230b1df4a1524ad19ee9059a363957909a059e7c08afd65d6457731a937c5c",
+      "session1_left_little_aborted_enroll/frame_0078_raw.pgm": "eebc8600d8242bf8cfad57896e736f42c69cf95c88b03e2b7636d62ce85f7497",
+      "session1_left_little_aborted_enroll/frame_0079_raw.pgm": "b4e0c6be8b7eefb8ed6d8d851e75f2649e6dae3b6c89facde0e4f3250aa0fa92",
+      "session1_left_little_aborted_enroll/frame_0080_raw.pgm": "5f833e5e0fefbb8e5a1e873a0448f6d107a27fbef870e87dfced24f2c79fe766",
+      "session1_left_little_aborted_enroll/frame_0081_raw.pgm": "fe70ca7ed8c038712c8c0725203ba4a8990f9ed50d05de9c02aacf3d3d28a25c",
+      "session1_left_little_aborted_enroll/frame_0082_raw.pgm": "c7fa1f11aabfb23a7bcd46cead187943ea6b87112008dfa83d31462428421a78",
+      "session1_left_little_aborted_enroll/frame_0083_raw.pgm": "d9b471ff8cef05c9f3541662e6f14d89bc4c3a3f0bd3eb26ea8a26899dfe4c44",
+      "session1_left_little_aborted_enroll/frame_0084_raw.pgm": "e3836c24b5620f0c6fad9de8b1ac258bd41331e165662d64e68caad8bb83af94",
+      "session1_left_little_aborted_enroll/frame_0085_raw.pgm": "d8c22b3e0a7d18dc02a9e85bbfa74bcae350384e1b9966a7f510606a4d693584",
+      "session1_left_little_aborted_enroll/frame_0086_raw.pgm": "69c00c496adff91654338e7ec8d8fe59dc4ef4fa28d3e4996dadae50494304ad",
+      "session1_left_little_aborted_enroll/frame_0087_raw.pgm": "f8605c59083b1ffb0b822b33a83efb49a64b11388374e0e1e9cae06da67191a6",
+      "session1_left_little_aborted_enroll/frame_0088_raw.pgm": "7e370af9f5b68ddacde522c547477bddca0289035ab35844bfa405449fe6b710",
+      "session1_left_little_aborted_enroll/frame_0089_raw.pgm": "ff3c5e986259998cf9546a3dd676e80dc909f4bbee832b14a1fe473c764db421",
+      "session1_left_little_aborted_enroll/frame_0090_raw.pgm": "d67a2ec4d8a1ff84165f0559ade25a0ae66438e26ed3cf7a81540fa146147ca4",
+      "session1_left_little_aborted_enroll/frame_0091_raw.pgm": "081f93a065bae5fe807557036dd309589be05011938bc61094a36820108a7078",
+      "session1_left_little_aborted_enroll/frame_0092_raw.pgm": "2abbbe7decbbc838ffc01042d6084cc7a97dcdc3dcd603d65e341a4b57562640",
+      "session1_left_little_aborted_enroll/frame_0093_raw.pgm": "b4f85fa7e129e383b5cef3f5077fb4834fbd5874e26d978bc413670c43a25fd5",
+      "session1_left_little_aborted_enroll/frame_0094_raw.pgm": "83304328c5985e71e76460e6ebe2863d72a5afbc77f20dc39dba0c574932c86d",
+      "session1_left_little_aborted_enroll/frame_0095_raw.pgm": "40202bdac4b67d3c0e407cdb95cdb5665e6572bfd2abac0c2f5cd82be91dca49",
+      "session1_left_little_aborted_enroll/frame_0096_raw.pgm": "0cfedff97623c2e98a78cf32a9c4e0d6701659eaba763ca85cbab7957087b1b7"
+    },
+    "probe_policy": "single-frame",
+    "calibration": "none; optional proxy derived only from listed enrollment frames",
+    "matcher_layout": "profile10"
+  },
+  "result": {
+    "enrollment_complete": true,
+    "template_bytes": 38382,
+    "enrollment": [
+      {
+        "touch": 1,
+        "return_code": 0,
+        "accepted": 1,
+        "progress": 8,
+        "quality": 42,
+        "overlap": 88,
+        "selected_frame": 3
+      },
+      {
+        "touch": 2,
+        "return_code": 0,
+        "accepted": 2,
+        "progress": 16,
+        "quality": 50,
+        "overlap": 87,
+        "selected_frame": 1
+      },
+      {
+        "touch": 3,
+        "return_code": 0,
+        "accepted": 3,
+        "progress": 25,
+        "quality": 36,
+        "overlap": 84,
+        "selected_frame": 4
+      },
+      {
+        "touch": 4,
+        "return_code": 0,
+        "accepted": 4,
+        "progress": 33,
+        "quality": 19,
+        "overlap": 87,
+        "selected_frame": 4
+      },
+      {
+        "touch": 5,
+        "return_code": 0,
+        "accepted": 5,
+        "progress": 41,
+        "quality": 77,
+        "overlap": 88,
+        "selected_frame": 3
+      },
+      {
+        "touch": 6,
+        "return_code": 0,
+        "accepted": 6,
+        "progress": 50,
+        "quality": 21,
+        "overlap": 87,
+        "selected_frame": 3
+      },
+      {
+        "touch": 7,
+        "return_code": 0,
+        "accepted": 7,
+        "progress": 58,
+        "quality": 55,
+        "overlap": 85,
+        "selected_frame": 1
+      },
+      {
+        "touch": 8,
+        "return_code": 0,
+        "accepted": 8,
+        "progress": 66,
+        "quality": 49,
+        "overlap": 98,
+        "selected_frame": 1
+      },
+      {
+        "touch": 9,
+        "return_code": 0,
+        "accepted": 9,
+        "progress": 75,
+        "quality": 38,
+        "overlap": 90,
+        "selected_frame": 1
+      },
+      {
+        "touch": 10,
+        "return_code": 0,
+        "accepted": 10,
+        "progress": 83,
+        "quality": 53,
+        "overlap": 88,
+        "selected_frame": 2
+      },
+      {
+        "touch": 11,
+        "return_code": 0,
+        "accepted": 11,
+        "progress": 91,
+        "quality": 38,
+        "overlap": 74,
+        "selected_frame": 1
+      },
+      {
+        "touch": 12,
+        "return_code": 0,
+        "accepted": 12,
+        "progress": 100,
+        "quality": 70,
+        "overlap": 84,
+        "selected_frame": 2
+      }
+    ],
+    "probe_counts": {
+      "genuine": {
+        "touch_groups": 48,
+        "matched": 36
+      }
+    },
+    "probes": [
+      {
+        "id": "touch_01/frame_0001_raw.pgm",
+        "label": "genuine",
+        "matched": false,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 23,
+            "overlap": 93,
+            "return_code": 0,
+            "matched_index": -1,
+            "signed_score": -4,
+            "current_driver_pts": 0,
+            "details": [
+              100,
+              100
+            ],
+            "matched": false
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_01/frame_0002_raw.pgm",
+        "label": "genuine",
+        "matched": false,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 30,
+            "overlap": 85,
+            "return_code": 0,
+            "matched_index": -1,
+            "signed_score": -4,
+            "current_driver_pts": 0,
+            "details": [
+              100,
+              100
+            ],
+            "matched": false
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_01/frame_0003_raw.pgm",
+        "label": "genuine",
+        "matched": false,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 11,
+            "overlap": 67,
+            "return_code": 0,
+            "matched_index": -1,
+            "signed_score": -4,
+            "current_driver_pts": 0,
+            "details": [
+              100,
+              100
+            ],
+            "matched": false
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_01/frame_0004_raw.pgm",
+        "label": "genuine",
+        "matched": false,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 22,
+            "overlap": 82,
+            "return_code": 0,
+            "matched_index": -1,
+            "signed_score": -4,
+            "current_driver_pts": 0,
+            "details": [
+              100,
+              100
+            ],
+            "matched": false
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_02/frame_0005_raw.pgm",
+        "label": "genuine",
+        "matched": false,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 15,
+            "overlap": 79,
+            "return_code": 0,
+            "matched_index": -1,
+            "signed_score": -1,
+            "current_driver_pts": 0,
+            "details": [
+              100,
+              100
+            ],
+            "matched": false
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_02/frame_0006_raw.pgm",
+        "label": "genuine",
+        "matched": false,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 22,
+            "overlap": 86,
+            "return_code": 0,
+            "matched_index": -1,
+            "signed_score": -4,
+            "current_driver_pts": 0,
+            "details": [
+              100,
+              100
+            ],
+            "matched": false
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_02/frame_0007_raw.pgm",
+        "label": "genuine",
+        "matched": false,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 22,
+            "overlap": 85,
+            "return_code": 0,
+            "matched_index": -1,
+            "signed_score": -1,
+            "current_driver_pts": 0,
+            "details": [
+              100,
+              100
+            ],
+            "matched": false
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_02/frame_0008_raw.pgm",
+        "label": "genuine",
+        "matched": false,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 20,
+            "overlap": 92,
+            "return_code": 0,
+            "matched_index": -1,
+            "signed_score": -1,
+            "current_driver_pts": 0,
+            "details": [
+              100,
+              100
+            ],
+            "matched": false
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_03/frame_0009_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 43,
+            "overlap": 94,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 71,
+            "current_driver_pts": 71,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_03/frame_0010_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 49,
+            "overlap": 95,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 67,
+            "current_driver_pts": 67,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_03/frame_0011_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 54,
+            "overlap": 94,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 71,
+            "current_driver_pts": 71,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_03/frame_0012_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 52,
+            "overlap": 94,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 67,
+            "current_driver_pts": 67,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_04/frame_0013_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 57,
+            "overlap": 96,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 51,
+            "current_driver_pts": 51,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_04/frame_0014_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 58,
+            "overlap": 96,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 54,
+            "current_driver_pts": 54,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_04/frame_0015_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 55,
+            "overlap": 96,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 58,
+            "current_driver_pts": 58,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_04/frame_0016_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 46,
+            "overlap": 99,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 64,
+            "current_driver_pts": 64,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_05/frame_0017_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 15,
+            "overlap": 86,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 61,
+            "current_driver_pts": 61,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_05/frame_0018_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 18,
+            "overlap": 96,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 80,
+            "current_driver_pts": 80,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_05/frame_0019_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 22,
+            "overlap": 97,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 67,
+            "current_driver_pts": 67,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_05/frame_0020_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 22,
+            "overlap": 98,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 71,
+            "current_driver_pts": 71,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_06/frame_0021_raw.pgm",
+        "label": "genuine",
+        "matched": false,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 8,
+            "overlap": 63,
+            "return_code": 0,
+            "matched_index": -1,
+            "signed_score": -4,
+            "current_driver_pts": 0,
+            "details": [
+              100,
+              100
+            ],
+            "matched": false
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_06/frame_0022_raw.pgm",
+        "label": "genuine",
+        "matched": false,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 0,
+            "overlap": 23,
+            "return_code": 0,
+            "matched_index": -1,
+            "signed_score": -4,
+            "current_driver_pts": 0,
+            "details": [
+              100,
+              100
+            ],
+            "matched": false
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_06/frame_0023_raw.pgm",
+        "label": "genuine",
+        "matched": false,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 0,
+            "overlap": 32,
+            "return_code": 0,
+            "matched_index": -1,
+            "signed_score": -4,
+            "current_driver_pts": 0,
+            "details": [
+              100,
+              100
+            ],
+            "matched": false
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_06/frame_0024_raw.pgm",
+        "label": "genuine",
+        "matched": false,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 11,
+            "overlap": 67,
+            "return_code": 0,
+            "matched_index": -1,
+            "signed_score": -4,
+            "current_driver_pts": 0,
+            "details": [
+              100,
+              100
+            ],
+            "matched": false
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_07/frame_0025_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 56,
+            "overlap": 96,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 30,
+            "current_driver_pts": 30,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_07/frame_0026_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 62,
+            "overlap": 94,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 30,
+            "current_driver_pts": 30,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_07/frame_0027_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 70,
+            "overlap": 94,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 51,
+            "current_driver_pts": 51,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_07/frame_0028_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 69,
+            "overlap": 94,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 41,
+            "current_driver_pts": 41,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_08/frame_0029_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 26,
+            "overlap": 74,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 46,
+            "current_driver_pts": 46,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_08/frame_0030_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 60,
+            "overlap": 92,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 35,
+            "current_driver_pts": 35,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_08/frame_0031_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 59,
+            "overlap": 94,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 45,
+            "current_driver_pts": 45,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_08/frame_0032_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 60,
+            "overlap": 93,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 41,
+            "current_driver_pts": 41,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_09/frame_0033_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 53,
+            "overlap": 99,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 83,
+            "current_driver_pts": 83,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_09/frame_0034_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 56,
+            "overlap": 98,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 93,
+            "current_driver_pts": 93,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_09/frame_0035_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 58,
+            "overlap": 96,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 77,
+            "current_driver_pts": 77,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_09/frame_0036_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 66,
+            "overlap": 93,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 74,
+            "current_driver_pts": 74,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_10/frame_0037_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 26,
+            "overlap": 90,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 87,
+            "current_driver_pts": 87,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_10/frame_0038_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 22,
+            "overlap": 90,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 80,
+            "current_driver_pts": 80,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_10/frame_0039_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 22,
+            "overlap": 89,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 87,
+            "current_driver_pts": 87,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_10/frame_0040_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 24,
+            "overlap": 88,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 80,
+            "current_driver_pts": 80,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_11/frame_0041_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 57,
+            "overlap": 88,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 51,
+            "current_driver_pts": 51,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_11/frame_0042_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 65,
+            "overlap": 94,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 48,
+            "current_driver_pts": 48,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_11/frame_0043_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 67,
+            "overlap": 93,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 51,
+            "current_driver_pts": 51,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_11/frame_0044_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 67,
+            "overlap": 93,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 51,
+            "current_driver_pts": 51,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_12/frame_0045_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 50,
+            "overlap": 93,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 54,
+            "current_driver_pts": 54,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_12/frame_0046_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 34,
+            "overlap": 94,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 58,
+            "current_driver_pts": 58,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_12/frame_0047_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 35,
+            "overlap": 87,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 83,
+            "current_driver_pts": 83,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      },
+      {
+        "id": "touch_12/frame_0048_raw.pgm",
+        "label": "genuine",
+        "matched": true,
+        "attempts": [
+          {
+            "frame": 1,
+            "phase": "final-best-frame",
+            "quality": 30,
+            "overlap": 80,
+            "return_code": 0,
+            "matched_index": 0,
+            "signed_score": 83,
+            "current_driver_pts": 83,
+            "details": [
+              100,
+              100
+            ],
+            "matched": true
+          }
+        ],
+        "fast_path": false,
+        "available_frames": 1
+      }
+    ],
+    "frame_errors": []
+  }
+}

@@ -1,6 +1,6 @@
 # 113: Vendor calibration and preprocessing prototype
 
-**Status:** in-progress
+**Status:** superseded (successor: 114, opt-in native-raster/band-pass hardware verification)
 
 **What to build:** An offline prototype for the Milan vendor preprocessor,
 using the recovered Windows call contract, explicit per-device calibration,
@@ -148,3 +148,62 @@ present. This is a specific file-recovery request, not a repeat request for an
 unspecified calibration file or new touches. Cache presence/format and same-unit
 provenance remain unverified. No public request, PR, push, sensor operation or
 driver installation occurred. Status remains in-progress pending that input.
+
+
+## Jet-Soup archive audit, 2026-10-18
+
+- Reproduced all five published non-FPN frame match counts through the native
+  engine. Target 100 completes 12 submissions / 100% and matches frames 13-16;
+  target 220 instead matches 17-20. Each four-frame group is one reported touch,
+  and the first 12 submissions come from only three touches, with no finger labels.
+- All 24 saved normalized PGMs instead exactly match older 9x9 max-absolute
+  residual scaling, not the stated target-SD-80 patch. The supplied average has
+  PGM maximum 4095 inserted as its first sample; the remaining 5,119 exactly match
+  the truncated mean shifted by one position. Neither mean is real calibration.
+- Supplied patch retains the negative-score clamp. The corrected standalone
+  runner exposes the actual signed scores; the target-100 direct C wrapper
+  cross-check agrees on all decisions and displayed scores.
+- Enrollment at target 60 only accepts eight frames / 66%; packing succeeds
+  anyway. Exact all-frame normalized-FPN replay changes targets 140/180 from zero
+  to four matches, contrary to the claim of no effect. That mode leaks probe data
+  and is historical reproduction only.
+- An initial temporary reference build accidentally used the base normalizer;
+  that all-rejected result was withdrawn. Actual patches were applied outside
+  the checkout and the final compiled function agrees with an independent
+  transcription for every pixel. The runner now aborts on that mismatch.
+- Keep Jet-Soup's wire profile with their unit; no before-change frames or wire
+  capture were supplied to establish a universal config fix. Bursts 2 and 5
+  are featureless and highly correlated; ask their actual contact/finger labels
+  before assigning genuine, wrong-finger or no-finger meaning.
+
+[Report, reproduction and contributor requests](../../../docs/jet-soup-replay-2026-10-18.md).
+Verdict: confirmed replay counts and package inconsistencies; vendor improvement
+inconclusive-because-missing-same-unit-calibration. The single next experiment
+remains ptrip7's labeled replay using a validated same-unit Windows cache export,
+with confirm/falsify predictions in the report. Jet-Soup can clarify existing
+burst labels and packaging in parallel. No new scans are needed for those
+clarifications. No public comment, push, PR update, hardware operation or driver
+installation occurred. Status remains in-progress.
+
+## Superseded by 114, 2026-10-19
+
+ptrip7 supplied the same-unit Windows cache. Alignment reproduces their
+transpose finding, including against enrollment-only data. The engine accepts
+the saved state. Calibrated vendor processing alone did not improve canonical
+matching, but a controlled engine-raster comparison changed the outcome:
+band-pass plus transposed 80x64 engine input gives 10/10 labeled genuine and
+0/10 wrong-finger matches, and 82/96 held-out session frame matches (previously
+5/10 and 62/96). Vendor preprocessing with aligned native input and matching
+also gives 10/10 labeled and 78/96 frame matches. Band-pass reaches the stronger
+frame result without calibration, so no further cache request is needed.
+
+An opt-in patch preserves the public canonical raster, default normalization,
+capture settings and 12-touch target; the experimental band-pass/engine
+transpose is enabled only by GOODIX_5E0A_NATIVE_RASTER=1. Actual candidate C
+wrappers reproduce all decisive results, C normalization matches the reference
+on all 213 frames in both modes, gallery rejection paths and guarded software
+controls pass. No deployed-driver run has occurred. This supersedes the old
+missing-calibration workfront; it does not mark a hardware fix verified.
+
+[Report and next experiment](../../../docs/calibration-raster-2026-10-19.md).
+Successor: [114](114-ready-for-hardware-verify-native-raster-bandpass.md).

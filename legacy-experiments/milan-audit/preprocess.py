@@ -47,9 +47,13 @@ def raw_pixels(values):
 
 
 class VendorPreprocessor:
-    def __init__(self, engine, calibration, *, calibration_state=None):
+    def __init__(self, engine, calibration, *, calibration_state=None, layout="legacy"):
+        if layout not in {"legacy", "profile10"}:
+            raise ValueError("Unknown vendor raster layout")
+        self.layout = layout
+        self.width, self.height = (80, 64) if layout == "profile10" else (WIDTH, HEIGHT)
         self.engine = engine
-        self.calibration = GuardedBuffer(engine, raw_pixels(calibration))
+        self.calibration = GuardedBuffer(engine, self._raw_pixels(calibration))
         if engine.call("ppp_param_init", [10]) != 0:
             raise RuntimeError("Vendor sensor-profile initialization failed")
         if engine.call("preprocess_init_calidata") != 0:
@@ -73,13 +77,22 @@ class VendorPreprocessor:
                 )
         record = bytearray(48)
         struct.pack_into("<Q", record, 24, self.calibration.address)
-        struct.pack_into("<II", record, 36, HEIGHT, WIDTH)
+        struct.pack_into("<II", record, 36, self.height, self.width)
         self.record = GuardedBuffer(engine, record)
         result = engine.call("preprocessor_init", [self.record.address])
         self.record.check()
         self.calibration.check()
         if result != 0:
             raise RuntimeError(f"Vendor calibration failed with 0x{result:x}")
+
+    def _raw_pixels(self, raw):
+        canonical = raw_pixels(raw)
+        if self.layout == "legacy":
+            return canonical
+        # Profile 10's parameter table fixes SENSOR_ROW=64, SENSOR_COL=80.
+        # The preprocessor uses those globals rather than the image dimensions.
+        # Keep the caller/matcher's 64x80 raster canonical at both boundaries.
+        return np.frombuffer(canonical, dtype="<u2").reshape(HEIGHT, WIDTH).T.copy().tobytes()
 
     def save_state(self):
         size = self.engine.call("preprocess_get_calidata_len")
@@ -98,12 +111,12 @@ class VendorPreprocessor:
 
     def process(self, raw, *, enrolling=False):
         engine = self.engine
-        source_pixels = GuardedBuffer(engine, raw_pixels(raw))
+        source_pixels = GuardedBuffer(engine, self._raw_pixels(raw))
         output_pixels = GuardedBuffer(engine, bytes(PIXELS))
 
         def image(data, length, bits):
             record = bytearray(48)
-            struct.pack_into("<Qhh", record, 0, data, WIDTH, HEIGHT)
+            struct.pack_into("<Qhh", record, 0, data, self.width, self.height)
             record[14] = bits
             record[15] = 1
             struct.pack_into("<Ih", record, 20, length, 1)
@@ -120,12 +133,15 @@ class VendorPreprocessor:
         )
         for buffer in (source_pixels, output_pixels, source, output, purpose, metrics):
             buffer.check()
-        if source_pixels.read() != raw_pixels(raw):
+        if source_pixels.read() != self._raw_pixels(raw):
             raise RuntimeError("Vendor call changed the source pixels")
         coverage, quality = struct.unpack("<II", metrics.read())
+        pixels = output_pixels.read()
+        if self.layout == "profile10":
+            pixels = np.frombuffer(pixels, dtype=np.uint8).reshape(64, 80).T.copy().tobytes()
         return {
             "return_code": result & 0xFFFFFFFF,
             "quality": quality,
             "coverage": coverage,
-            "pixels": output_pixels.read(),
+            "pixels": pixels,
         }

@@ -90,6 +90,8 @@ def calibration_export(data):
             name: hashlib.sha256(value).hexdigest() for name, value in files.items()
         },
         "image_geometry": {"width": WIDTH, "height": HEIGHT, "maximum": 4095},
+        "image_geometry_role": "PGM container dimensions; ImageBase record sample order is preserved, not inferred",
+        "image_alignment": "Unverified against driver frames; establish orientation before using as calibration",
         "background_min_max": [min(pixels), max(pixels)],
         "calibration_state_bytes": len(state) if state else 0,
         "state_size_matches_reviewed_engine": bool(

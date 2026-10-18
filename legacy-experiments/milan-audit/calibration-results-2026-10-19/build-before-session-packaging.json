@@ -1,0 +1,12 @@
+{
+  "full_driver_build": "passed",
+  "package": "/nix/store/6gcsin3xgkbzrxr0x8bq34lvblw9jspj-libfprint-goodix-1.94.5-goodixtls-5e0a",
+  "package_library_sha256": "28f18e162c6eda2fb3aea4ec24b8e28efab1b3fb8b42ec6c3ea1621ac6966a1b",
+  "build_command": "nix build path:/tmp/goodix-native-raster-build-20261019#libfprint-goodix --no-link --no-write-lock-file --print-out-paths",
+  "baseline_git_head": "46e85d8ab627964141659d1e0e56f310cff12764",
+  "candidate_patch_sha256": "65f8764edbd50a0dba216b614ab9f7731908275b53ac486c3d5fdb29b9811651",
+  "offline_probe_build": "passed -Wall -Wextra -Werror",
+  "hardware_run": false,
+  "installed": false,
+  "services_restarted": false
+}
