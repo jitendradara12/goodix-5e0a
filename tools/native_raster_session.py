@@ -11,6 +11,7 @@ import datetime as dt
 import hashlib
 import io
 import json
+import mmap
 import os
 from pathlib import Path
 import platform
@@ -29,6 +30,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNTIME = Path("/run/goodix-5e0a-experiment")
+DRIVER_BASE = Path("/var/lib")
 DROPIN = Path("/run/systemd/system/fprintd.service.d/zzzz-goodix-experiment.conf")
 REPORTS = Path("/var/tmp/goodix-5e0a-reports")
 FLAG = "GOODIX_5E0A_NATIVE_RASTER"
@@ -108,10 +110,29 @@ def isolation_probe(directory):
     (prints / ".isolation-token").unlink()
 
 
+def driver_directory(nonce):
+    if not re.fullmatch(r"[0-9a-f]{16}", nonce):
+        raise RuntimeError("Invalid experiment identifier")
+    return DRIVER_BASE / ("goodix-5e0a-experiment-" + nonce)
+
+
+def executable_mapping_probe(library):
+    """Check executable file mappings without loading code or opening USB."""
+    try:
+        with library.open("rb") as source:
+            with mmap.mmap(source.fileno(), 0, flags=mmap.MAP_PRIVATE,
+                           prot=mmap.PROT_READ | mmap.PROT_EXEC):
+                pass
+    except OSError as error:
+        raise RuntimeError(f"Test library cannot be mapped executable at {library}; "
+                           "no service change was made") from error
+
+
 def dropin_text(daemon, nonce):
+    driver = driver_directory(nonce)
     return (f"# goodix disposable experiment {nonce}\n[Service]\n"
-            f"Environment=LD_LIBRARY_PATH={RUNTIME}/driver/lib\n"
-            f"Environment=GOODIX_ENGINE_DLL_PATH={RUNTIME}/driver/GoodixEngineAdapter.dll\n"
+            f"Environment=LD_LIBRARY_PATH={driver}/lib\n"
+            f"Environment=GOODIX_ENGINE_DLL_PATH={driver}/GoodixEngineAdapter.dll\n"
             f"Environment={FLAG}=1\nEnvironment=G_MESSAGES_DEBUG=\n"
             "Environment=STATE_DIRECTORY=/var/lib/fprint\n"
             "UnsetEnvironment=GOODIX_5E0A_DUMP_DIR GOODIX_REPLAY_DIR GOODIX_PROBE_FILE GOODIX_VENDOR_TAIL GOODIX_QUALITY_SWEEP\n"
@@ -120,20 +141,20 @@ def dropin_text(daemon, nonce):
             f"ExecStart=\nExecStart={daemon} --no-timeout\n")
 
 
-def verify_runtime(pid):
+def verify_runtime(pid, driver):
     proc = Path("/proc") / str(pid)
     expected, observed = (RUNTIME / "prints").stat(), (proc / "root/var/lib/fprint").stat()
     if (expected.st_dev, expected.st_ino) != (observed.st_dev, observed.st_ino):
         raise RuntimeError("Live daemon storage is not isolated; aborting before enrollment")
     env = dict(item.split(b"=", 1) for item in (proc / "environ").read_bytes().split(b"\0") if b"=" in item)
     for key, value in {FLAG: "1", "STATE_DIRECTORY": "/var/lib/fprint",
-                       "LD_LIBRARY_PATH": str(RUNTIME / "driver/lib")}.items():
+                       "LD_LIBRARY_PATH": str(driver / "lib")}.items():
         if env.get(key.encode()) != value.encode():
             raise RuntimeError(f"Driver process is missing expected {key}")
     maps = (proc / "maps").read_text()
-    if str(RUNTIME / "driver/lib/libfprint-2.so") not in maps:
+    if str(driver / "lib/libfprint-2.so") not in maps:
         raise RuntimeError("Daemon did not load the experimental libfprint; aborting")
-    if str(RUNTIME / "driver/GoodixEngineAdapter.dll") not in env.get(b"GOODIX_ENGINE_DLL_PATH", b"").decode():
+    if str(driver / "GoodixEngineAdapter.dll") != env.get(b"GOODIX_ENGINE_DLL_PATH", b"").decode():
         raise RuntimeError("Daemon is missing its test engine path")
 
 
@@ -298,6 +319,19 @@ def restore():
     timer = manifest.get("timer")
     if timer:
         subprocess.run(["systemctl", "stop", timer + ".timer"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Older /run-only sessions have no external driver directory.
+    if manifest.get("driver_directory"):
+        driver = driver_directory(manifest["nonce"])
+        if str(driver) != manifest["driver_directory"] or driver.is_symlink():
+            raise RuntimeError("Unexpected driver staging path; preserving it for review")
+        if driver.exists():
+            marker = driver / ".session-owner"
+            if marker.is_file() and marker.read_text() == manifest["nonce"]:
+                shutil.rmtree(driver)
+            elif not any(driver.iterdir()):
+                driver.rmdir()  # Interrupted between mkdir and ownership marker.
+            else:
+                raise RuntimeError("Driver staging ownership changed; preserving it for review")
     shutil.rmtree(RUNTIME)
 
 
@@ -305,6 +339,9 @@ def root_session(stage, metadata):
     preflight()
     daemon = daemon_path()
     nonce = secrets.token_hex(8)
+    driver = driver_directory(nonce)
+    if driver.exists() or driver.is_symlink():
+        raise RuntimeError("Driver staging directory already exists; no service change was made")
     event_path = RUNTIME / "events.jsonl"
 
     def event(phase, **fields):
@@ -313,7 +350,8 @@ def root_session(stage, metadata):
         print(timestamp(), phase, flush=True)
 
     manifest = {"nonce": nonce, "was_active": property_value("ActiveState") == "active",
-                "service_changed": False, "dropin": dropin_text(daemon, nonce)}
+                "service_changed": False, "dropin": dropin_text(daemon, nonce),
+                "driver_directory": str(driver)}
     clients = []
     info = {**metadata, "started": timestamp(), "hardware_run": False,
             "verdict": "inconclusive-because-interrupted", "storage_isolated": False,
@@ -330,13 +368,15 @@ def root_session(stage, metadata):
         prints = RUNTIME / "prints"
         prints.mkdir(mode=0o700)
         isolation_probe(RUNTIME)
-        driver = RUNTIME / "driver"
-        (driver / "lib").mkdir(parents=True)
+        driver.mkdir(mode=0o700)
+        (driver / ".session-owner").write_text(nonce)
+        (driver / "lib").mkdir()
         for path in sorted((stage / "lib").glob("libfprint-2.so*")):
             shutil.copyfile(path.resolve(), driver / "lib" / path.name)
         if not (driver / "lib/libfprint-2.so.2").is_file():
             raise RuntimeError("Build stage has no libfprint-2.so.2")
         shutil.copyfile(stage / "GoodixEngineAdapter.dll", driver / "GoodixEngineAdapter.dll")
+        executable_mapping_probe(driver / "lib/libfprint-2.so.2")
         timer = "goodix-test-restore-" + nonce
         manifest["timer"] = timer
         write_json(RUNTIME / "manifest.json", manifest)
@@ -357,7 +397,7 @@ def root_session(stage, metadata):
         pid = int(property_value("MainPID"))
         if pid <= 0:
             raise RuntimeError("Experimental daemon did not start")
-        verify_runtime(pid)
+        verify_runtime(pid, driver)
         info["storage_isolated"] = True
         event("storage-and-library-verified")
         info.update(guided_test(event, clients))

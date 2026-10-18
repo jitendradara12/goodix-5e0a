@@ -1,0 +1,71 @@
+{
+  "revision": "bfb5852c68511630cb3ff5cbfdc3ab9f9aa841f9",
+  "experiment": "bandpass80-native-raster",
+  "patch_sha256": "09c138bff5f4e6f4948fca565b0d5c025186027d96e63aca04249375facfef85",
+  "library_sha256": "dad857c64dc9f61b6f5acdc9da1da632b91719e9711207dc8084096e395a807d",
+  "kernel": "7.2.10",
+  "architecture": "x86_64",
+  "started": "2026-10-18T21:05:49.702+00:00",
+  "hardware_run": true,
+  "verdict": "confirmed",
+  "storage_isolated": true,
+  "restored": true,
+  "next_experiment": "review this bundle before requesting another run",
+  "scope": "this unit and this guided run only",
+  "attempts": [
+    {
+      "label": "genuine",
+      "attempt": 1,
+      "matched": true
+    },
+    {
+      "label": "genuine",
+      "attempt": 2,
+      "matched": true
+    },
+    {
+      "label": "genuine",
+      "attempt": 3,
+      "matched": true
+    },
+    {
+      "label": "genuine",
+      "attempt": 4,
+      "matched": true
+    },
+    {
+      "label": "genuine",
+      "attempt": 5,
+      "matched": true
+    },
+    {
+      "label": "wrong",
+      "attempt": 1,
+      "matched": false
+    },
+    {
+      "label": "wrong",
+      "attempt": 2,
+      "matched": false
+    },
+    {
+      "label": "wrong",
+      "attempt": 3,
+      "matched": false
+    },
+    {
+      "label": "wrong",
+      "attempt": 4,
+      "matched": false
+    },
+    {
+      "label": "wrong",
+      "attempt": 5,
+      "matched": false
+    }
+  ],
+  "hands_off_activity": false,
+  "holding_advances": 1,
+  "finished": "2026-10-18T21:07:45.754+00:00"
+}
+

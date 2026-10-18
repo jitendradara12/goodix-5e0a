@@ -43,8 +43,9 @@ regression on the previously working unit.
 templates, unlabeled probes, or absent hands-off/holding phases. Conclude only
 confirmed / falsified / inconclusive-because-[flaw], plus one next experiment.
 
-No hardware fingerprint run, installation, fprintd restart or public message
-has occurred. No additional calibration export is needed for this experiment.
+At initial packaging, no hardware fingerprint run, installation, fprintd restart
+or public message had occurred. Subsequent hardware evidence is recorded below.
+No additional calibration export is needed for this experiment.
 
 ## Packaged contributor session
 
@@ -61,3 +62,50 @@ storage namespace probe passes without using fprintd or USB; normal fprintd
 PID, start time and state remain unchanged. The owner explicitly authorized
 one workbench commit/push to PR #13. Status stays ready-for-hardware-verify;
 neither simulated cleanup tests nor a successful build count as verification.
+
+## Owner regression run, 2026-10-19
+
+- **Hardware run:** verified on owner's x86-64 Linux laptop via `tools/test-native-raster.sh`.
+- **Bundle:** `/var/tmp/goodix-5e0a-reports/goodix-test-e68e08c4aed3cc40.zip` (SHA-256 in report).
+- **Phase 1 (hands-off 20s):** silent, `hands_off_activity: false`.
+- **Phase 2 (holding 20s):** `holding_advances: 1`, prompt capture, clean advance.
+- **Enrollment:** 12 touches completed normally.
+- **Verification:** 5/5 genuine matches (`pts=61`, `pts=74`, optimistic fast-path on frame 1), 0/5 wrong-finger matches (`pts=0` rejection on all 5). Total 10/10 correct decisions.
+- **Cleanup:** isolated storage unmounted, normal service restored cleanly.
+- **Verdict:** confirmed (owner regression control passed with zero regressions). Single next experiment remains ptrip7's hardware verification on the affected unit.
+
+The [saved session report](../../../legacy-experiments/milan-audit/calibration-results-2026-10-19/owner-hardware-session.json)
+was independently read from the ZIP over SSH. It confirms isolation, restoration,
+all ten labeled decisions, no hands-off activity and one holding advance.
+The five genuine scores in the projected journal were 41, 45, 61, 74 and 74;
+all five wrong-finger decisions were match=0, pts=0.
+
+## ptrip7 setup failure and runner correction, 2026-10-19
+
+[ptrip7's report](https://github.com/jitendradara12/goodix-5e0a/issues/12#issuecomment-6255286093)
+describes the same patch/revision, but Mint's `/run` is mounted `noexec`.
+The daemon exited 127 while mapping the staged libfprint, before isolation
+verification or sensor testing. Normal service restoration succeeded.
+
+**Verdict:** inconclusive-because-noexec-before-sensor-test. This result does not
+confirm or falsify the image-processing experiment.
+
+The corrected runner stages only the driver under a root-only, per-session
+`/var/lib/goodix-5e0a-experiment-<id>` directory. Runtime recovery state and
+private prints remain under `/run`. Before changing the service, it tests an
+executable mapping without running library code. Restoration removes the
+external driver directory, checking its recorded path and ownership marker.
+Recovery of older `/run`-only manifests remains supported. The candidate patch
+and its processing parameters are unchanged.
+
+Thirteen failure-injection tests pass on macOS and Linux. An actual isolated
+Linux mount-namespace test reproduced denial on a `noexec` tmpfs and successful
+mapping of the identical candidate library under `/var/lib`. Normal fprintd PID,
+active state and start timestamp were unchanged; no sensor code was executed.
+[Mapping proof](../../../legacy-experiments/milan-audit/calibration-results-2026-10-19/runner-noexec-proof.json).
+
+**Single next experiment:** ptrip7 reruns the guided hardware session with this
+runner correction. Predict the daemon starts and isolation verifies, then the
+existing confirm/falsify signatures above apply. If executable mapping remains
+blocked, setup must abort before any service change: inconclusive-because-host-execution-policy.
+Owner regression is complete; no repeat is requested from the owner or Jet-Soup.

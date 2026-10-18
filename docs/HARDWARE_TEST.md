@@ -1,14 +1,20 @@
 # Issue #12: one temporary hardware test
 
-For **ptrip7's affected laptop first**, then the owner's working laptop as a
-regression control. No new Windows boot, calibration export, image dumps or
+The owner's working laptop passed its regression control: five genuine matches,
+five wrong-finger rejections, quiet hands-off and one advance during holding.
+**ptrip7's affected laptop is next.** No new Windows boot, calibration export, image dumps or
 parameter tuning is needed. Jet-Soup does not need to run this revision yet:
 their unit needs its separate wire settings preserved in a later test.
 
 This is the disposable experiment in PR #13, not a proposed production install.
 Offline replay gives 10/10 genuine and 0/10 wrong-finger matches on the supplied
 labeled dataset. The separate session improves from 62/96 to 82/96 frame
-matches. Hardware operation is the remaining question.
+matches. Hardware operation on the affected unit is the remaining question.
+
+ptrip7's first attempt stopped before sensor testing because Mint mounts `/run`
+with `noexec`. The runner now stages its private driver in a root-only temporary
+directory under `/var/lib` and checks executable mapping before changing the
+service. Runtime control files and the temporary print database remain in `/run`.
 
 ## Run
 
@@ -56,12 +62,17 @@ bash tools/test-native-raster.sh --restore
 
 The same recovery action is also scheduled independently for 30 minutes after
 session setup. The override lives under `/run`, so it does not survive reboot.
+Restoration removes the staged driver under `/var/lib/goodix-5e0a-experiment-<id>`.
+If a reboot interrupts cleanup, that directory may remain; it holds only the
+library and DLL, never prints. Mention an interrupted reboot in your report.
 There are no installed library, account, PAM or permanent service-file changes.
 
 ## What the runner verifies
 
 - Builds the opt-in band-pass/native-raster patch in an isolated source copy;
   neither checkout nor installed library is patched.
+- Checks executable mapping from the private driver directory before restarting
+  fprintd; an execution restriction aborts setup and removes the staged files.
 - Proves a private `/var/lib/fprint` bind mount using a harmless transient
   systemd unit before changing fprintd. The normal print database is not read.
 - Temporarily adds its own runtime drop-in and restarts fprintd with the test

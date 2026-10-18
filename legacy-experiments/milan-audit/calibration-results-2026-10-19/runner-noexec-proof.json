@@ -1,0 +1,9 @@
+{
+  "restricted_runtime_mapping_rejected": true,
+  "var_lib_driver_mapping_passed": true,
+  "library_changed": false,
+  "normal_service_unchanged": true,
+  "sensor_used": false,
+  "method": "Private Linux mount namespace; noexec tmpfs versus root-only /var/lib directory; PROT_READ|PROT_EXEC mapping only",
+  "library_sha256": "dad857c64dc9f61b6f5acdc9da1da632b91719e9711207dc8084096e395a807d"
+}

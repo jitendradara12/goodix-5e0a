@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("hardware_session", ROOT / "tools/native_raster_session.py")
 SESSION = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SESSION)
+EXECUTABLE_MAPPING_PROBE = SESSION.executable_mapping_probe
 
 
 class SessionTests(unittest.TestCase):
@@ -35,12 +36,14 @@ class SessionTests(unittest.TestCase):
         self.calls = []
         self.failure = None
         self.stack = []
-        for name, value in (("RUNTIME", self.runtime), ("DROPIN", self.dropin), ("REPORTS", self.reports)):
+        for name, value in (("RUNTIME", self.runtime), ("DROPIN", self.dropin), ("REPORTS", self.reports),
+                            ("DRIVER_BASE", self.base)):
             patch = mock.patch.object(SESSION, name, value)
             patch.start()
             self.addCleanup(patch.stop)
         for name, value in (("preflight", lambda: None), ("daemon_path", lambda: "/usr/libexec/fprintd"),
-                            ("isolation_probe", lambda p: None), ("verify_runtime", lambda pid: None),
+                            ("isolation_probe", lambda p: None), ("verify_runtime", lambda pid, driver: None),
+                            ("executable_mapping_probe", lambda p: None),
                             ("property_value", self.property), ("command", self.command),
                             ("filtered_journal", lambda start: "5e0a Milan verify: match=1 pts=40\n")):
             patch = mock.patch.object(SESSION, name, value)
@@ -81,6 +84,8 @@ class SessionTests(unittest.TestCase):
         self.assertNotIn(b"existing template unchanged", b"".join(contents.values()))
         self.assertNotIn(b"private secret test template", b"".join(contents.values()))
         self.assertEqual((self.old_prints / "existing-template").read_bytes(), b"existing template unchanged")
+        if json.loads(contents["session.json"])["restored"]:
+            self.assertEqual(list(self.base.glob("goodix-5e0a-experiment-*")), [])
         return code, json.loads(contents["session.json"])
 
     def exercise(self, event, clients):
@@ -98,6 +103,35 @@ class SessionTests(unittest.TestCase):
         self.assertFalse(self.dropin.exists())
         self.assertIn(["systemctl", "stop", "fprintd.service"], self.calls)
         self.assertIn(["systemctl", "start", "fprintd.service"], self.calls)
+        self.assertEqual(list(self.base.glob("goodix-5e0a-experiment-*")), [])
+
+    def test_driver_is_staged_outside_run_and_removed_on_restore(self):
+        def inspect_driver(event, clients):
+            manifest = json.loads((self.runtime / "manifest.json").read_text())
+            driver = Path(manifest["driver_directory"])
+            self.assertNotIn(self.runtime, driver.parents)
+            self.assertEqual((driver / "lib/libfprint-2.so.2").read_bytes(), b"fixture library")
+            self.assertIn(f"Environment=LD_LIBRARY_PATH={driver}/lib", self.dropin.read_text())
+            return self.exercise(event, clients)
+        code, result = self.run_session(inspect_driver)
+        self.assertEqual(code, 0)
+        self.assertTrue(result["restored"])
+        self.assertEqual(list(self.base.glob("goodix-5e0a-experiment-*")), [])
+
+    def test_noexec_staging_aborts_before_service_change_and_cleans_up(self):
+        with mock.patch.object(SESSION, "executable_mapping_probe", side_effect=RuntimeError("noexec")):
+            code, result = self.run_session(self.exercise)
+        self.assertEqual(code, 1)
+        self.assertFalse(result["hardware_run"])
+        self.assertTrue(result["restored"])
+        self.assertFalse(any(c[:2] in (["systemctl", "start"], ["systemctl", "stop"], ["systemctl", "restart"])
+                             for c in self.calls))
+        self.assertEqual(list(self.base.glob("goodix-5e0a-experiment-*")), [])
+
+    def test_executable_mapping_probe_rejects_noexec(self):
+        with mock.patch.object(SESSION.mmap, "mmap", side_effect=PermissionError("noexec")):
+            with self.assertRaisesRegex(RuntimeError, "cannot be mapped executable"):
+                EXECUTABLE_MAPPING_PROBE(self.stage / "lib/libfprint-2.so.2")
 
     def test_inactive_service_is_left_inactive(self):
         self.active = "inactive"
