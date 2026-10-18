@@ -9,7 +9,9 @@ Investigate why Issue #12 reporter experiences consistent `verify-no-match` desp
 
 **Blocked by:** User hardware burst capture using hardened `capture_live_burst.py`.
 
-**Status:** ready-for-agent
+**Status:** superseded
+
+**Successor:** [113: Vendor preprocessing and real-capture comparison](113-in-progress-vendor-preprocessing-prototype.md).
 
 ## Context & Rationale
 
@@ -26,3 +28,42 @@ Investigate why Issue #12 reporter experiences consistent `verify-no-match` desp
   - Normalization outputs saturated or suppressed ridge contrasts under 1.5 gain.
 - **Falsify (Template geometry / learning issue):**
   - Offline matching with Milan engine against user-provided burst frames shows high quality scores when aligned, indicating the issue is gallery coverage or alignment rather than raw sensor frame acquisition.
+
+## Evidence correction, 2026-10-18
+
+The plan and blocker above predate the reporter's real-driver dumps and offline
+experiments. Preserve them as history; do not ask the reporter to repeat the
+failed standalone capture procedure as the next step. High quality does not
+establish gallery coverage, so the original falsify branch is not a valid
+discriminator.
+
+[Offline evidence review](../../../docs/evidence-review-2026-10-18.md) and
+[reproducible runner](../../../legacy-experiments/milan-audit/README.md) now establish:
+
+- The early Milan accuracy fixtures are generated patterns, byte-identical to
+  the saved generator, not two real fingers.
+- `pts=0` conflates negative match scores and engine errors; it does not prove
+  the repeatedly cited raw score -7 or insufficient feature extraction.
+- Archived Windows code calls calibration/preprocessing APIs absent from the
+  Linux bridge. The engine executes a calibrated preprocessing smoke test.
+- The 3x3 residual strongly attenuates the newly reported 8–10-pixel ridge scale.
+- Auto-study after the existing verify wrapper would encounter freed template
+  state; that proposed sequence needs redesign and is not the present fix.
+
+No deployed-driver hardware run occurred. This ticket stays ready-for-agent.
+The single next experiment and revised confirm/falsify predictions are in the
+review: reconstruct the remaining vendor ABI/calibration contract and compare
+final matching on held-out touches, rather than treating quality as proof.
+
+## Superseded after the real-capture replay, 2026-10-18
+
+The original capture blocker and overlap-only investigation plan are obsolete.
+ptrip7's updated ZIP supplies the raw frames, labeled touches and replay code.
+The report now reproduces the contributor's published rows and exact labeled
+journal baseline. FPN correction improves labeled matching from 5/10 to 7/10,
+with 0/10 wrong-finger matches; vendor preprocessing with an estimated
+background is not a demonstrated fix. Continued calibration/integration work
+belongs to successor 113. This supersedes the earlier ready-for-agent note;
+it is not a hardware-verified closure.
+
+[Real-capture report](../../../docs/ptrip7-replay-2026-10-18.md).

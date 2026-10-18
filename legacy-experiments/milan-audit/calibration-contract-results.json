@@ -1,0 +1,43 @@
+{
+  "hardware_run": false,
+  "wbdi_sha256": "ce541d886983e628914aa7317f90711a363a5008ce250bceb40b64de9a45ce92",
+  "binary_call_edges": {
+    "0x892bc": "0x7c574",
+    "0x7c72d": "0x37094",
+    "0x371be": "0xc8d80",
+    "0x80c84": "0x4a18c",
+    "0x36f0a": "0xc84f0"
+  },
+  "cache_path": "C:\\ProgramData\\Goodix\\goodix.dat",
+  "cache_keys": [
+    "ImageBase",
+    "CaliData"
+  ],
+  "crc_vectors_executed": [
+    {
+      "bytes": 0,
+      "crc": "0xffffffff"
+    },
+    {
+      "bytes": 9,
+      "crc": "0x376e6e7"
+    },
+    {
+      "bytes": 256,
+      "crc": "0x494a116a"
+    }
+  ],
+  "vendor_record_reader_matches_extractor": true,
+  "case_insensitive_ascii_key_lookup": true,
+  "vendor_record_reader_rejects_crc_damage_truncation_missing_key": true,
+  "vendor_record_reader_output_guards_intact": true,
+  "imports": {
+    "fseek": 13,
+    "ftell": 12,
+    "memset": 10,
+    "fread": 11,
+    "_wcsicmp": 7,
+    "_errno": 1
+  },
+  "boundary": "Synthetic cache; actual wbdi record reader and CRC; in-memory stdio and ASCII _wcsicmp shims; no real cache or sensor identity validation"
+}

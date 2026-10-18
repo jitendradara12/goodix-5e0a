@@ -1,0 +1,144 @@
+{
+  "engine_sha256": "9990ab24af01b8c5c575c73cf7a95a7d675655adfb4183b6c030de2912ec23de",
+  "method": "Real x86-64 DLL instructions in Unicorn; malloc/free/memset shims; diagnostic logger and cookie check bypassed; DllMain omitted",
+  "synthetic_fixture_provenance": {
+    "67": {
+      "sha256": "d9f411180017c91a131eee16b80fc1473e7cc54fb09c3e8bd7dd171c8ae8fc58",
+      "synthetic_identity_confirmed": true
+    },
+    "68": {
+      "sha256": "e7346cfa9761348c274d65d6444b194200eceffa6229cd12092b973c19004359",
+      "synthetic_identity_confirmed": true
+    }
+  },
+  "matching": {
+    "seed67": {
+      "quality": 18,
+      "overlap": 98,
+      "return_code": 0,
+      "matched_index": 0,
+      "signed_score": 100,
+      "current_driver_pts": 100,
+      "details": [
+        100,
+        100
+      ]
+    },
+    "seed68": {
+      "quality": 19,
+      "overlap": 100,
+      "return_code": 0,
+      "matched_index": -1,
+      "signed_score": -4,
+      "current_driver_pts": 0,
+      "details": [
+        100,
+        100
+      ]
+    },
+    "flat": {
+      "quality": 0,
+      "overlap": 0,
+      "return_code": 131,
+      "matched_index": -1,
+      "signed_score": 0,
+      "current_driver_pts": 0,
+      "details": [
+        100,
+        100
+      ]
+    },
+    "white_noise": {
+      "quality": 0,
+      "overlap": 0,
+      "return_code": 131,
+      "matched_index": -1,
+      "signed_score": 0,
+      "current_driver_pts": 0,
+      "details": [
+        100,
+        100
+      ]
+    },
+    "sine_period10": {
+      "quality": 100,
+      "overlap": 81,
+      "return_code": 0,
+      "matched_index": -1,
+      "signed_score": -4,
+      "current_driver_pts": 0,
+      "details": [
+        100,
+        100
+      ]
+    }
+  },
+  "post_match_template_lifetime": {
+    "root_freed": true,
+    "inner_freed": true,
+    "last_match_global_still_references_freed_inner": true
+  },
+  "vendor_preprocessor_smoke": {
+    "without_calibration_return": 128,
+    "calibration_initialization_return": 0,
+    "preprocessor_return": 0,
+    "output_min": 0,
+    "output_max": 255,
+    "output_std": 106.98765991926359,
+    "quality": 100,
+    "overlap": 91,
+    "buffers_checked": true,
+    "optional_feature_output": false,
+    "boundary": "Synthetic flat calibration and sine input; enrollment-purpose flag 0, optional feature output NULL; no accuracy claim"
+  },
+  "archived_windows_calls": {
+    "sha256": "ce541d886983e628914aa7317f90711a363a5008ce250bceb40b64de9a45ce92",
+    "direct_calls": [
+      {
+        "call_rva": "0x36e64",
+        "target_rva": "0xc8450",
+        "target": "preprocess_init_calidata"
+      },
+      {
+        "call_rva": "0x36f0a",
+        "target_rva": "0xc84f0",
+        "target": "preprocess_load_calidata"
+      },
+      {
+        "call_rva": "0x371be",
+        "target_rva": "0xc8d80",
+        "target": "preprocessor_init"
+      },
+      {
+        "call_rva": "0x31466",
+        "target_rva": "0xc8b10",
+        "target": "preprocessor"
+      }
+    ],
+    "boundary": "Calls are present in archived vendor code; not a new trace of a running Windows session"
+  },
+  "filter_response": {
+    "boundary": "Interior axis-aligned sinusoid, before gain/clipping or target-std scaling",
+    "rows": [
+      {
+        "ridge_period_px": 5,
+        "current_amplitude": 0.46065533708336837,
+        "bandpass_amplitude": 0.4903133299242106,
+        "bandpass_to_current": 1.064382175681761
+      },
+      {
+        "ridge_period_px": 8,
+        "current_amplitude": 0.19526214587563506,
+        "bandpass_amplitude": 0.9813568579045524,
+        "bandpass_to_current": 5.025842840678352
+      },
+      {
+        "ridge_period_px": 10,
+        "current_amplitude": 0.127322003750035,
+        "bandpass_amplitude": 0.9520123595454163,
+        "bandpass_to_current": 7.477202144999659
+      }
+    ]
+  },
+  "hardware_run": false
+}

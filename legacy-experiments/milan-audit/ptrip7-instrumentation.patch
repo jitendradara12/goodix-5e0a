@@ -1,0 +1,12 @@
+--- a/twofold_replay.c
++++ b/twofold_replay.c
+@@ -1080,7 +1080,8 @@
+                     if (gi.quality > bq) { bq = gi.quality; memcpy(best, img8, sizeof best); }
+                 }
+                 GoodixImage gi; make_goodix_image(&gi, best, 10); u32 st[2] = {0};
+-                enrolAddImage(ctx, &gi, NULL, NULL, 0, st);
++                int add_rc = enrolAddImage(ctx, &gi, NULL, NULL, 0, st);
++                fprintf(stderr, "AUDIT variant=%d fold=%d touch=%d rc=%d accepted=%u progress=%d\n", v, fold, t+1, add_rc, *(u16*)((char*)ctx+10), *(int*)((char*)ctx+12));
+             }
+             void *mt = NULL; void *tpl = NULL;
+             if (enrolGetTemplate(ctx, &mt) == 0 && mt) {

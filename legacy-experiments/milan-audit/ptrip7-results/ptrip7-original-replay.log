@@ -1,0 +1,11 @@
+ptrip7-data-v2/replay/twofold_replay.c: In function ‘sh_CryptGenRandom’:
+ptrip7-data-v2/replay/twofold_replay.c:287:24: warning: ignoring return value of ‘read’ declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  287 |         if (fd >= 0) { read(fd, buf, len); close(fd); }
+      |                        ^~~~~~~~~~~~~~~~~~
+driver 3x3 g1.5          templates 2/2  probe match  0/96 (  0%)  scores <0:0 =0:96 1-49:0 >=50:0  mean q 0
+bandpass s1 std80 (now)  templates 2/2  probe match 61/96 ( 64%)  scores <0:35 =0:0 1-49:0 >=50:61  mean q 40
+FPN + driver 3x3 g1.5    templates 2/2  probe match  0/96 (  0%)  scores <0:33 =0:63 1-49:0 >=50:0  mean q 0
+FPN + bandpass s0 std40  templates 2/2  probe match  0/96 (  0%)  scores <0:52 =0:44 1-49:0 >=50:0  mean q 0
+FPN + bandpass s0 std60  templates 2/2  probe match 75/96 ( 78%)  scores <0:18 =0:3 1-49:3 >=50:72  mean q 16
+FPN + bandpass s0 std80  templates 2/2  probe match 73/96 ( 76%)  scores <0:23 =0:0 1-49:0 >=50:73  mean q 42
+FPN + bandpass s1 std80  templates 2/2  probe match 71/96 ( 74%)  scores <0:25 =0:0 1-49:0 >=50:71  mean q 55

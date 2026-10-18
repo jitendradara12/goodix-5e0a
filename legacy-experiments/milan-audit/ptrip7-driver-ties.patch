@@ -1,0 +1,26 @@
+--- a/twofold_replay.c
++++ b/twofold_replay.c
+@@ -1072,12 +1072,21 @@
+             for (int t = 0; t < 24; t++) {
+                 if ((t < 12) != (fold == 0)) continue;
+                 /* like the driver: best of the 4 frames by quality */
+-                u8 best[GOODIX_FRAME_SIZE]; int bq = -1;
++                u8 best[GOODIX_FRAME_SIZE]; int bq = -1, best_range = -1;
+                 for (int k = 0; k < 4; k++) {
+                     u8 img8[GOODIX_FRAME_SIZE]; prep(RAW[t*4+k], img8, V[v].fpn, V[v].kind, V[v].rs, V[v].target);
+                     GoodixImage gi; make_goodix_image(&gi, img8, 10); u32 q[2] = {0}; getQuality(&gi, q);
+                     qsum += gi.quality; qn++;
+-                    if (gi.quality > bq) { bq = gi.quality; memcpy(best, img8, sizeof best); }
++                    int proxy = ((int)gi.quality << 8) | gi.overlap;
++                    int raw_range = 0, raw_min = 4095, raw_max = 0;
++                    for (int j = 0; j < GOODIX_FRAME_SIZE; j++) {
++                        if (RAW[t*4+k][j] > raw_max) raw_max = RAW[t*4+k][j];
++                        if (RAW[t*4+k][j] < raw_min) raw_min = RAW[t*4+k][j];
++                    }
++                    raw_range = raw_max - raw_min;
++                    if (proxy > bq || (proxy == bq && raw_range > best_range)) {
++                        bq = proxy; best_range = raw_range; memcpy(best, img8, sizeof best);
++                    }
+                 }
+                 GoodixImage gi; make_goodix_image(&gi, best, 10); u32 st[2] = {0};
+                 enrolAddImage(ctx, &gi, NULL, NULL, 0, st);

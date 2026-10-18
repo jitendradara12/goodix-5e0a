@@ -1,0 +1,120 @@
+{
+  "hardware_run": false,
+  "source": "https://github.com/jitendradara12/goodix-5e0a/issues/12#issuecomment-6249714294",
+  "archive_versions": {
+    "initial": "55a0d0345c60dfb9d6c33375e8baa52f8e8c474c335abad474f2cb7130c83c16",
+    "with_replay": "328c3c7a79bf8338b52e565ec743c713ab7d55c66a805cd300583c696c4f55c0"
+  },
+  "archive_delta": "Added replay/ and updated README; all existing captures, patch, journals and labels byte-identical.",
+  "exact_contributor_reproduction": {
+    "driver 3x3 g1.5": 0,
+    "bandpass s1 std80": 61,
+    "FPN + driver 3x3 g1.5": 0,
+    "FPN + bandpass s0 std40": 0,
+    "FPN + bandpass s0 std60": 75,
+    "FPN + bandpass s0 std80": 73,
+    "FPN + bandpass s1 std80": 71
+  },
+  "baseline_journal_decisions_scores_and_winners_reproduced": true,
+  "labeled": {
+    "current": {
+      "enrollment_complete": false,
+      "counts": null,
+      "failed_touch": 1
+    },
+    "bandpass": {
+      "enrollment_complete": true,
+      "counts": {
+        "blank": {
+          "touch_groups": 1,
+          "matched": 0
+        },
+        "genuine": {
+          "touch_groups": 10,
+          "matched": 5
+        },
+        "noise": {
+          "touch_groups": 2,
+          "matched": 0
+        },
+        "wrong": {
+          "touch_groups": 10,
+          "matched": 0
+        }
+      },
+      "failed_touch": null
+    },
+    "fpn-bandpass-s0-std60": {
+      "enrollment_complete": true,
+      "counts": {
+        "blank": {
+          "touch_groups": 1,
+          "matched": 0
+        },
+        "genuine": {
+          "touch_groups": 10,
+          "matched": 7
+        },
+        "noise": {
+          "touch_groups": 2,
+          "matched": 0
+        },
+        "wrong": {
+          "touch_groups": 10,
+          "matched": 0
+        }
+      },
+      "failed_touch": null
+    },
+    "vendor-enrollment-estimate": {
+      "enrollment_complete": true,
+      "counts": {
+        "blank": {
+          "touch_groups": 1,
+          "matched": 0
+        },
+        "genuine": {
+          "touch_groups": 10,
+          "matched": 0
+        },
+        "noise": {
+          "touch_groups": 2,
+          "matched": 0
+        },
+        "wrong": {
+          "touch_groups": 10,
+          "matched": 0
+        }
+      },
+      "failed_touch": null
+    }
+  },
+  "session1_driver_ranking": {
+    "current": {
+      "enrollment_complete": false,
+      "matched_frames": null,
+      "frame_probes": 96
+    },
+    "bandpass": {
+      "enrollment_complete": true,
+      "matched_frames": 62,
+      "frame_probes": 96
+    },
+    "fpn-bandpass-s0-std60": {
+      "enrollment_complete": true,
+      "matched_frames": 75,
+      "frame_probes": 96
+    },
+    "vendor-enrollment-estimate": {
+      "enrollment_complete": true,
+      "matched_frames": 10,
+      "frame_probes": 96
+    }
+  },
+  "stock_original_harness_ignored_enrollment_errors": {
+    "submissions": 24,
+    "return_code": 131,
+    "accepted": 0,
+    "progress": 0
+  }
+}

@@ -7,7 +7,7 @@
 4. Preserved driver cleanliness without band-aids: rejected runtime environment variable overrides (`GOODIX_5E0A_CONTRAST_GAIN`) and driver-level debug file dumping (`GOODIX_5E0A_DUMP_DIR`) in production libfprint C driver code. Hardware diagnostics and raw frame captures are handled cleanly via standalone Python tools. Production driver adheres strictly to `AGENTS.md` (canonical 64x80 raster, 3x3 local-mean residual normalization, midpoint 128, gain 1.5, 12 enrollment touches).
 5. Added comprehensive test coverage in `tests/tier1_feature/test_f111_dpapi_and_diagnostics.py` (9/9 passing).
 
-**Successor:** Ticket 112 (`112-ready-for-agent-issue-12-overlap-zero-verify-investigation.md`) tracks Issue #12's primary symptom (`overlap=0` leading to verify no-match).
+**Successor:** Ticket 112 (`112-superseded-issue-12-overlap-zero-verify-investigation.md`) tracked Issue #12's primary symptom (`overlap=0` leading to verify no-match) and is now superseded by ticket 113's real-capture/calibration work.
 
 **Blocked by:** None.
 
