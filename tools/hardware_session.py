@@ -132,7 +132,7 @@ def dropin_text(daemon, nonce):
     return (f"# goodix disposable experiment {nonce}\n[Service]\n"
             f"Environment=LD_LIBRARY_PATH={driver}/lib\n"
             f"Environment=GOODIX_ENGINE_DLL_PATH={driver}/GoodixEngineAdapter.dll\n"
-            "Environment=G_MESSAGES_DEBUG=\n"
+            "Environment=G_MESSAGES_DEBUG=all\n"
             "Environment=STATE_DIRECTORY=/var/lib/fprint\n"
             "UnsetEnvironment=GOODIX_5E0A_NATIVE_RASTER GOODIX_5E0A_DUMP_DIR GOODIX_REPLAY_DIR GOODIX_PROBE_FILE GOODIX_VENDOR_TAIL GOODIX_QUALITY_SWEEP\n"
             f"BindPaths={RUNTIME}/prints:/var/lib/fprint\n"
@@ -375,6 +375,9 @@ def root_session(stage, metadata):
         if not (driver / "lib/libfprint-2.so.2").is_file():
             raise RuntimeError("Build stage has no libfprint-2.so.2")
         shutil.copyfile(stage / "GoodixEngineAdapter.dll", driver / "GoodixEngineAdapter.dll")
+        if shutil.which("chcon"):
+            subprocess.run(["chcon", "-R", "-t", "lib_t", str(driver)], check=False,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         executable_mapping_probe(driver / "lib/libfprint-2.so.2")
         timer = "goodix-test-restore-" + nonce
         manifest["timer"] = timer

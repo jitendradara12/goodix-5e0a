@@ -1313,7 +1313,7 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 choose_best:
   if (action == FPI_DEVICE_ACTION_ENROLL)
     {
-      if (self->best_active < 64 || self->best_frame_no == 0)
+      if (self->best_active < 64 || self->best_quality < 15 || self->best_frame_no == 0)
         {
           g_message ("5e0a enrollment touch rejected: active=%u (press firmer)",
                      self->best_active);
@@ -1328,8 +1328,15 @@ choose_best:
     }
   else
     {
-      if (self->best_frame_no > 0)
+      if (self->best_frame_no > 0 && self->best_quality >= 15)
         goodix5e0a_claim_best_frame (self);
+      else if (self->best_frame_no > 0)
+        {
+          fp_dbg ("5e0a spurious air trigger rejected: quality=%u overlap=%u",
+                  self->best_quality, self->best_overlap);
+          fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
+          return;
+        }
       else
         {
           fp_dbg ("5e0a no usable frame captured");
@@ -1523,6 +1530,17 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
             }
           g_error_free (err);
           fp_dbg ("5e0a retry guard: finger still present, re-issuing FDT UP");
+          send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP,
+                          goodix_5e0a_up_u01, sizeof (goodix_5e0a_up_u01),
+                          GOODIX_5E0A_FDT_UP_GUARD_TIMEOUT_MS, goodix5e0a_on_fdt_up_reply, ssm);
+          return;
+        }
+      else if (!self->is_verify && !self->is_identify && self->scan_ssm == ssm)
+        {
+          /* Ticket 116: During enrollment, a timeout also means the finger is still down.
+           * Re-issue FDT_UP to require physical lift before next touch. */
+          g_error_free (err);
+          fp_dbg ("5e0a enrollment release guard: finger still present, re-issuing FDT UP");
           send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP,
                           goodix_5e0a_up_u01, sizeof (goodix_5e0a_up_u01),
                           GOODIX_5E0A_FDT_UP_GUARD_TIMEOUT_MS, goodix5e0a_on_fdt_up_reply, ssm);
