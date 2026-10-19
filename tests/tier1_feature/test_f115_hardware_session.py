@@ -203,6 +203,33 @@ class SessionTests(unittest.TestCase):
         self.assertTrue(result["restored"])
         self.assertIn("client_cleanup_error", result)
 
+    def test_isolated_storage_canary_detects_leaked_prints(self):
+        counts = [0, 1, 0]
+        with mock.patch.object(SESSION, "count_prints", side_effect=lambda u: counts.pop(0)):
+            with mock.patch.object(SESSION, "guided_test") as guided:
+                code, result = self.run_session(guided)
+                guided.assert_not_called()
+        self.assertEqual(code, 1)
+        self.assertIn("Isolated storage canary failed", result.get("error", ""))
+        self.assertTrue(result["restored"])
+
+    def test_store_canary_mismatch_after_restore_fails_restored(self):
+        counts = [2, 0, 0]
+        with mock.patch.object(SESSION, "count_prints", side_effect=lambda u: counts.pop(0)):
+            code, result = self.run_session(self.exercise)
+        self.assertEqual(code, 1)
+        self.assertFalse(result["restored"])
+        self.assertIn("Print count mismatch after restore", result.get("canary_error", ""))
+
+    def test_runtime_disappearing_before_restore_denies_restored_true(self):
+        def external_restore_simulation(event, clients):
+            self.exercise(event, clients)
+            shutil.rmtree(self.runtime)
+            return {"verdict": "confirmed"}
+        code, result = self.run_session(external_restore_simulation)
+        self.assertEqual(code, 1)
+        self.assertFalse(result["restored"])
+
     def test_journal_projection_excludes_payloads_and_unknown_suffixes(self):
         # Use the real filter, not the root-session fixture's stub.
         spec = importlib.util.spec_from_file_location("journal_session", ROOT / "tools/hardware_session.py")

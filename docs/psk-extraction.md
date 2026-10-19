@@ -35,6 +35,40 @@ fprintd-enroll
 
 ---
 
+## Record layout and the by-offset read
+
+The `0xbb010002` area contains a DPAPI blob followed by a whitebox record.
+On Jet-Soup's tested unit it is:
+
+| Offset | Content |
+| --- | --- |
+| 0–323 | 324-byte DPAPI blob |
+| 324–327 | Little-endian tag `0xbb010003` |
+| 328–331 | Little-endian record length, 96 |
+| 332–427 | 16-byte prefix, 48-byte AES-CBC ciphertext, 32-byte HMAC |
+
+Reading `0xbb010003` by tag is refused on that firmware. Addressing the same
+region by offset with command `0xe4` returns it. Goodix's `SecWhiteEncrypt`
+derives its AES/HMAC keys from public constants and the plaintext length; the
+existing `legacy-experiments/goodix_whitebox.py` implements that algorithm.
+
+The helper parses the DPAPI structure length instead of assuming offset 324.
+Discovery and all reads are bounded to 4096 bytes. It validates the record,
+prefix, HMAC, padding, plaintext length, and final sensor hash before publishing
+the output file. There is no option to bypass that hash check.
+
+For a known layout that cannot be discovered automatically, `--offset` accepts
+a decimal or hex offset to the record header or the payload itself. For
+example, the tested header offset is `--offset 324`, and its payload offset is
+`--offset 332`. Use an override only when the layout is known; a failed read
+does not establish another offset. Verification remains mandatory.
+
+The tool sends NOP and read commands only. It does not re-pair, provision,
+write flash, extract templates, or change the driver. `--print-key` explicitly
+prints the verified secret after it has been saved; normal use does not need it.
+
+---
+
 ## Method 2: Windows DPAPI (Fallback)
 
 Use this only if Linux extraction fails to recover the key.

@@ -37,12 +37,18 @@ FINGER = "right-index-finger"
 REPORT_FILES = ("session.json", "events.jsonl", "driver.txt")
 
 
-def command(args, **kwargs):
-    return subprocess.run([str(a) for a in args], check=True, text=True, **kwargs)
+def command(args, check=True, **kwargs):
+    return subprocess.run([str(a) for a in args], check=check, text=True, **kwargs)
 
 
 def output(args):
     return command(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.strip()
+
+
+def count_prints(user):
+    proc = command(["fprintd-list", user], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    text = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    return len(re.findall(r"#\d+:", text))
 
 
 def timestamp():
@@ -73,7 +79,7 @@ def daemon_path():
 def preflight():
     if platform.system() != "Linux" or platform.machine() != "x86_64":
         raise RuntimeError("This test requires the x86-64 Linux fingerprint laptop")
-    for tool in ("systemctl", "systemd-run", "journalctl", "fprintd-enroll", "fprintd-verify", "git", "bash", "sudo"):
+    for tool in ("systemctl", "systemd-run", "journalctl", "fprintd-enroll", "fprintd-verify", "fprintd-list", "git", "bash", "sudo"):
         if not shutil.which(tool):
             raise RuntimeError(f"Missing {tool}; send this error rather than installing a workaround")
     if property_value("LoadState") != "loaded":
@@ -277,6 +283,11 @@ def filtered_journal(start):
         r"enrollment stage \d+ waiting for next touch, arming FDT DOWN",
         r"enrollment touch rejected by Milan engine \(res=-?\d+\)",
         r"optimistic fast-path match on frame 1: pts=\d+, skipping remaining burst",
+        r"OTP DAC calibration: 0x[0-9a-fA-F]+ 0x[0-9a-fA-F]+ 0x[0-9a-fA-F]+ 0x[0-9a-fA-F]+",
+        r"dynamic config applied: [0-9a-zA-Z_]+ unit(?:, checksum=0x[0-9a-fA-F]+)?",
+        r"spurious air trigger rejected: quality=\d+ overlap=\d+",
+        r"spurious air trigger retry limit reached",
+        r"enrollment release guard: orphaned hold past 30s, failing claim",
     )
     allowed = re.compile(r"5e0a (?:" + "|".join(formats) + ")")
     for line in text.splitlines():
@@ -348,12 +359,16 @@ def root_session(stage, metadata):
             f.write(json.dumps({"timestamp": timestamp(), "phase": phase, **fields}) + "\n")
         print(timestamp(), phase, flush=True)
 
-    manifest = {"nonce": nonce, "was_active": property_value("ActiveState") == "active",
+    target_user = os.environ.get("SUDO_USER") or os.environ.get("USER") or "root"
+    pre_count = count_prints(target_user)
+    manifest = {"nonce": nonce, "session_pid": os.getpid(),
+                "was_active": property_value("ActiveState") == "active",
                 "service_changed": False, "dropin": dropin_text(daemon, nonce),
                 "driver_directory": str(driver)}
     clients = []
     info = {**metadata, "started": timestamp(), "hardware_run": False,
             "verdict": "inconclusive-because-interrupted", "storage_isolated": False,
+            "prints_before_test": pre_count,
             "restored": False, "next_experiment": "review this bundle before requesting another run"}
     start = time.time()
     report_path = REPORTS / ("goodix-test-" + nonce + ".zip")
@@ -374,6 +389,9 @@ def root_session(stage, metadata):
             shutil.copyfile(path.resolve(), driver / "lib" / path.name)
         if not (driver / "lib/libfprint-2.so.2").is_file():
             raise RuntimeError("Build stage has no libfprint-2.so.2")
+        staged_sha256 = hashlib.sha256((driver / "lib/libfprint-2.so.2").read_bytes()).hexdigest()
+        if metadata.get("library_sha256") and metadata["library_sha256"] != staged_sha256:
+            raise RuntimeError("Staged driver library SHA256 does not match build metadata")
         shutil.copyfile(stage / "GoodixEngineAdapter.dll", driver / "GoodixEngineAdapter.dll")
         if shutil.which("chcon"):
             subprocess.run(["chcon", "-R", "-t", "lib_t", str(driver)], check=False,
@@ -402,6 +420,11 @@ def root_session(stage, metadata):
         verify_runtime(pid, driver)
         info["storage_isolated"] = True
         event("storage-and-library-verified")
+        isolated_count = count_prints(target_user)
+        info["prints_isolated"] = isolated_count
+        if isolated_count != 0:
+            raise RuntimeError(f"Isolated storage canary failed: expected 0 prints, found {isolated_count}")
+        event("storage-canary-verified", count=isolated_count)
         info.update(guided_test(event, clients))
     except (Exception, KeyboardInterrupt) as error:
         info["verdict"] = "inconclusive-because-session-failed-or-interrupted"
@@ -421,13 +444,21 @@ def root_session(stage, metadata):
         except Exception as error:
             info["journal_error"] = type(error).__name__
         report_data["events.jsonl"] = event_path.read_text() if runtime_owned and event_path.exists() else ""
+        runtime_present_at_restore = RUNTIME.exists()
+        restore_ok = False
         try:
-            if runtime_owned:
+            if runtime_owned and runtime_present_at_restore:
                 restore()
-            info["restored"] = True
+                restore_ok = True
         except Exception as error:
             info["restore_error"] = str(error)
             print("RESTORE REQUIRED: sudo python3 /run/goodix-5e0a-experiment/recover.py --restore", file=sys.stderr)
+        post_count = count_prints(target_user)
+        info["prints_after_restore"] = post_count
+        canary_restored = (post_count == pre_count)
+        if not canary_restored:
+            info["canary_error"] = f"Print count mismatch after restore: was {pre_count}, now {post_count}"
+        info["restored"] = bool(runtime_owned and runtime_present_at_restore and restore_ok and canary_restored)
         info["finished"] = timestamp()
         report_data["session.json"] = json.dumps(info, indent=2) + "\n"
         REPORTS.mkdir(mode=0o711, exist_ok=True)
@@ -520,6 +551,19 @@ def main():
     if args.restore:
         if os.geteuid() != 0:
             return subprocess.call(["sudo", sys.executable, str(Path(__file__).resolve()), "--restore"])
+        if RUNTIME.exists() and (RUNTIME / "manifest.json").exists():
+            try:
+                manifest = json.loads((RUNTIME / "manifest.json").read_text())
+                pid = manifest.get("session_pid")
+                if pid and pid != os.getpid():
+                    try:
+                        os.kill(pid, 0)
+                        print(f"Warning: Live session with PID {pid} is currently active. Refusing --restore while session is running.", file=sys.stderr)
+                        return 1
+                    except OSError:
+                        pass
+            except Exception:
+                pass
         restore()
         print("Normal setup restored; no active experiment remains.")
         return 0

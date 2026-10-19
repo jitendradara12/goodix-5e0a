@@ -91,6 +91,7 @@ struct _FpiDeviceGoodixTls5e0a
   guint               best_quality;
   guint               best_overlap;
   guint               best_range;
+  guint               air_retries;
 
   /* Ticket 47: verify retry guard against rapid retry burn on continuous touch */
   gboolean            retry_guard;
@@ -178,10 +179,20 @@ goodix5e0a_update_dacs (FpiDeviceGoodixTls5e0a *self, const guint16 dacs[4])
       self->fdt_up_u01[2 + 2 * i] = goodix5e0a_capture_payload[2 + 2 * i] = lo;
       self->fdt_up_u01[3 + 2 * i] = goodix5e0a_capture_payload[3 + 2 * i] = hi;
     }
-  if (dacs[0] == 0xad)
+  if ((dacs[0] & 0xff) == 0xad)
     {
-      self->mcu_config[0x78] = 0x1f; self->mcu_config[0x7e] = 0xf0; self->mcu_config[0x7f] = 0x00;
-      self->mcu_config[0xfe] = 0x4a; self->mcu_config[0xff] = 0x1e;
+      self->mcu_config[0xc8] = 0x1f; self->mcu_config[0xeb] = 0xf0; self->mcu_config[0xec] = 0x00;
+      guint32 sum = 0xa5a5;
+      for (int j = 0; j < 254; j += 2) sum += self->mcu_config[j] | (self->mcu_config[j + 1] << 8);
+      guint16 csum = (-sum) & 0xffff;
+      self->mcu_config[0xfe] = csum & 0xff; self->mcu_config[0xff] = (csum >> 8) & 0xff;
+      goodix5e0a_capture_payload[0] = 0x01;
+      fp_dbg ("5e0a dynamic config applied: 0xad unit, checksum=0x%04x", csum);
+    }
+  else
+    {
+      goodix5e0a_capture_payload[0] = 0x05;
+      fp_dbg ("5e0a dynamic config applied: standard unit");
     }
 }
 
@@ -202,8 +213,16 @@ goodix5e0a_on_read_otp (FpDevice *dev, guint8 *data, guint16 len, gpointer ssm, 
           else valid = FALSE;
           if (valid && (data[0x13] & (1 << (3 - i)))) dacs[i] |= 0x100;
         }
-      if (valid) goodix5e0a_update_dacs (self, dacs);
+      if (valid)
+        {
+          fp_dbg ("5e0a OTP DAC calibration: 0x%03x 0x%03x 0x%03x 0x%03x", dacs[0], dacs[1], dacs[2], dacs[3]);
+          goodix5e0a_update_dacs (self, dacs);
+        }
+      else
+        fp_dbg ("5e0a OTP DAC calibration mismatch, using default");
     }
+  else if (!err)
+    fp_dbg ("5e0a OTP read bypassed or truncated: len=%u", len);
   fpi_ssm_next_state (ssm);
 }
 
@@ -931,12 +950,9 @@ goodix5e0a_decode_frame (GoodixTls5xxPix *out_row_major, const guint8 *data, gui
 static void
 goodix5e0a_reset_touch_frames (FpiDeviceGoodixTls5e0a *self)
 {
-  self->frame_count = 0;
-  self->best_frame_no = 0;
-  self->best_quality = 0;
-  self->best_overlap = 0;
-  self->best_range = 0;
-  self->best_active = 0;
+  self->frame_count = 0; self->best_frame_no = 0;
+  self->best_quality = 0; self->best_overlap = 0;
+  self->best_range = 0; self->best_active = 0;
   memset (self->best_pixels, 0, sizeof (self->best_pixels));
   memset (self->latest_norm_pixels, 0, sizeof (self->latest_norm_pixels));
 }
@@ -1331,10 +1347,16 @@ choose_best:
     goodix5e0a_claim_best_frame (self);
   else if (self->best_frame_no > 0)
     {
-      fp_dbg ("5e0a spurious air trigger rejected: quality=%u overlap=%u",
-              self->best_quality, self->best_overlap);
-      fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
-      return;
+      if (self->air_retries++ < 5)
+        {
+          fp_dbg ("5e0a spurious air trigger rejected: quality=%u overlap=%u", self->best_quality, self->best_overlap);
+          goodix5e0a_reset_touch_frames (self);
+          fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
+          return;
+        }
+      self->air_retries = 0;
+      fp_dbg ("5e0a spurious air trigger retry limit reached");
+      goto deliver;
     }
   else
     {
@@ -1360,6 +1382,7 @@ deliver:
     }
   else
     {
+      self->retry_guard_mono = g_get_monotonic_time ();
       goodix5e0a_reset_touch_frames (self); /* ticket 101: fresh burst per enroll touch */
       fpi_ssm_next_state (ssm);
     }
@@ -1536,6 +1559,12 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
         }
       else if (!self->is_verify && !self->is_identify && self->scan_ssm == ssm)
         {
+          if (self->retry_guard_mono > 0 && (g_get_monotonic_time () - self->retry_guard_mono) > 30 * G_USEC_PER_SEC)
+            {
+              fp_dbg ("5e0a enrollment release guard: orphaned hold past 30s, failing claim");
+              fpi_ssm_mark_failed (ssm, err);
+              return;
+            }
           g_error_free (err);
           fp_dbg ("5e0a enrollment release guard: finger still present, re-issuing FDT UP");
           send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP,
@@ -1553,6 +1582,7 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
   if (self->retry_guard)
     {
       self->retry_guard = FALSE;
+      self->retry_guard_mono = 0;
       fp_dbg ("5e0a retry guard: release ok, arming FDT DOWN");
       fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
       return;
@@ -1562,6 +1592,7 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
    * Only enrollment loops for the next touch. */
   if (!self->is_verify && !self->is_identify && self->enroll_stage < FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
     {
+      self->retry_guard_mono = 0;
       fp_dbg ("5e0a enrollment stage %u waiting for next touch, arming FDT DOWN", self->enroll_stage);
       fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
       return;
@@ -1640,6 +1671,7 @@ goodix5e0a_scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
   self->scan_ssm = NULL;
   /* Ticket 39: never carry a burst winner past SSM completion. */
   goodix5e0a_reset_touch_frames (self);
+  self->air_retries = 0;
   self->down_empty_polls = 0;
   if (self->down_timeout)
     {
@@ -1771,27 +1803,15 @@ goodix5e0a_deactivate (FpImageDevice *img_dev)
 static void
 fpi_device_goodixtls5e0a_init (FpiDeviceGoodixTls5e0a *self)
 {
-  self->tls_parked = FALSE;
-  self->tls_parked_at = 0;
-  self->tls_parked_gen = 0;
-  self->warm_ok = FALSE;
-  self->last_clean_mono = 0;
-  self->warm_boot_seq = 0;
-  self->warm_down_reason = "cold-start";
-  self->warm_attempted = FALSE;
-  self->warm_retried = FALSE;
-  self->frame_count = 0;
-  self->best_frame_no = 0;
-  self->best_quality = 0;
-  self->best_overlap = 0;
-  self->best_range = 0;
-  self->best_active = 0;
-  self->retry_guard = FALSE;
-  self->retry_guard_mono = 0;
-  self->dac[0] = 0xb0;
-  self->dac[1] = 0xb2;
-  self->dac[2] = 0xb0;
-  self->dac[3] = 0xb1;
+  self->tls_parked = FALSE; self->tls_parked_at = 0; self->tls_parked_gen = 0;
+  self->warm_ok = FALSE; self->last_clean_mono = 0;
+  self->warm_boot_seq = 0; self->warm_down_reason = "cold-start";
+  self->warm_attempted = FALSE; self->warm_retried = FALSE;
+  self->frame_count = 0; self->best_frame_no = 0;
+  self->best_quality = 0; self->best_overlap = 0;
+  self->best_range = 0; self->best_active = 0; self->air_retries = 0;
+  self->retry_guard = FALSE; self->retry_guard_mono = 0;
+  self->dac[0] = 0xb0; self->dac[1] = 0xb2; self->dac[2] = 0xb0; self->dac[3] = 0xb1;
   memcpy (self->fdt_down_s12, goodix_5e0a_down_s12, sizeof (goodix_5e0a_down_s12));
   memcpy (self->fdt_up_u01, goodix_5e0a_up_u01, sizeof (goodix_5e0a_up_u01));
   memcpy (self->mcu_config, goodix_5e0a_config, sizeof (goodix_5e0a_config));

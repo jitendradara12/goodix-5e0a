@@ -50,6 +50,7 @@ Many laptops lock the sensor with a unique hardware key during Windows setup. If
 
 ## License and Credits
 
-- Thanks to @ptrip7 and @Jet-Soup for their contributions.
+- Thanks to @ptrip7 for their help on the native raster experiments.
+- Thanks to @Jet-Soup for discovering and contributing Linux-only PSK recovery, documenting the record layout, and supplying their Windows-derived capture settings.
 - Driver code: LGPL-2.1-or-later ([LICENSE](LICENSE)).
 - `GoodixEngineAdapter.dll`: Proprietary Goodix binary included for research.
