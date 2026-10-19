@@ -1,49 +1,36 @@
-# Jet-Soup: test PR #15
+# Hardware Verification Guide
 
-The maintainer’s regression passed. This test combines the current matching
-fix with your wire-only capture settings.
+The repository includes an isolated hardware test runner (`tools/test-hardware.sh`) to verify driver functionality on live hardware.
 
-Run in Fedora with your sensor attached, as your normal user. Use your existing
-sensor key and installed build dependencies. The runner uses private test
-enrollments and restores your normal setup afterward. Fingerprint login is
-unavailable during the test.
+It builds a temporary driver instance, isolates fprintd storage, and runs a protocol-compliant test session without altering existing fingerprints or system files.
 
-## 1. Get the PR and run
+## Running the Test
 
-Use a fresh checkout; the capture patch is applied automatically:
+Run the test runner from the repository root:
 
-```sh
-git clone --depth 1 --branch codex/linux-psk-jet-capture \
-  https://github.com/jitendradara12/goodix-5e0a.git goodix-jet-test
-cd goodix-jet-test
-bash tools/test-hardware.sh --capture-settings jet-soup
+```bash
+bash tools/test-hardware.sh
 ```
 
-It builds first, then asks for sudo to start the temporary test.
+The script builds the driver and requests `sudo` for the temporary test session.
 
-## 2. Follow the prompts
+## Test Protocol
 
-1. **Hands off for 20 seconds.** Expect no enrollment activity.
-2. **Press and hold for 20 seconds.** Expect one advance, then waiting for release.
-3. Lift and finish the 12-touch enrollment with that same right index finger.
-4. Try that finger five times, then a different finger five times. Lift between
-   attempts. Expect five matches and five rejections.
+1. **Phase 1: Hands off (20 seconds)**
+   Do not touch the sensor. Verifies no phantom touches or false trigger loops.
+2. **Phase 2: Press and hold steady (20 seconds)**
+   Hold one finger steadily on the sensor. Verifies a single advance and contact release guarding.
+3. **Phase 3: Enrollment**
+   Complete the 12-touch enrollment with that same finger, lifting between touches.
+4. **Phase 4: Verification**
+   - Touch the enrolled finger 5 times (expected: 5 matches).
+   - Touch an unenrolled finger 5 times (expected: 5 rejections).
 
-The runner records timestamps and reports `confirmed`, `falsified`, or an
-inconclusive result if setup/testing could not finish.
+## Results & Cleanup
 
-## 3. Send the result
-
-Attach the ZIP printed at the end to [PR #15](https://github.com/jitendradara12/goodix-5e0a/pull/15),
-even if the test fails. It contains results and numerical logs, not keys,
-images or templates. If it stops before producing a ZIP, copy the error text.
-Stop after one run; we’ll review the report before choosing another test.
-
-## If interrupted
-
-Ctrl-C normally restores the setup. If the terminal closes or restoration fails,
-run this from the checkout:
-
-```sh
-bash tools/test-hardware.sh --restore
-```
+- Logs and report archives are saved to `/var/tmp/goodix-5e0a-reports/`.
+- Original fprintd service and fingerprint storage are restored automatically upon exit or Ctrl-C.
+- If interrupted abruptly, restore system state manually:
+  ```bash
+  bash tools/test-hardware.sh --restore
+  ```
