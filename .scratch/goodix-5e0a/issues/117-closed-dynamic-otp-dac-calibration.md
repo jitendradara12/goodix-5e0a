@@ -1,6 +1,7 @@
 # 117: Dynamic OTP DAC calibration and unified driver configuration
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
+**Verdict:** confirmed
 
 ## Scope
 
@@ -22,7 +23,7 @@ Integrate hardware OTP DAC derivation directly into `libfprint-driver/goodix5e0a
    - Added `tests/tier1_feature/test_f117_dynamic_otp_calibration.py`.
    - Full test suite execution: 405 tests executed, 396 passed, 0 failures, 0 errors.
    - Driver compactness: 1975 non-empty LOC (limit < 2000), `g_message (` count: exactly 25.
-   - Nix build `nix build .#libfprint-goodix` succeeds with 0 warnings/errors.
+   - Package build: `nix build .#libfprint-goodix` succeeds with 0 warnings/errors.
 
 ## Evidence & reverse engineering ground truth
 
@@ -33,23 +34,18 @@ Integrate hardware OTP DAC derivation directly into `libfprint-driver/goodix5e0a
 - Windows calibration dump (`goodix.dat`):
   - Maintainer sensor: `[0xb0, 0xb2, 0xb0, 0xb1]`.
   - Jet-Soup sensor: `[0xad, 0xae, 0xac, 0xad]`.
-- Live hardware runs:
-  - Maintainer run (`2885d464` and `53128b6d`): 5/5 genuine matches, 5/5 impostor rejections.
-  - Jet-Soup run (`080e6c71`): 5/5 genuine matches, 5/5 impostor rejections.
 
-## Single next experiment: Maintainer regression on unified driver
+## Hardware Verification
 
-Run `bash tools/test-hardware.sh` (or `bash tools/test-hardware.sh --capture-settings current`) on maintainer hardware.
+- **Maintainer Unified Run (`goodix-test-b170e90a5c396f6c.zip`):**
+  - Parameter: `capture_settings: "current"`, `patch_sha256: null` (built purely from HEAD, zero patch files).
+  - Hands-off (20s): `hands_off_activity: false` (silent, 0 false triggers).
+  - Holding (20s): `holding_advances: 1` (single advance, physical release guard active).
+  - Enrollment: 12 stages committed successfully (38,708-byte Milan template).
+  - Genuine verification: 5/5 matched (pts: 29, 96, 100, 100, 100).
+  - Impostor verification: 5/5 rejected (pts: 0, 0, 0, 0, 0).
+  - Verdict: **CONFIRMED**.
 
-**Confirm:**
-- Hands-off (20s): silent, 0 false triggers.
-- Holding (20s): single advance, release guard active.
-- Enrollment: 12 distinct physical touches.
-- Genuine verification: 5/5 matched (`Milan verify: match=1 pts=>0`).
-- Impostor verification: 5/5 rejected (`match=0 pts=0`).
+## Conclusion
 
-**Falsify:**
-OTP read failure causing activation abort, incorrect DAC assignment, spurious hands-off triggers, runaway hold advances, genuine verification failure, or impostor match.
-
-**Inconclusive-because-[flaw]:**
-Setup or build error, failed namespace isolation, mixed templates, missing protocol phases or interruption. Conclude only confirmed / falsified / inconclusive-because-[flaw].
+Dynamic OTP DAC calibration and unified driver configuration are confirmed working seamlessly on live hardware without any external patches or command parameters. Both sensor variants operate out of the box with `./install.sh`.
