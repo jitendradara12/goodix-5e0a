@@ -1,95 +1,156 @@
-# Extracting Your Sensor Key (PSK)
+# Recovering your sensor key on Linux
 
-When Windows sets up the sensor for the first time, it locks the hardware with a unique key. If your laptop uses its own key, enrollment fails with `enroll-unknown-error` (`bad record MAC` in the logs).
+The Goodix `27c6:5e0a` sensor can have a unique key from Windows pairing.
+A wrong key causes TLS errors such as `bad record MAC`. Try the Linux-only
+method below first, even if Windows has been erased. Successful recovery does
+not require booting Windows or pairing the sensor again.
 
-You only need to extract this key once. **Back up the final `goodix-5e0a.psk` file to Google Drive or somewhere safe**—if you distrohop or wipe Linux later, you can drop that same file back in without ever booting Windows again.
+This method comes from [Jet-Soup's contribution to issue #12](https://github.com/jitendradara12/goodix-5e0a/issues/12#issuecomment-6263682686).
+They verified it on firmware `GFUSB_GM168SEC_APP_10036`. Other layouts may not
+expose the same record; the tool reports an error rather than saving an
+unverified key. The normal driver remains limited to x86-64 Linux.
 
----
+## 1. Install the extraction dependencies
 
-## Dual-Boot Laptops (Windows Installed)
+Use Python 3.10 or newer, pyusb, and python-cryptography. Run the appropriate
+command for your distribution:
 
-### 1. Dump the locked key in Linux
+```sh
+# Ubuntu / Debian / Mint
+sudo apt install python3-usb python3-cryptography
 
-Stop the fingerprint service and read the locked key from the sensor:
+# Fedora
+sudo dnf install python3-pyusb python3-cryptography
 
-```bash
+# Arch
+sudo pacman -S python-pyusb python-cryptography
+```
+
+On NixOS, enter a shell with the dependencies before the next step:
+
+```sh
+nix-shell -p 'python3.withPackages (p: [ p.pyusb p.cryptography ])'
+```
+
+The helper can use an installed OpenSSL executable instead of
+python-cryptography. It checks for a crypto dependency before opening the
+sensor. A missing libusb backend must also be installed through your distro.
+
+## 2. Recover and install the key
+
+Run from this repository on the laptop containing the sensor:
+
+```sh
 sudo systemctl stop fprintd
-sudo python3 tools/dump_dpapi_blob.py
+sudo "$(command -v python3)" tools/extract_psk_whitebox.py --out /etc/libfprint/goodix-5e0a.psk
+sudo systemctl start fprintd
 ```
 
-This creates `dpapi_blob.bin` and `mcu_hash.txt` in your current directory.
+The helper reads the sensor, decrypts its whitebox record, and requires the
+resulting 32-byte key's SHA-256 to match the hash read from that same sensor.
+It creates the parent directory if needed and saves exactly 64 hex characters
+plus a newline, with mode `0600`. It does not print the key by default.
 
-### 2. Move the files to Windows
+If extraction fails, still run the `systemctl start` command to restore normal
+service. Save the error text for troubleshooting; do not post the key file.
 
-Copy these three files to Windows (via a USB drive, cloud storage, or a mounted partition):
-- `dpapi_blob.bin`
-- `mcu_hash.txt`
-- `tools/decrypt_psk.ps1`
+An existing output file is preserved. If you intentionally need to replace it,
+repeat extraction with `--force`; the previous file remains intact if recovery
+or replacement fails. Back up a successfully recovered key in private storage.
+Keep the key outside the Nix store, which is world-readable.
 
-### 3. Unlock the key in Windows
+## 3. Test a fresh enrollment
 
-1. Boot into Windows.
-2. Open **PowerShell as Administrator**.
-3. Go to the folder containing the three files:
-   ```powershell
-   cd "$HOME\Downloads"
-   ```
-4. Run the unlock script:
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\decrypt_psk.ps1
-   ```
-
-This writes `goodix-5e0a.psk` to the same folder. **Upload a copy of `goodix-5e0a.psk` to Google Drive now** so you don't lose it the next time you switch distros.
-
-### 4. Install the key in Linux
-
-Boot into Linux and install the key:
-
-```bash
-sudo mkdir -p /etc/libfprint
-sudo cp goodix-5e0a.psk /etc/libfprint/goodix-5e0a.psk
-sudo chown root:root /etc/libfprint/goodix-5e0a.psk
-sudo chmod 600 /etc/libfprint/goodix-5e0a.psk
-sudo systemctl restart fprintd
-```
-
-Test enrollment:
-
-```bash
+```sh
 fprintd-enroll
+fprintd-verify
 ```
 
----
+After upgrading from the older matching pipeline, remove the incompatible
+old prints through your desktop's fingerprint settings and enroll again.
+If TLS succeeds but matching fails, key extraction is complete: continue with
+the [separate hardware test](HARDWARE_TEST.md), rather than changing the key.
 
-## Linux-Only Laptops (No Windows Installed)
+## Record layout and the by-offset read
 
-If you wiped Windows from your drive, the decryption keys on disk are gone. Virtual machines (QEMU/VirtualBox) will not work because the key is tied to Windows running on your laptop's physical hardware.
+The `0xbb010002` area contains a DPAPI blob followed by a whitebox record.
+On Jet-Soup's tested unit it is:
 
-You need a temporary **Windows To Go** USB drive to generate and extract a fresh key:
+| Offset | Content |
+| --- | --- |
+| 0–323 | 324-byte DPAPI blob |
+| 324–327 | Little-endian tag `0xbb010003` |
+| 328–331 | Little-endian record length, 96 |
+| 332–427 | 16-byte prefix, 48-byte AES-CBC ciphertext, 32-byte HMAC |
 
-1. Use **Rufus** on another computer to flash a Windows 10 or 11 ISO onto a USB drive in **Windows To Go** mode.
-2. Download the official Windows Goodix fingerprint driver from your laptop manufacturer's website and put the installer on the USB drive.
-3. Boot your laptop from the Windows To Go USB drive.
-4. Install the fingerprint driver. Once installed, Windows pairs with the sensor and writes a fresh key to the hardware.
-5. Reboot into Linux and dump the new locked key:
-   ```bash
-   sudo systemctl stop fprintd
-   sudo python3 tools/dump_dpapi_blob.py
-   ```
-6. Copy `dpapi_blob.bin`, `mcu_hash.txt`, and `tools/decrypt_psk.ps1` to the USB drive.
-7. Boot back into the Windows To Go USB, open **PowerShell as Administrator**, and run:
+Reading `0xbb010003` by tag is refused on that firmware. Addressing the same
+region by offset with command `0xe4` returns it. Goodix's `SecWhiteEncrypt`
+derives its AES/HMAC keys from public constants and the plaintext length; the
+existing `legacy-experiments/goodix_whitebox.py` implements that algorithm.
+
+The helper parses the DPAPI structure length instead of assuming offset 324.
+Discovery and all reads are bounded to 4096 bytes. It validates the record,
+prefix, HMAC, padding, plaintext length, and final sensor hash before publishing
+the output file. There is no option to bypass that hash check.
+
+For a known layout that cannot be discovered automatically, `--offset` accepts
+a decimal or hex offset to the record header or the payload itself. For
+example, the tested header offset is `--offset 324`, and its payload offset is
+`--offset 332`. Use an override only when the layout is known; a failed read
+does not establish another offset. Verification remains mandatory.
+
+The tool sends NOP and read commands only. It does not re-pair, provision,
+write flash, extract templates, or change the driver. `--print-key` explicitly
+prints the verified secret after it has been saved; normal use does not need it.
+
+## Windows / DPAPI fallback
+
+Use this only if Linux recovery cannot read a valid verified record. Failure
+of the Linux method does not erase or change anything on the sensor.
+
+### Original Windows installation is available
+
+1. Stop fprintd and run `sudo python3 tools/dump_dpapi_blob.py` on Linux,
+   then start fprintd again. This saves `dpapi_blob.bin` and `mcu_hash.txt`.
+2. Copy those files and `tools/decrypt_psk.ps1` to the original Windows
+   installation that paired this sensor.
+3. Open PowerShell as Administrator in their directory and run:
+
    ```powershell
    powershell -ExecutionPolicy Bypass -File .\decrypt_psk.ps1
    ```
-8. Copy the generated `goodix-5e0a.psk` to Linux, **back it up to Google Drive**, and install it using [Step 4](#4-install-the-key-in-linux) above.
 
----
+4. Require a matching sensor hash. If it does not match, stop and investigate;
+   do not force installation of the mismatched key.
+5. Copy the resulting `goodix-5e0a.psk` to Linux and install it:
+
+   ```sh
+   sudo install -D -m 600 -o root -g root goodix-5e0a.psk /etc/libfprint/goodix-5e0a.psk
+   sudo systemctl restart fprintd
+   ```
+
+### Original Windows installation is gone
+
+Linux recovery above can still work because it reads the sensor's own copy;
+the erased Windows installation is not needed for that method.
+
+If that method is unavailable and the original DPAPI master key is gone,
+the DPAPI blob alone is insufficient. The remaining fallback is a temporary
+Windows To Go installation with the manufacturer's Goodix driver, followed
+by pairing and the DPAPI steps above. Re-pairing writes a new sensor key;
+use this fallback only after reviewing the Linux recovery error. A different
+Windows installation or VM cannot decrypt the old blob without its original
+DPAPI keys.
 
 ## Troubleshooting
 
-- **PowerShell blocks the script or says Access Denied:** Make sure you opened PowerShell via **Run as Administrator** and included `-ExecutionPolicy Bypass`.
-- **Hash mismatch warning:** Re-run the PowerShell script with `-Force` to save the key anyway:
-  ```powershell
-  powershell -ExecutionPolicy Bypass -File .\decrypt_psk.ps1 -Force
-  ```
-- **Permission denied in Linux:** Ensure `/etc/libfprint/goodix-5e0a.psk` is owned by `root:root` with `600` permissions (see Step 4).
+- **USB permission or busy-device error:** Stop fprintd and use sudo. Restart
+  the service after the attempt.
+- **Cannot determine DPAPI length / no valid record:** Keep the exact error
+  and firmware version for the issue. Avoid blind offset or parameter sweeps.
+- **Hash mismatch or HMAC failure:** Nothing new is written. Keep the existing
+  key and investigate the layout/read; verification cannot be disabled.
+- **Output exists:** Recovery is usually unnecessary if that key already
+  works. Use `--force` only for an intentional verified replacement.
+- **PowerShell blocked / Access Denied:** Use Administrator PowerShell and
+  the documented `-ExecutionPolicy Bypass` command.

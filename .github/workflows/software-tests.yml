@@ -36,3 +36,10 @@ jobs:
           nix-build --no-out-link -E
           'let pkgs = import <nixpkgs> {}; in pkgs.fprintd.override {
           libfprint = pkgs.callPackage ./libfprint-goodix.nix {}; }'
+      - name: Build the separate Jet-Soup capture candidate
+        run: |
+          candidate=$(mktemp -d)
+          trap 'rm -rf "$candidate"' EXIT
+          git archive HEAD | tar -x -C "$candidate"
+          git -C "$candidate" apply --no-index "$PWD/experiments/jet-soup-capture.patch"
+          nix-build --no-out-link -E "let pkgs = import <nixpkgs> {}; in pkgs.callPackage $candidate/libfprint-goodix.nix {}"
