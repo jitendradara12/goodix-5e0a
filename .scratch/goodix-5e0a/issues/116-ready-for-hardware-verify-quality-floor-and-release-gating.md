@@ -35,21 +35,31 @@ Resolve contributor Jet-Soup's 0/5 live verification failure on Issue #12 / PR #
 - **Software Suite Validation:**
   All 401 tests across Tiers 1–5 pass (392 passed, 0 skipped, 0 failed).
 
-## Single next experiment: maintainer regression
+## Hardware verification runs
 
-Run `bash tools/test-hardware.sh --capture-settings current` on the maintainer's laptop.
+1. **Maintainer Regression (`--capture-settings current` at 05bf427):**
+   - Test bundle: `goodix-test-2885d46439c7dbf6.zip`.
+   - Hands-off (20s): silent, `hands_off_activity: false` (pass).
+   - Holding (20s): single advance (`holding_advances: 1`), release guard active (pass).
+   - Enrollment: completed all 12 stages cleanly across distinct touches.
+   - Genuine verification: 5/5 matched (`match=1 pts=100, 93, 48, 54, 77`).
+   - Wrong-finger verification: 5/5 rejected (`match=0 pts=0, 0, 0, 0, 0`).
+   - State & storage: storage isolated and restored (`restored: true`).
+   - Verdict: **Confirmed** (zero regression on baseline laptop).
+
+## Single next experiment: Jet-Soup live verification
+
+Run `bash tools/test-hardware.sh --capture-settings jet-soup` on Jet-Soup's hardware.
 Record hands off + timestamp for 20 seconds, then holding + timestamp for 20 seconds, latency and advances; finish 12-touch enrollment and five genuine and five wrong-finger attempts.
 
 **Confirm:**
-- Silent hands-off (20s): no spurious captures or enrollment advances.
-- Holding (20s): single enrollment advance, then logs `5e0a enrollment release guard: finger still present, re-issuing FDT UP` and waits for release.
-- All 12 enrollment stages require 12 physical finger touches.
+- Silent hands-off (20s): no air misfires or high-energy spikes with the updated DAC table (`[0xad, 0xae, 0xac, 0xad]`).
+- Holding (20s): single advance; finger release guard prevents runaway enrollment on hold.
+- 12 distinct physical touches required for enrollment (air frames rejected by `best_quality >= 15`).
 - 5/5 genuine matches (`Milan verify: match=1 pts=>0`) and 5/5 wrong-finger rejections (`match=0 pts=0`).
 
 **Falsify:**
-Spurious hands-off triggers, repeated advances during steady hold, enrollment advancing without finger release, genuine verification failure on maintainer's unit, or any wrong-finger match.
+Air misfires during hands-off, repeated hold advances, enrollment advancing without physical touch releases, genuine verification failure (e.g. 0/5 matched), or any wrong-finger match.
 
 **Inconclusive-because-[flaw]:**
 Setup or build error, failed namespace isolation, mixed templates, missing protocol phases or interruption. Conclude only confirmed / falsified / inconclusive-because-[flaw].
-
-Following maintainer confirmation, the guided test on Jet-Soup's unit (`bash tools/test-hardware.sh --capture-settings jet-soup`) will verify live verification on their hardware.
