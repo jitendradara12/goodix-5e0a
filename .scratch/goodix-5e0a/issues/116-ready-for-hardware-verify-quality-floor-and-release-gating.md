@@ -47,6 +47,17 @@ Resolve contributor Jet-Soup's 0/5 live verification failure on Issue #12 / PR #
    - State & storage: storage isolated and restored (`restored: true`).
    - Verdict: **Confirmed** (zero regression on baseline laptop).
 
+2. **Maintainer Test with Jet-Soup Candidate (`--capture-settings jet-soup` at 18c3853):**
+   - Test bundle: `goodix-test-53128b6d64ee485d.zip`.
+   - Patch SHA-256: `fdbb4546254410d06399c93db1f04e4645ff15ab0c7b1a34282d1a05c0904087`.
+   - Hands-off (20s): silent, `hands_off_activity: false` (pass).
+   - Holding (20s): single advance (`holding_advances: 1`), release guard active (pass).
+   - Touch quality: frame quality 65..92, overlap 95..98%.
+   - Genuine verification: 5/5 matched (`match=1 pts=54, 100, 64, 100, 96`).
+   - Wrong-finger verification: 5/5 rejected (`match=0 pts=0, 0, 0, 0, 0`).
+   - State & storage: storage isolated and restored (`restored: true`).
+   - Verdict: **Confirmed** (candidate patch is safe and fully functional on live hardware).
+
 ## Single next experiment: Jet-Soup live verification
 
 Run `bash tools/test-hardware.sh --capture-settings jet-soup` on Jet-Soup's hardware.
