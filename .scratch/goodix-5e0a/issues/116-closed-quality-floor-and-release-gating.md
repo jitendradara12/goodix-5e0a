@@ -1,6 +1,6 @@
 # 116: Milan quality-floor contact gating, finger release enforcement, and FDT DOWN calibration
 
-**Status:** ready-for-hardware-verify
+**Status:** closed (verdict: confirmed on maintainer hardware run 2885d464 and 53128b6d; confirmed on Jet-Soup hardware run 080e6c71; successor: 117)
 
 ## Scope
 
@@ -58,19 +58,15 @@ Resolve contributor Jet-Soup's 0/5 live verification failure on Issue #12 / PR #
    - State & storage: storage isolated and restored (`restored: true`).
    - Verdict: **Confirmed** (candidate patch is safe and fully functional on live hardware).
 
-## Single next experiment: Jet-Soup live verification
+3. **Jet-Soup Live Verification (`--capture-settings jet-soup` at 18c3853):**
+   - Test bundle: `goodix-test-080e6c718b3b818c.zip` (Fedora 44, kernel `7.2.11-200.fc44.x86_64`).
+   - Patch SHA-256: `fdbb4546254410d06399c93db1f04e4645ff15ab0c7b1a34282d1a05c0904087`.
+   - Hands-off (20s): silent, `hands_off_activity: false` (pass).
+   - Holding (20s): single advance (`holding_advances: 1`), release guard active (pass).
+   - Enrollment: completed all 12 stages cleanly across distinct touches (touch qualities 40..74, overlap 78..94%).
+   - Genuine verification: 5/5 matched (`match=1 pts=35, 35, 37, 45, 38`).
+   - Wrong-finger verification: 5/5 rejected (`match=0 pts=0, 0, 0, 0, 0`).
+   - State & storage: storage isolated and restored (`restored: true`).
+   - Verdict: **Confirmed** (falsification resolved; candidate verified on live hardware).
 
-Run `bash tools/test-hardware.sh --capture-settings jet-soup` on Jet-Soup's hardware.
-Record hands off + timestamp for 20 seconds, then holding + timestamp for 20 seconds, latency and advances; finish 12-touch enrollment and five genuine and five wrong-finger attempts.
-
-**Confirm:**
-- Silent hands-off (20s): no air misfires or high-energy spikes with the updated DAC table (`[0xad, 0xae, 0xac, 0xad]`).
-- Holding (20s): single advance; finger release guard prevents runaway enrollment on hold.
-- 12 distinct physical touches required for enrollment (air frames rejected by `best_quality >= 15`).
-- 5/5 genuine matches (`Milan verify: match=1 pts=>0`) and 5/5 wrong-finger rejections (`match=0 pts=0`).
-
-**Falsify:**
-Air misfires during hands-off, repeated hold advances, enrollment advancing without physical touch releases, genuine verification failure (e.g. 0/5 matched), or any wrong-finger match.
-
-**Inconclusive-because-[flaw]:**
-Setup or build error, failed namespace isolation, mixed templates, missing protocol phases or interruption. Conclude only confirmed / falsified / inconclusive-because-[flaw].
+Successor: **117: Dynamic OTP DAC calibration and unified driver configuration**.

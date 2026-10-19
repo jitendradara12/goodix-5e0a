@@ -425,6 +425,9 @@ void goodix_send_preset_psk_read_5e0a (FpDevice                   *dev,
                                        guint32                     offset,
                                        GoodixPresetPskReadCallback callback,
                                        gpointer                    user_data);
+
+extern guint8 goodix5e0a_capture_payload[10];
+
 /**
  * @brief Request the OTP (One Time Password) from the device
  *
