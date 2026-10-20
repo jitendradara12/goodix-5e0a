@@ -17,6 +17,7 @@ SPEC = importlib.util.spec_from_file_location("hardware_session", ROOT / "tools/
 SESSION = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(SESSION)
 EXECUTABLE_MAPPING_PROBE = SESSION.executable_mapping_probe
+COUNT_PRINTS = SESSION.count_prints
 
 
 class SessionTests(unittest.TestCase):
@@ -43,7 +44,9 @@ class SessionTests(unittest.TestCase):
             patch = mock.patch.object(SESSION, name, value)
             patch.start()
             self.addCleanup(patch.stop)
-        for name, value in (("preflight", lambda: None), ("daemon_path", lambda: "/usr/libexec/fprintd"),
+        for name, value in (("preflight", lambda: None),
+                            ("count_prints", lambda user: 0),
+                            ("store_snapshot", lambda: {p.name: p.read_bytes() for p in self.old_prints.iterdir()}), ("daemon_path", lambda: "/usr/libexec/fprintd"),
                             ("isolation_probe", lambda p: None), ("verify_runtime", lambda pid, driver: None),
                             ("executable_mapping_probe", lambda p: None),
                             ("property_value", self.property), ("command", self.command),
@@ -219,7 +222,83 @@ class SessionTests(unittest.TestCase):
             code, result = self.run_session(self.exercise)
         self.assertEqual(code, 1)
         self.assertFalse(result["restored"])
-        self.assertIn("Print count mismatch after restore", result.get("canary_error", ""))
+        self.assertIn("Enrollment storage changed after restore", result.get("canary_error", ""))
+
+    def test_store_canary_detects_replacement_even_with_same_print_count(self):
+        def replace_template(event, clients):
+            result = self.exercise(event, clients)
+            (self.old_prints / "existing-template").write_bytes(b"replacement")
+            return result
+        # This test intentionally changes the fake store; check its report directly.
+        with mock.patch.object(SESSION, "guided_test", replace_template):
+            code = SESSION.root_session(self.stage, {"revision": "fixture"})
+        with zipfile.ZipFile(next(self.reports.glob("*.zip"))) as archive:
+            result = json.loads(archive.read("session.json"))
+        self.assertEqual(code, 1)
+        self.assertFalse(result["store_unchanged"])
+        self.assertFalse(result["restored"])
+
+    def test_failed_post_restore_listing_still_writes_report_and_restores_service(self):
+        counts = [0, 0, RuntimeError("listing failed")]
+        def count(user):
+            value = counts.pop(0)
+            if isinstance(value, Exception):
+                raise value
+            return value
+        self.active = "inactive"
+        with mock.patch.object(SESSION, "count_prints", side_effect=count):
+            code, result = self.run_session(self.exercise)
+        self.assertEqual(code, 1)
+        self.assertEqual(self.active, "inactive")
+        self.assertFalse(result["restored"])
+        self.assertEqual(result["canary_error"], "listing failed")
+
+    def test_initial_listing_cannot_change_original_inactive_service_state(self):
+        self.active = "inactive"
+        def failed_listing(user):
+            self.active = "active"  # D-Bus activation by the client
+            raise RuntimeError("listing failed")
+        with mock.patch.object(SESSION, "count_prints", side_effect=failed_listing):
+            with self.assertRaisesRegex(RuntimeError, "listing failed"):
+                SESSION.root_session(self.stage, {})
+        self.assertEqual(self.active, "inactive")
+        self.assertFalse(self.runtime.exists())
+
+    def test_listing_error_is_not_mistaken_for_an_empty_store(self):
+        for code, text in ((1, "No devices available"), (0, "Unexpected response")):
+            with mock.patch.object(SESSION, "command", return_value=subprocess.CompletedProcess([], code, text, "")):
+                with self.assertRaises(RuntimeError):
+                    COUNT_PRINTS("user")
+        for text, expected in (("User user has no fingers enrolled", 0), ("Fingerprints for user user:\n - #0: right-index-finger", 1)):
+            with mock.patch.object(SESSION, "command", return_value=subprocess.CompletedProcess([], 0, text, "")):
+                self.assertEqual(COUNT_PRINTS("user"), expected)
+
+    def test_timer_requests_owned_session_expiry_instead_of_manual_restore(self):
+        self.run_session(self.exercise)
+        timer = next(args for args in self.calls if "--on-active=30m" in args)
+        self.assertIn("--expire-session", timer)
+        self.assertNotIn("--restore", timer)
+
+    def test_timer_signals_live_owner_and_allows_its_cleanup(self):
+        self.runtime.mkdir()
+        (self.runtime / "manifest.json").write_text(json.dumps({"nonce": "test", "session_pid": 123, "session_starttime": "start"}))
+        def cleanup(pid, sig):
+            self.assertEqual((pid, sig), (123, SESSION.signal.SIGTERM))
+            shutil.rmtree(self.runtime)
+        with mock.patch.object(SESSION, "process_identity", return_value="start"), mock.patch.object(SESSION.os, "kill", side_effect=cleanup):
+            SESSION.expire_session("test")
+        self.assertFalse(self.runtime.exists())
+
+    def test_timer_does_not_signal_a_reused_pid_or_another_session(self):
+        self.runtime.mkdir()
+        (self.runtime / "manifest.json").write_text(json.dumps({"nonce": "test", "session_pid": 123, "session_starttime": "old"}))
+        with mock.patch.object(SESSION, "process_identity", return_value="new"), mock.patch.object(SESSION.os, "kill") as kill, mock.patch.object(SESSION, "restore") as restore:
+            with self.assertRaisesRegex(RuntimeError, "different session"):
+                SESSION.expire_session("other")
+            restore.assert_not_called()
+            SESSION.expire_session("test")
+            kill.assert_not_called()
+            restore.assert_called_once()
 
     def test_runtime_disappearing_before_restore_denies_restored_true(self):
         def external_restore_simulation(event, clients):

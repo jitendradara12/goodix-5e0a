@@ -1,4 +1,4 @@
-"""Build and supervise an isolated current/Jet-Soup hardware test.
+"""Build and supervise an isolated hardware test with automatic OTP calibration.
 
 No installed library, permanent unit, account, PAM file or existing print is
 changed. A root-only runtime drop-in binds a new storage directory over the
@@ -46,9 +46,83 @@ def output(args):
 
 
 def count_prints(user):
-    proc = command(["fprintd-list", user], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = command(["fprintd-list", user], check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                   env={**os.environ, "LC_ALL": "C"})
     text = (proc.stdout or "") + "\n" + (proc.stderr or "")
-    return len(re.findall(r"#\d+:", text))
+    if proc.returncode != 0:
+        raise RuntimeError("Cannot list enrollment storage; no empty-store assumption was made")
+    count = len(re.findall(r"#\d+:", text))
+    if not count and not re.search(r"has no fingers enrolled|has no prints", text, re.I):
+        raise RuntimeError("Unrecognized enrollment listing; no empty-store assumption was made")
+    return count
+
+
+def store_snapshot():
+    """Private content inventory; only the equality result goes into the ZIP."""
+    store = Path("/var/lib/fprint")
+    if store.is_symlink():
+        raise RuntimeError("Unexpected symlink in enrollment storage")
+    if not store.exists():
+        return {}
+    result = {}
+    for path in sorted(store.rglob("*")):
+        if path.is_symlink():
+            raise RuntimeError("Unexpected symlink in enrollment storage")
+        if path.is_file():
+            result[str(path.relative_to(store))] = hashlib.sha256(path.read_bytes()).digest()
+    return result
+
+
+def process_identity(pid):
+    """Linux start time distinguishes the session from a reused process ID."""
+    try:
+        return (Path("/proc") / str(pid) / "stat").read_text().rsplit(")", 1)[1].split()[19]
+    except (OSError, IndexError):
+        return None
+
+
+def expire_session(nonce):
+    """Ask the owning session to clean up, then recover if it died mid-cleanup."""
+    if not RUNTIME.exists():
+        return
+    manifest = json.loads((RUNTIME / "manifest.json").read_text())
+    if manifest.get("nonce") != nonce:
+        raise RuntimeError("Recovery timer belongs to a different session")
+    pid = manifest.get("session_pid")
+    identity = manifest.get("session_starttime")
+    if pid and identity and process_identity(pid) == identity:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            restore()
+            return
+        deadline = time.monotonic() + 15
+        while RUNTIME.exists() and process_identity(pid) == identity and time.monotonic() < deadline:
+            time.sleep(.1)
+        if not RUNTIME.exists():
+            return
+        if process_identity(pid) == identity:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                restore()
+                return
+            # A killed session cannot race restoration. Wait for exit/zombie.
+            deadline = time.monotonic() + 5
+            while process_identity(pid) == identity and time.monotonic() < deadline:
+                try:
+                    state = (Path("/proc") / str(pid) / "stat").read_text().rsplit(")", 1)[1].split()[0]
+                except FileNotFoundError:
+                    break
+                if state == "Z":
+                    break
+                time.sleep(.1)
+            else:
+                if process_identity(pid) == identity:
+                    raise RuntimeError("Session has not stopped; recovery files were preserved")
+    elif pid and not identity:
+        raise RuntimeError("Legacy session has no process identity; restore it manually")
+    restore()
 
 
 def timestamp():
@@ -169,7 +243,7 @@ class Client:
         self.lines = []
         self.pending = queue.Queue()
         self.process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                        text=True, start_new_session=True)
+                                        text=True, start_new_session=True, env={**os.environ, "LC_ALL": "C"})
         self.reader = threading.Thread(target=self.read, daemon=True)
         self.reader.start()
 
@@ -360,9 +434,17 @@ def root_session(stage, metadata):
         print(timestamp(), phase, flush=True)
 
     target_user = os.environ.get("SUDO_USER") or os.environ.get("USER") or "root"
-    pre_count = count_prints(target_user)
+    was_active = property_value("ActiveState") == "active"
+    try:
+        pre_count = count_prints(target_user)
+        original_store = store_snapshot()
+    except Exception:
+        if not was_active:
+            command(["systemctl", "stop", "fprintd.service"])
+        raise
     manifest = {"nonce": nonce, "session_pid": os.getpid(),
-                "was_active": property_value("ActiveState") == "active",
+                "session_starttime": process_identity(os.getpid()),
+                "was_active": was_active,
                 "service_changed": False, "dropin": dropin_text(daemon, nonce),
                 "driver_directory": str(driver)}
     clients = []
@@ -393,15 +475,16 @@ def root_session(stage, metadata):
         if metadata.get("library_sha256") and metadata["library_sha256"] != staged_sha256:
             raise RuntimeError("Staged driver library SHA256 does not match build metadata")
         shutil.copyfile(stage / "GoodixEngineAdapter.dll", driver / "GoodixEngineAdapter.dll")
-        if shutil.which("chcon"):
-            subprocess.run(["chcon", "-R", "-t", "lib_t", str(driver)], check=False,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if Path("/sys/fs/selinux/enforce").exists():
+            # Match Fedora's library/store policy without disabling enforcement.
+            command(["chcon", "-R", "-t", "lib_t", driver])
+            command(["chcon", "--reference=/var/lib/fprint", prints])
         executable_mapping_probe(driver / "lib/libfprint-2.so.2")
         timer = "goodix-test-restore-" + nonce
         manifest["timer"] = timer
         write_json(RUNTIME / "manifest.json", manifest)
         command(["systemd-run", "--quiet", "--on-active=30m", "--unit=" + timer,
-                 sys.executable, RUNTIME / "recover.py", "--restore"])
+                 sys.executable, RUNTIME / "recover.py", "--expire-session", nonce])
         DROPIN.parent.mkdir(parents=True, exist_ok=True)
         temporary_override = RUNTIME / "override.conf"
         temporary_override.write_text(manifest["dropin"])
@@ -453,11 +536,24 @@ def root_session(stage, metadata):
         except Exception as error:
             info["restore_error"] = str(error)
             print("RESTORE REQUIRED: sudo python3 /run/goodix-5e0a-experiment/recover.py --restore", file=sys.stderr)
-        post_count = count_prints(target_user)
-        info["prints_after_restore"] = post_count
-        canary_restored = (post_count == pre_count)
-        if not canary_restored:
-            info["canary_error"] = f"Print count mismatch after restore: was {pre_count}, now {post_count}"
+        try:
+            post_count = count_prints(target_user)
+            info["prints_after_restore"] = post_count
+            info["store_unchanged"] = store_snapshot() == original_store
+            canary_restored = post_count == pre_count and info["store_unchanged"]
+            if not canary_restored:
+                info["canary_error"] = "Enrollment storage changed after restore"
+        except Exception as error:
+            canary_restored = False
+            info["canary_error"] = str(error)
+        finally:
+            # fprintd-list may D-Bus activate an originally inactive daemon.
+            if not was_active:
+                try:
+                    command(["systemctl", "stop", "fprintd.service"])
+                except Exception as error:
+                    restore_ok = False
+                    info["restore_error"] = str(error)
         info["restored"] = bool(runtime_owned and runtime_present_at_restore and restore_ok and canary_restored)
         info["finished"] = timestamp()
         report_data["session.json"] = json.dumps(info, indent=2) + "\n"
@@ -495,10 +591,11 @@ def build_and_run(check_only=False, prepare_only=None, capture_settings="current
                 if Path(member.name).is_absolute() or ".." in Path(member.name).parts or member.issym() or member.islnk():
                     raise RuntimeError("Unexpected archive path/link")
             archive.extractall(source)
-        patch = source / "experiments/jet-soup-capture.patch" if capture_settings == "jet-soup" else None
-        if patch:
-            command(["git", "apply", "--no-index", "--check", patch], cwd=source)
-            command(["git", "apply", "--no-index", patch], cwd=source)
+        # Both supported units now select their wire settings from OTP.
+        # Keep the old flag as an alias for previously shared instructions.
+        if capture_settings == "jet-soup":
+            print("The jet-soup flag is obsolete; testing automatic OTP selection.", flush=True)
+        capture_settings = "current"
         print("Building the test driver separately. No installation or package-manager changes.", flush=True)
         os_release = Path("/etc/os-release").read_text()
         with (tmp / "build.log").open("w") as log:
@@ -520,7 +617,7 @@ def build_and_run(check_only=False, prepare_only=None, capture_settings="current
             print((tmp / "build.log").read_text()[-8000:], file=sys.stderr)
             raise RuntimeError("Build failed before any service change; send the error above")
         metadata = {"revision": revision, "experiment": "bandpass80-" + capture_settings, "capture_settings": capture_settings,
-                    "patch_sha256": hashlib.sha256(patch.read_bytes()).hexdigest() if patch else None,
+                    "patch_sha256": None,
                     "library_sha256": hashlib.sha256((stage / "lib/libfprint-2.so.2").read_bytes()).hexdigest(),
                     "kernel": platform.release(), "architecture": platform.machine()}
         meta = tmp / "metadata.json"
@@ -538,16 +635,22 @@ def build_and_run(check_only=False, prepare_only=None, capture_settings="current
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--capture-settings", choices=("current", "jet-soup"), default="current",
-                        help="current: owner regression; jet-soup: wire-only capture candidate")
+                        help="Automatic OTP selection (default); jet-soup is a compatibility alias")
     parser.add_argument("--check", action="store_true", help="Read-only prerequisites; no sensor or service changes")
     parser.add_argument("--prepare-only", type=Path, help="Build into a new directory, without sudo/service/sensor operations")
     parser.add_argument("--restore", action="store_true", help="Restore an interrupted runtime experiment")
     parser.add_argument("--isolation-check", action="store_true", help="Root: test only namespace isolation, without fprintd/USB")
+    parser.add_argument("--expire-session", help=argparse.SUPPRESS)
     parser.add_argument("--session", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--metadata", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, interruption)
+    if args.expire_session:
+        if os.geteuid() != 0:
+            raise RuntimeError("Timed recovery requires root")
+        expire_session(args.expire_session)
+        return 0
     if args.restore:
         if os.geteuid() != 0:
             return subprocess.call(["sudo", sys.executable, str(Path(__file__).resolve()), "--restore"])

@@ -1,6 +1,6 @@
 # Goodix 27c6:5e0a Linux Driver
 
-Linux fingerprint driver for Goodix 27c6:5e0a sensors (found in laptops like the Realme Book Prime).
+Linux fingerprint driver for the Goodix 27c6:5e0a sensor in the Realme Book Prime.
 
 Runs as a libfprint module and loads Goodix's Windows engine (`GoodixEngineAdapter.dll`) via a PE loader.
 
@@ -26,7 +26,10 @@ command-line tools, `fprintd-delete "$USER"` removes your existing fingerprints;
 follow it with `fprintd-enroll` to create a new enrollment.
 
 The corrected processing is enabled by default; no experiment flag or Windows
-calibration export is needed. See [validation and scope](docs/native-raster-validation.md).
+calibration export is needed. OTP calibration selects the capture settings for
+the maintainer's and Jet-Soup's tested units automatically, in both normal
+installs and hardware tests. This does not establish support for other laptops.
+See [validation and scope](docs/native-raster-validation.md).
 
 ### NixOS
 

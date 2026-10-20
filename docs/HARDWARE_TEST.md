@@ -2,17 +2,19 @@
 
 The repository includes an isolated hardware test runner (`tools/test-hardware.sh`) to verify driver functionality on live hardware.
 
-It builds a temporary driver instance, isolates fprintd storage, and runs a protocol-compliant test session without altering existing fingerprints or system files.
+It builds a temporary driver instance, isolates fprintd storage, and runs a protocol-compliant test session using separate enrollment storage. It checks the original storage after cleanup.
 
 ## Running the Test
 
-Run the test runner from the repository root:
+For a PR, check out its latest branch first. Run from the repository root:
 
 ```bash
 bash tools/test-hardware.sh
 ```
 
 The script builds the driver and requests `sudo` for the temporary test session.
+Capture settings are selected automatically from OTP; no extra flag is needed.
+Fingerprint login is temporarily unavailable during the test.
 
 ## Test Protocol
 
@@ -28,7 +30,8 @@ The script builds the driver and requests `sudo` for the temporary test session.
 
 ## Results & Cleanup
 
-- Logs and report archives are saved to `/var/tmp/goodix-5e0a-reports/`.
+- Attach the ZIP path printed at the end to the PR, including a failed or interrupted run. It contains numerical results, not keys, images or templates. If no ZIP was created, paste the error.
+- Stop after one run so the result can be reviewed before another test.
 - Original fprintd service and fingerprint storage are restored automatically upon exit or Ctrl-C.
 - If interrupted abruptly, restore system state manually:
   ```bash

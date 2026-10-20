@@ -1,16 +1,16 @@
---- a/libfprint-driver/goodix.c	2026-10-01 00:13:07.036112978 +0530
-+++ b/libfprint-driver/goodix.c	2026-10-19 19:48:10.982165255 +0530
-@@ -903,7 +903,7 @@
+--- a/libfprint-driver/goodix.c
++++ b/libfprint-driver/goodix.c
+@@ -906,7 +906,7 @@
                          NULL, FALSE, GOODIX_NOP_TIMEOUT, FALSE, NULL, NULL);
  }
  
--guint8 goodix5e0a_capture_payload[10] = {0x05, 0x00, 0xb0, 0x00, 0xb2, 0x00, 0xb0, 0x00, 0xb1, 0x00};
-+guint8 goodix5e0a_capture_payload[10] = {0x01, 0x00, 0xad, 0x00, 0xae, 0x00, 0xac, 0x00, 0xad, 0x00};
+-static const guint8 goodix5e0a_capture_payload[10] = {0x05, 0x00, 0xb0, 0x00, 0xb2, 0x00, 0xb0, 0x00, 0xb1, 0x00};
++static const guint8 goodix5e0a_capture_payload[10] = {0x01, 0x00, 0xad, 0x00, 0xae, 0x00, 0xac, 0x00, 0xad, 0x00};
  
  void
- goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,
---- a/libfprint-driver/goodix5e0a.h	2026-10-19 03:27:44.083278825 +0530
-+++ b/libfprint-driver/goodix5e0a.h	2026-10-19 19:48:10.982647116 +0530
+ goodix5e0a_set_capture_payload (FpDevice *dev, const guint8 payload[10])
+--- a/libfprint-driver/goodix5e0a.h
++++ b/libfprint-driver/goodix5e0a.h
 @@ -81,7 +81,7 @@
    0x26, 0x9c, 0xe7, 0x52, 0xd7, 0xa8, 0xb2, 0xab
  };

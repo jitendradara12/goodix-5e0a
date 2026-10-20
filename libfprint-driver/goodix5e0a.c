@@ -110,7 +110,9 @@ struct _FpiDeviceGoodixTls5e0a
 
   /* Ticket 117: Dynamic OTP DAC calibration and runtime packet buffers */
   guint16             dac[4];
-  guint8              fdt_down_s12[sizeof (goodix_5e0a_down_s12)], fdt_up_u01[sizeof (goodix_5e0a_up_u01)], mcu_config[sizeof (goodix_5e0a_config)];
+  guint8              fdt_down_s12[sizeof (goodix_5e0a_down_s12)];
+  guint8              fdt_up_u01[sizeof (goodix_5e0a_up_u01)];
+  guint8              mcu_config[sizeof (goodix_5e0a_config)];
 };
 
 G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a, FPI,
@@ -166,66 +168,103 @@ on_psk_hash_read (FpDevice *dev, gboolean success, guint32 flags,
   fpi_ssm_next_state (ssm);
 }
 
-/* Ticket 117: Dynamic OTP DAC calibration and runtime packet buffers */
+/* OTP stores redundant channel values plus four ninth bits. Keep the decoder
+ * independent of transport so malformed reads never partially update packets. */
+static gboolean
+goodix5e0a_decode_otp (const guint8 *data, guint16 len, guint16 dacs[4])
+{
+  if (!data || len < 64)
+    return FALSE;
+
+  for (guint i = 0; i < 4; i++)
+    {
+      guint8 primary = data[0x2e + i];
+      guint8 secondary = data[0x32 + i];
+      guint8 value = secondary ? secondary : primary;
+
+      if (!value)
+        return FALSE;
+      dacs[i] = value | ((data[0x13] & (1 << (3 - i))) ? 0x100 : 0);
+    }
+  return TRUE;
+}
+
 static void
 goodix5e0a_update_dacs (FpiDeviceGoodixTls5e0a *self, const guint16 dacs[4])
 {
-  for (int i = 0; i < 4; i++)
+  guint8 capture_payload[sizeof (goodix_5e0a_img_payload)];
+
+  /* Always rebuild from the defaults, including after a previous calibration. */
+  memcpy (self->mcu_config, goodix_5e0a_config, sizeof (self->mcu_config));
+  memcpy (self->fdt_down_s12, goodix_5e0a_down_s12, sizeof (self->fdt_down_s12));
+  memcpy (self->fdt_up_u01, goodix_5e0a_up_u01, sizeof (self->fdt_up_u01));
+  memcpy (capture_payload, goodix_5e0a_img_payload, sizeof (capture_payload));
+
+  for (guint i = 0; i < 4; i++)
     {
+      guint8 lo = dacs[i] & 0xff;
+      guint8 hi = (dacs[i] >> 8) & 0xff;
+
       self->dac[i] = dacs[i];
-      guint8 lo = dacs[i] & 0xff, hi = (dacs[i] >> 8) & 0xff;
       self->fdt_down_s12[2 + 2 * i] = self->fdt_down_s12[26 + 2 * i] = lo;
       self->fdt_down_s12[3 + 2 * i] = self->fdt_down_s12[27 + 2 * i] = hi;
-      self->fdt_up_u01[2 + 2 * i] = goodix5e0a_capture_payload[2 + 2 * i] = lo;
-      self->fdt_up_u01[3 + 2 * i] = goodix5e0a_capture_payload[3 + 2 * i] = hi;
+      self->fdt_up_u01[2 + 2 * i] = capture_payload[2 + 2 * i] = lo;
+      self->fdt_up_u01[3 + 2 * i] = capture_payload[3 + 2 * i] = hi;
     }
-  if ((dacs[0] & 0xff) == 0xad)
+
+  /* These extra wire settings are validated for Jet-Soup's four-channel
+   * profile only. A matching first channel alone does not identify a unit. */
+  if ((dacs[0] & 0xff) == 0xad && (dacs[1] & 0xff) == 0xae &&
+      (dacs[2] & 0xff) == 0xac && (dacs[3] & 0xff) == 0xad)
     {
-      self->mcu_config[0xc8] = 0x1f; self->mcu_config[0xeb] = 0xf0; self->mcu_config[0xec] = 0x00;
       guint32 sum = 0xa5a5;
-      for (int j = 0; j < 254; j += 2) sum += self->mcu_config[j] | (self->mcu_config[j + 1] << 8);
-      guint16 csum = (-sum) & 0xffff;
-      self->mcu_config[0xfe] = csum & 0xff; self->mcu_config[0xff] = (csum >> 8) & 0xff;
-      goodix5e0a_capture_payload[0] = 0x01;
-      fp_dbg ("5e0a dynamic config applied: 0xad unit, checksum=0x%04x", csum);
+      guint16 checksum;
+
+      self->mcu_config[0xc8] = 0x1f;
+      self->mcu_config[0xeb] = 0xf0;
+      self->mcu_config[0xec] = 0x00;
+      for (guint i = 0; i < 254; i += 2)
+        sum += self->mcu_config[i] | (self->mcu_config[i + 1] << 8);
+      checksum = (-sum) & 0xffff;
+      self->mcu_config[0xfe] = checksum & 0xff;
+      self->mcu_config[0xff] = (checksum >> 8) & 0xff;
+      capture_payload[0] = 0x01;
+      fp_dbg ("5e0a dynamic config applied: 0xad unit, checksum=0x%04x", checksum);
     }
   else
-    {
-      goodix5e0a_capture_payload[0] = 0x05;
-      fp_dbg ("5e0a dynamic config applied: standard unit");
-    }
+    fp_dbg ("5e0a dynamic config applied: standard unit");
+
+  goodix5e0a_set_capture_payload (FP_DEVICE (self), capture_payload);
 }
 
 static void
-goodix5e0a_on_read_otp (FpDevice *dev, guint8 *data, guint16 len, gpointer ssm, GError *err)
+goodix5e0a_on_read_otp (FpDevice *dev, guint8 *data, guint16 len,
+                        gpointer ssm, GError *err)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
-  if (err) { fpi_ssm_mark_failed (ssm, err); return; }
-  if (data && len >= 64)
+  guint16 dacs[4];
+
+  if (err)
     {
-      guint16 dacs[4];
-      gboolean valid = TRUE;
-      for (int i = 0; i < 4; i++)
-        {
-          guint8 p = data[0x2e + i], s = data[0x32 + i];
-          if (p != 0 && (p == s || s == 0)) dacs[i] = p;
-          else if (s != 0) dacs[i] = s;
-          else valid = FALSE;
-          if (valid && (data[0x13] & (1 << (3 - i)))) dacs[i] |= 0x100;
-        }
-      if (valid)
-        {
-          fp_dbg ("5e0a OTP DAC calibration: 0x%03x 0x%03x 0x%03x 0x%03x", dacs[0], dacs[1], dacs[2], dacs[3]);
-          goodix5e0a_update_dacs (self, dacs);
-        }
-      else
-        fp_dbg ("5e0a OTP DAC calibration mismatch, using default");
+      fpi_ssm_mark_failed (ssm, err);
+      return;
     }
-  else if (!err)
-    fp_dbg ("5e0a OTP read bypassed or truncated: len=%u", len);
+
+  if (goodix5e0a_decode_otp (data, len, dacs))
+    {
+      fp_dbg ("5e0a OTP DAC calibration: 0x%03x 0x%03x 0x%03x 0x%03x",
+              dacs[0], dacs[1], dacs[2], dacs[3]);
+      goodix5e0a_update_dacs (self, dacs);
+    }
+  else
+    {
+      const guint16 defaults[4] = {0xb0, 0xb2, 0xb0, 0xb1};
+
+      fp_dbg ("5e0a OTP invalid or truncated: len=%u, using defaults", len);
+      goodix5e0a_update_dacs (self, defaults);
+    }
   fpi_ssm_next_state (ssm);
 }
-
 
 static void
 activate_run_state (FpiSsm *ssm, FpDevice *dev)
@@ -950,9 +989,12 @@ goodix5e0a_decode_frame (GoodixTls5xxPix *out_row_major, const guint8 *data, gui
 static void
 goodix5e0a_reset_touch_frames (FpiDeviceGoodixTls5e0a *self)
 {
-  self->frame_count = 0; self->best_frame_no = 0;
-  self->best_quality = 0; self->best_overlap = 0;
-  self->best_range = 0; self->best_active = 0;
+  self->frame_count = 0;
+  self->best_frame_no = 0;
+  self->best_quality = 0;
+  self->best_overlap = 0;
+  self->best_range = 0;
+  self->best_active = 0;
   memset (self->best_pixels, 0, sizeof (self->best_pixels));
   memset (self->latest_norm_pixels, 0, sizeof (self->latest_norm_pixels));
 }
@@ -1550,8 +1592,7 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
               return;
             }
           g_error_free (err);
-          fp_dbg ("5e0a %s: finger still present, re-issuing FDT UP",
-                  self->is_verify ? "retry guard" : "enrollment release guard");
+          fp_dbg ("5e0a retry guard: finger still present, re-issuing FDT UP");
           send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP,
                           self->fdt_up_u01, sizeof (self->fdt_up_u01),
                           GOODIX_5E0A_FDT_UP_GUARD_TIMEOUT_MS, goodix5e0a_on_fdt_up_reply, ssm);
@@ -1559,7 +1600,8 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
         }
       else if (!self->is_verify && !self->is_identify && self->scan_ssm == ssm)
         {
-          if (self->retry_guard_mono > 0 && (g_get_monotonic_time () - self->retry_guard_mono) > 30 * G_USEC_PER_SEC)
+          if (self->retry_guard_mono > 0 &&
+              g_get_monotonic_time () - self->retry_guard_mono > 30 * G_USEC_PER_SEC)
             {
               fp_dbg ("5e0a enrollment release guard: orphaned hold past 30s, failing claim");
               fpi_ssm_mark_failed (ssm, err);
@@ -1803,18 +1845,45 @@ goodix5e0a_deactivate (FpImageDevice *img_dev)
 static void
 fpi_device_goodixtls5e0a_init (FpiDeviceGoodixTls5e0a *self)
 {
-  self->tls_parked = FALSE; self->tls_parked_at = 0; self->tls_parked_gen = 0;
-  self->warm_ok = FALSE; self->last_clean_mono = 0;
-  self->warm_boot_seq = 0; self->warm_down_reason = "cold-start";
-  self->warm_attempted = FALSE; self->warm_retried = FALSE;
-  self->frame_count = 0; self->best_frame_no = 0;
-  self->best_quality = 0; self->best_overlap = 0;
-  self->best_range = 0; self->best_active = 0; self->air_retries = 0;
-  self->retry_guard = FALSE; self->retry_guard_mono = 0;
-  self->dac[0] = 0xb0; self->dac[1] = 0xb2; self->dac[2] = 0xb0; self->dac[3] = 0xb1;
-  memcpy (self->fdt_down_s12, goodix_5e0a_down_s12, sizeof (goodix_5e0a_down_s12));
-  memcpy (self->fdt_up_u01, goodix_5e0a_up_u01, sizeof (goodix_5e0a_up_u01));
-  memcpy (self->mcu_config, goodix_5e0a_config, sizeof (goodix_5e0a_config));
+  self->session_started = FALSE;
+  self->scan_ssm = NULL;
+  self->scan_gen = 0;
+  self->down_timeout = NULL;
+  self->down_empty_polls = 0;
+  self->tls_parked = FALSE;
+  self->tls_parked_at = 0;
+  self->tls_parked_gen = 0;
+  self->tls_parked_boot = 0;
+  self->warm_ok = FALSE;
+  self->last_clean_mono = 0;
+  self->last_clean_boot = 0;
+  self->warm_boot_seq = 0;
+  self->warm_down_reason = "cold-start";
+  self->warm_attempted = FALSE;
+  self->warm_retried = FALSE;
+  self->frame_count = 0;
+  self->best_frame_no = 0;
+  self->best_quality = 0;
+  self->best_overlap = 0;
+  self->best_range = 0;
+  self->best_active = 0;
+  self->retry_guard = FALSE;
+  self->retry_guard_mono = 0;
+  self->is_verify = FALSE;
+  self->is_identify = FALSE;
+  self->enroll_stage = 0;
+  self->milan_enrol_ctx = NULL;
+  self->tmpl_blob = NULL;
+  self->tmpl_len = 0;
+  self->air_retries = 0;
+  self->dac[0] = 0xb0;
+  self->dac[1] = 0xb2;
+  self->dac[2] = 0xb0;
+  self->dac[3] = 0xb1;
+  memcpy (self->fdt_down_s12, goodix_5e0a_down_s12, sizeof (self->fdt_down_s12));
+  memcpy (self->fdt_up_u01, goodix_5e0a_up_u01, sizeof (self->fdt_up_u01));
+  memcpy (self->mcu_config, goodix_5e0a_config, sizeof (self->mcu_config));
+  goodix5e0a_set_capture_payload (FP_DEVICE (self), goodix_5e0a_img_payload);
 }
 
 static double

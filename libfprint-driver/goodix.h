@@ -426,7 +426,8 @@ void goodix_send_preset_psk_read_5e0a (FpDevice                   *dev,
                                        GoodixPresetPskReadCallback callback,
                                        gpointer                    user_data);
 
-extern guint8 goodix5e0a_capture_payload[10];
+/* Copy the 5e0a image command into this device's private transport state. */
+void goodix5e0a_set_capture_payload (FpDevice *dev, const guint8 payload[10]);
 
 /**
  * @brief Request the OTP (One Time Password) from the device

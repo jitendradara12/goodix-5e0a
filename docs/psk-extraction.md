@@ -21,7 +21,7 @@ Extracts and verifies the key directly on Linux without booting Windows.
 
 ```bash
 sudo systemctl stop fprintd
-sudo python3 tools/extract_psk_whitebox.py --out /etc/libfprint/goodix-5e0a.psk
+sudo "$(command -v python3)" tools/extract_psk_whitebox.py --out /etc/libfprint/goodix-5e0a.psk
 sudo systemctl start fprintd
 ```
 
