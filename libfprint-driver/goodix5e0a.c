@@ -2,20 +2,7 @@
 // Reverse engineered for NixOS - Windows-faithful steady-state port (Ticket 10)
 
 // Copyright (C) 2026 The libfprint Goodix 5e0a contributors
-
-// This library is free software; you can redistribute it and/or
-// modify it under the terms of the GNU Lesser General Public
-// License as published by the Free Software Foundation; either
-// version 2.1 of the License, or (at your option) any later version.
-
-// This library is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-// Lesser General Public License for more details.
-
-// You should have received a copy of the GNU Lesser General Public
-// License along with this library; if not, write to the Free Software
-// Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+// SPDX-License-Identifier: LGPL-2.1-or-later
 
 #include "drivers/goodixtls/goodix5xx.h"
 #include "fp-device.h"
@@ -80,8 +67,7 @@ struct _FpiDeviceGoodixTls5e0a
   guint                 scan_gen;
   guint                 scan_timeout_gen;
   GSource              *down_timeout;
-  /* Consecutive zero-length FDT_DOWN replies (bounded by
-   * GOODIX_5E0A_DOWN_EMPTY_POLL_MAX); reset by any valid reply. */
+  /* FDT_DOWN zero-length poll counter; reset by valid reply. */
   guint                 down_empty_polls;
 
   /* Ticket 38 parked TLS session */
@@ -105,6 +91,7 @@ struct _FpiDeviceGoodixTls5e0a
   guint               best_quality;
   guint               best_overlap;
   guint               best_range;
+  guint               air_retries;
 
   /* Ticket 47: verify retry guard against rapid retry burn on continuous touch */
   gboolean            retry_guard;
@@ -120,6 +107,12 @@ struct _FpiDeviceGoodixTls5e0a
   guint8              best_pixels[GOODIX_5E0A_FRAME_SIZE];
   guint               best_active;
   guint8              latest_norm_pixels[GOODIX_5E0A_FRAME_SIZE];
+
+  /* Ticket 117: Dynamic OTP DAC calibration and runtime packet buffers */
+  guint16             dac[4];
+  guint8              fdt_down_s12[sizeof (goodix_5e0a_down_s12)];
+  guint8              fdt_up_u01[sizeof (goodix_5e0a_up_u01)];
+  guint8              mcu_config[sizeof (goodix_5e0a_config)];
 };
 
 G_DECLARE_FINAL_TYPE (FpiDeviceGoodixTls5e0a, fpi_device_goodixtls5e0a, FPI,
@@ -175,6 +168,106 @@ on_psk_hash_read (FpDevice *dev, gboolean success, guint32 flags,
   fpi_ssm_next_state (ssm);
 }
 
+/* OTP stores redundant byte-sized DAC values. Keep decoding independent of
+ * transport so malformed reads never partially update packets. */
+static gboolean
+goodix5e0a_decode_otp (const guint8 *data, guint16 len, guint16 dacs[4])
+{
+  if (!data || len < 64)
+    return FALSE;
+
+  for (guint i = 0; i < 4; i++)
+    {
+      guint8 primary = data[0x2e + i];
+      guint8 secondary = data[0x32 + i];
+      guint8 value = secondary ? secondary : primary;
+
+      if (!value)
+        return FALSE;
+      /* OTP[0x13] is 0x0c on the maintainer's unit, but the verified wire
+       * DAC high bytes are all zero. Do not reinterpret those flags as bits. */
+      dacs[i] = value;
+    }
+  return TRUE;
+}
+
+static void
+goodix5e0a_update_dacs (FpiDeviceGoodixTls5e0a *self, const guint16 dacs[4])
+{
+  guint8 capture_payload[sizeof (goodix_5e0a_img_payload)];
+
+  /* Always rebuild from the defaults, including after a previous calibration. */
+  memcpy (self->mcu_config, goodix_5e0a_config, sizeof (self->mcu_config));
+  memcpy (self->fdt_down_s12, goodix_5e0a_down_s12, sizeof (self->fdt_down_s12));
+  memcpy (self->fdt_up_u01, goodix_5e0a_up_u01, sizeof (self->fdt_up_u01));
+  memcpy (capture_payload, goodix_5e0a_img_payload, sizeof (capture_payload));
+
+  for (guint i = 0; i < 4; i++)
+    {
+      guint8 lo = dacs[i] & 0xff;
+      guint8 hi = (dacs[i] >> 8) & 0xff;
+
+      self->dac[i] = dacs[i];
+      self->fdt_down_s12[2 + 2 * i] = self->fdt_down_s12[26 + 2 * i] = lo;
+      self->fdt_down_s12[3 + 2 * i] = self->fdt_down_s12[27 + 2 * i] = hi;
+      self->fdt_up_u01[2 + 2 * i] = capture_payload[2 + 2 * i] = lo;
+      self->fdt_up_u01[3 + 2 * i] = capture_payload[3 + 2 * i] = hi;
+    }
+
+  /* These extra wire settings are validated for Jet-Soup's four-channel
+   * profile only. A matching first channel alone does not identify a unit. */
+  if ((dacs[0] & 0xff) == 0xad && (dacs[1] & 0xff) == 0xae &&
+      (dacs[2] & 0xff) == 0xac && (dacs[3] & 0xff) == 0xad)
+    {
+      guint32 sum = 0xa5a5;
+      guint16 checksum;
+
+      self->mcu_config[0xc8] = 0x1f;
+      self->mcu_config[0xeb] = 0xf0;
+      self->mcu_config[0xec] = 0x00;
+      for (guint i = 0; i < 254; i += 2)
+        sum += self->mcu_config[i] | (self->mcu_config[i + 1] << 8);
+      checksum = (-sum) & 0xffff;
+      self->mcu_config[0xfe] = checksum & 0xff;
+      self->mcu_config[0xff] = (checksum >> 8) & 0xff;
+      capture_payload[0] = 0x01;
+      fp_dbg ("5e0a dynamic config applied: 0xad unit, checksum=0x%04x", checksum);
+    }
+  else
+    fp_dbg ("5e0a dynamic config applied: standard unit");
+
+  goodix5e0a_set_capture_payload (FP_DEVICE (self), capture_payload);
+}
+
+static void
+goodix5e0a_on_read_otp (FpDevice *dev, guint8 *data, guint16 len,
+                        gpointer ssm, GError *err)
+{
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+  guint16 dacs[4];
+
+  if (err)
+    {
+      fpi_ssm_mark_failed (ssm, err);
+      return;
+    }
+
+  if (goodix5e0a_decode_otp (data, len, dacs))
+    {
+      fp_dbg ("5e0a OTP DAC calibration: 0x%03x 0x%03x 0x%03x 0x%03x",
+              dacs[0], dacs[1], dacs[2], dacs[3]);
+      goodix5e0a_update_dacs (self, dacs);
+    }
+  else
+    {
+      const guint16 defaults[4] = {0xb0, 0xb2, 0xb0, 0xb1};
+
+      fp_dbg ("5e0a OTP invalid or truncated: len=%u, using defaults", len);
+      goodix5e0a_update_dacs (self, defaults);
+    }
+  fpi_ssm_next_state (ssm);
+}
+
 static void
 activate_run_state (FpiSsm *ssm, FpDevice *dev)
 {
@@ -189,8 +282,9 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
       break;
 
     case ACTIVATE_RESET:
-      /* Ticket 45: 5e0a relies on USB reset rather than MCU command 0xa2. */
-      fpi_ssm_jump_to_state (ssm, ACTIVATE_CHECK_FW_VER);
+      /* USB reset already happened at open. Cold activation must read OTP;
+       * warm activation reuses the packets calibrated on this device boot. */
+      fpi_ssm_jump_to_state (ssm, self->warm_attempted ? ACTIVATE_CHECK_FW_VER : ACTIVATE_READ_OTP);
       break;
 
     case ACTIVATE_READ_CHIP_ID:
@@ -208,7 +302,7 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
           fpi_ssm_jump_to_state (ssm, ACTIVATE_CHECK_FW_VER);
           return;
         }
-      goodix_send_read_otp (dev, goodixtls5xx_check_none_cmd, ssm);
+      goodix_send_read_otp (dev, goodix5e0a_on_read_otp, ssm);
       break;
 
     case ACTIVATE_CHECK_FW_VER:
@@ -272,10 +366,7 @@ on_chip_enabled (FpDevice *dev, gpointer user_data, GError *error)
   fpi_image_device_activate_complete (FP_IMAGE_DEVICE (dev), NULL);
 }
 
-/* Ticket 40 warm predicate: host-observed recency on the same device boot.
- * img_open (goodix_dev_init) brackets the whole open session, not each
- * claim, so boot_seq survives back-to-back verifies and only turns on
- * reopen/re-enumeration. TTL expiry is applied lazily by the caller. */
+/* Ticket 40 warm predicate: host-observed recency on the same device boot. */
 static gboolean
 goodix5e0a_warm_fresh (FpDevice *dev)
 {
@@ -310,11 +401,7 @@ goodix5e0a_log_warm_taken (FpDevice *dev)
              self->warm_boot_seq);
 }
 
-/* Ticket 40 warm bring-up: the SAME SSM/engine/callbacks as the full ladder
- * — activate_run_state skips RESET/CHIP_ID/OTP/CONFIG while warm_attempted
- * is set, so this is READ_AND_NOP + FW check + TLS by construction. There
- * is never a third half-bring-up path, and the handshake is never skipped:
- * SSL_accept failure stays loud via the funnels below. */
+/* Ticket 40 warm bring-up: same SSM/engine/callbacks as full ladder. */
 static void
 goodix5e0a_start_warm_activation (FpDevice *dev)
 {
@@ -339,8 +426,7 @@ goodix5e0a_start_full_activation (FpDevice *dev)
   self->session_started = FALSE;
   self->scan_ssm = NULL;
   self->down_timeout = NULL;
-  /* Ticket 40: the full ladder never skips — a stale warm flag from an
-   * orphaned attempt must not leak into this run. */
+  /* Ticket 40: full ladder never skips — clear stale warm flag. */
   self->warm_attempted = FALSE;
 
   fpi_ssm_start (fpi_ssm_new (dev, activate_run_state, ACTIVATE_NUM_STATES),
@@ -440,10 +526,7 @@ on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
 {
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 
-  /* Ticket 34 stale-activation guard: a deactivate/teardown that landed
-   * while the TLS handshake was in flight bumped the generation, so a
-   * mismatch means this completion is orphaned — drop it without touching
-   * hardware or completing activation. Live sessions always match. */
+  /* Ticket 34 stale-activation guard: drop orphaned completion. */
   if (GPOINTER_TO_UINT (user_data) != goodix_activation_gen_get (dev))
     {
       fp_dbg ("dropping stale TLS activation completion");
@@ -490,8 +573,8 @@ on_tls_activation_complete (FpDevice *dev, gpointer user_data, GError *error)
   else
     {
       fp_dbg ("Cold path — uploading config after TLS...");
-      goodix_send_upload_config_mcu (dev, (guint8 *) goodix_5e0a_config,
-                                     sizeof (goodix_5e0a_config), NULL,
+      goodix_send_upload_config_mcu (dev, self->mcu_config,
+                                     sizeof (self->mcu_config), NULL,
                                      on_post_tls_config_uploaded,
                                      GUINT_TO_POINTER (goodix_activation_gen_get (dev)));
     }
@@ -538,10 +621,7 @@ dev_activate (FpImageDevice *img_dev)
   FpDevice *dev = FP_DEVICE (img_dev);
   FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
 
-  /* Ticket 34: invalidate any in-flight activation from a previous session.
-   * Ticket 38: capture the pre-bump generation first — a parked session is
-   * pinned to exactly that generation at park time, so equality proves no
-   * deactivate/teardown raced between park and this claim. */
+  /* Ticket 34 / 38: bump generation; parked session pinned to pre_gen. */
   guint pre_gen = goodix_activation_gen_get (dev);
   guint new_gen = goodix_activation_gen_bump (dev);
   gint64 now_boot = goodix_get_boottime_us ();
@@ -611,19 +691,12 @@ dev_activate (FpImageDevice *img_dev)
 
   if (goodix_tls_is_alive (dev))
     {
-      /* Ticket 75: alive but unparked — the previous claim completed without
-       * parking (FpDevice holds the device open, so no deactivate runs
-       * between claims) or an error path left its context behind. Every
-       * ladder below ends in goodix_tls_init, which asserts tls_hop == NULL,
-       * so shut the orphan down now; warmth still earns the warm ladder. */
+      /* Ticket 75: shut down orphaned unparked TLS session before new activation. */
       fp_dbg ("5e0a closing orphaned TLS session before new activation");
       goodix_shutdown_tls (dev, NULL);
     }
 
-  /* Ticket 40 warm fast path (branch 2 of 3 — the 38 parked-session check
-   * above dominates and runs first because its gate is cheaper; the full
-   * ladder below is the default). Cold session but warm device: READ_AND_NOP
-   * + FW check + TLS, via the shared SSM with warm_attempted set. */
+  /* Ticket 40 warm fast path (branch 2): reuse config on warm device. */
   if (goodix5e0a_warm_fresh (dev))
     {
       goodix5e0a_log_warm_taken (dev);
@@ -631,9 +704,7 @@ dev_activate (FpImageDevice *img_dev)
       return;
     }
 
-  /* Branch 3: today's full ladder unchanged. Name why warmth didn't apply
-   * (TTL expiry invalidates lazily here; a reopened device reads as a cold
-   * start — the pre-reopen recency is meaningless on the new boot). */
+  /* Branch 3: full activation ladder unchanged. */
   {
     const char *reason;
     if (self->warm_ok && self->warm_boot_seq == goodix_boot_seq_get (dev))
@@ -797,7 +868,7 @@ goodix5e0a_on_down_poll_timeout (FpDevice *dev, gpointer user_data)
     return;
 
   send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN,
-                  goodix_5e0a_down_s12, sizeof (goodix_5e0a_down_s12),
+                  self->fdt_down_s12, sizeof (self->fdt_down_s12),
                   0, goodix5e0a_on_fdt_down_reply, self->scan_ssm);
 }
 
@@ -1015,11 +1086,8 @@ goodix5e0a_deliver_frame (FpDevice *dev)
         {
           int match_pts = 0;
           int is_match = goodix_milan_verify_image (self->best_pixels,
-                                                   GOODIX_5E0A_WIDTH,
-                                                   GOODIX_5E0A_HEIGHT,
-                                                   self->tmpl_blob,
-                                                   self->tmpl_len,
-                                                   &match_pts);
+                                                    GOODIX_5E0A_WIDTH, GOODIX_5E0A_HEIGHT,
+                                                    self->tmpl_blob, self->tmpl_len, &match_pts);
           fp_dbg ("5e0a Milan verify: match=%d pts=%d", is_match, match_pts);
           if (is_match)
             fpi_device_verify_report (dev, FPI_MATCH_SUCCESS, NULL, NULL);
@@ -1130,9 +1198,7 @@ goodix5e0a_deliver_frame (FpDevice *dev)
         {
           uint8_t *packed_blob = NULL;
           size_t packed_len = 0;
-          int commit_res = goodix_milan_enroll_commit (self->milan_enrol_ctx,
-                                                       &packed_blob,
-                                                       &packed_len);
+          int commit_res = goodix_milan_enroll_commit (self->milan_enrol_ctx, &packed_blob, &packed_len);
           if (commit_res == 0 && packed_blob && packed_len > 0)
             {
               FpPrint *print = NULL;
@@ -1164,8 +1230,7 @@ goodix5e0a_deliver_frame (FpDevice *dev)
 #define fpi_image_device_image_captured(idev) \
   goodix5e0a_deliver_frame (FP_DEVICE (idev))
 
-/* Hand the burst winner to the deliver tail (logs the single
- * best-frame journal line). Callers guarantee at least one banked frame. */
+/* Hand burst winner to deliver tail (logs best-frame journal line). */
 static void
 goodix5e0a_claim_best_frame (FpiDeviceGoodixTls5e0a *self)
 {
@@ -1175,10 +1240,7 @@ goodix5e0a_claim_best_frame (FpiDeviceGoodixTls5e0a *self)
              (self->best_quality << 8) | self->best_overlap);
 }
 
-/* Best-of-N judging for one burst frame directly on 64x80 normalized pixels.
- * Ranks by Milan native quality first, tie-breaking on dynamic contrast range
- * and active touch area. Re-issues GET_IMAGE on the same SSM while fewer than
- * GOODIX_5E0A_FRAMES_PER_TOUCH frames are banked. */
+/* Best-of-N judging for one burst frame on 64x80 normalized pixels. */
 static gboolean
 goodix5e0a_keep_best_frame (FpDevice *dev, gpointer ssm,
                             guint16 declen, guint active, guint range);
@@ -1313,11 +1375,12 @@ goodix5e0a_on_read_img (FpDevice *dev, guint8 *data, guint16 len,
 choose_best:
   if (action == FPI_DEVICE_ACTION_ENROLL)
     {
-      if (self->best_active < 64 || self->best_frame_no == 0)
+      if (self->best_active < 64 || self->best_quality < 15 || self->best_frame_no == 0)
         {
           g_message ("5e0a enrollment touch rejected: active=%u (press firmer)",
                      self->best_active);
           goodix5e0a_reset_touch_frames (self);
+          self->retry_guard_mono = g_get_monotonic_time ();
           goodix5e0a_retry_enroll (dev, FP_DEVICE_RETRY_TOO_SHORT);
           fpi_ssm_next_state (ssm);
           return;
@@ -1326,15 +1389,25 @@ choose_best:
                  self->best_active, self->best_range, self->best_quality, self->best_overlap);
       goodix5e0a_claim_best_frame (self);
     }
+  else if (self->best_frame_no > 0 && self->best_quality >= 15)
+    goodix5e0a_claim_best_frame (self);
+  else if (self->best_frame_no > 0)
+    {
+      if (self->air_retries++ < 5)
+        {
+          fp_dbg ("5e0a spurious air trigger rejected: quality=%u overlap=%u", self->best_quality, self->best_overlap);
+          goodix5e0a_reset_touch_frames (self);
+          fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
+          return;
+        }
+      self->air_retries = 0;
+      fp_dbg ("5e0a spurious air trigger retry limit reached");
+      goto deliver;
+    }
   else
     {
-      if (self->best_frame_no > 0)
-        goodix5e0a_claim_best_frame (self);
-      else
-        {
-          fp_dbg ("5e0a no usable frame captured");
-          goto deliver;
-        }
+      fp_dbg ("5e0a no usable frame captured");
+      goto deliver;
     }
 
   /* image_captured first: it consumes best_pixels and bumps enroll_stage,
@@ -1355,6 +1428,7 @@ deliver:
     }
   else
     {
+      self->retry_guard_mono = g_get_monotonic_time ();
       goodix5e0a_reset_touch_frames (self); /* ticket 101: fresh burst per enroll touch */
       fpi_ssm_next_state (ssm);
     }
@@ -1524,7 +1598,23 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
           g_error_free (err);
           fp_dbg ("5e0a retry guard: finger still present, re-issuing FDT UP");
           send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP,
-                          goodix_5e0a_up_u01, sizeof (goodix_5e0a_up_u01),
+                          self->fdt_up_u01, sizeof (self->fdt_up_u01),
+                          GOODIX_5E0A_FDT_UP_GUARD_TIMEOUT_MS, goodix5e0a_on_fdt_up_reply, ssm);
+          return;
+        }
+      else if (!self->is_verify && !self->is_identify && self->scan_ssm == ssm)
+        {
+          if (self->retry_guard_mono > 0 &&
+              g_get_monotonic_time () - self->retry_guard_mono > 30 * G_USEC_PER_SEC)
+            {
+              fp_dbg ("5e0a enrollment release guard: orphaned hold past 30s, failing claim");
+              fpi_ssm_mark_failed (ssm, err);
+              return;
+            }
+          g_error_free (err);
+          fp_dbg ("5e0a enrollment release guard: finger still present, re-issuing FDT UP");
+          send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP,
+                          self->fdt_up_u01, sizeof (self->fdt_up_u01),
                           GOODIX_5E0A_FDT_UP_GUARD_TIMEOUT_MS, goodix5e0a_on_fdt_up_reply, ssm);
           return;
         }
@@ -1538,6 +1628,7 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
   if (self->retry_guard)
     {
       self->retry_guard = FALSE;
+      self->retry_guard_mono = 0;
       fp_dbg ("5e0a retry guard: release ok, arming FDT DOWN");
       fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
       return;
@@ -1547,6 +1638,7 @@ goodix5e0a_on_fdt_up_reply (FpDevice *dev, guint8 *data, guint16 len,
    * Only enrollment loops for the next touch. */
   if (!self->is_verify && !self->is_identify && self->enroll_stage < FP_DEVICE_GET_CLASS (dev)->nr_enroll_stages)
     {
+      self->retry_guard_mono = 0;
       fp_dbg ("5e0a enrollment stage %u waiting for next touch, arming FDT DOWN", self->enroll_stage);
       fpi_ssm_jump_to_state (ssm, SCAN_5E0A_FDT_DOWN);
       return;
@@ -1588,7 +1680,7 @@ goodix5e0a_scan_run_state (FpiSsm *ssm, FpDevice *dev)
     case SCAN_5E0A_FDT_DOWN:
       self->down_empty_polls = 0;
       send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_DOWN,
-                      goodix_5e0a_down_s12, sizeof (goodix_5e0a_down_s12),
+                      self->fdt_down_s12, sizeof (self->fdt_down_s12),
                       0, goodix5e0a_on_fdt_down_reply, ssm);
       break;
 
@@ -1598,7 +1690,7 @@ goodix5e0a_scan_run_state (FpiSsm *ssm, FpDevice *dev)
 
     case SCAN_5E0A_FDT_UP_1:
       send_cmd_noreply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP,
-                        goodix_5e0a_up_u01, sizeof (goodix_5e0a_up_u01),
+                        self->fdt_up_u01, sizeof (self->fdt_up_u01),
                         goodix5e0a_step_cb, ssm);
       break;
 
@@ -1610,7 +1702,7 @@ goodix5e0a_scan_run_state (FpiSsm *ssm, FpDevice *dev)
 
     case SCAN_5E0A_FDT_UP_2:
       send_cmd_reply (dev, GOODIX_CMD_MCU_SWITCH_TO_FDT_UP,
-                      goodix_5e0a_up_u01, sizeof (goodix_5e0a_up_u01),
+                      self->fdt_up_u01, sizeof (self->fdt_up_u01),
                       self->retry_guard ? GOODIX_5E0A_FDT_UP_GUARD_TIMEOUT_MS : GOODIX_5E0A_FDT_UP_TIMEOUT_MS, goodix5e0a_on_fdt_up_reply, ssm);
       break;
     }
@@ -1625,6 +1717,7 @@ goodix5e0a_scan_complete (FpiSsm *ssm, FpDevice *dev, GError *error)
   self->scan_ssm = NULL;
   /* Ticket 39: never carry a burst winner past SSM completion. */
   goodix5e0a_reset_touch_frames (self);
+  self->air_retries = 0;
   self->down_empty_polls = 0;
   if (self->down_timeout)
     {
@@ -1786,6 +1879,15 @@ fpi_device_goodixtls5e0a_init (FpiDeviceGoodixTls5e0a *self)
   self->milan_enrol_ctx = NULL;
   self->tmpl_blob = NULL;
   self->tmpl_len = 0;
+  self->air_retries = 0;
+  self->dac[0] = 0xb0;
+  self->dac[1] = 0xb2;
+  self->dac[2] = 0xb0;
+  self->dac[3] = 0xb1;
+  memcpy (self->fdt_down_s12, goodix_5e0a_down_s12, sizeof (self->fdt_down_s12));
+  memcpy (self->fdt_up_u01, goodix_5e0a_up_u01, sizeof (self->fdt_up_u01));
+  memcpy (self->mcu_config, goodix_5e0a_config, sizeof (self->mcu_config));
+  goodix5e0a_set_capture_payload (FP_DEVICE (self), goodix_5e0a_img_payload);
 }
 
 static double

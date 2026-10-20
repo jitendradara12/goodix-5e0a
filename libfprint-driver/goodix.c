@@ -43,6 +43,9 @@ typedef struct
 {
   GoodixTlsServer    *tls_hop;
 
+  /* Per-device 5e0a image settings, populated from this sensor's OTP. */
+  guint8             capture_payload[10];
+
   GSource            *timeout;
 
   guint8              cmd;
@@ -903,7 +906,16 @@ goodix_send_nop (FpDevice *dev, GoodixNoneCallback callback,
                         NULL, FALSE, GOODIX_NOP_TIMEOUT, FALSE, NULL, NULL);
 }
 
-guint8 goodix5e0a_capture_payload[10] = {0x05, 0x00, 0xb0, 0x00, 0xb2, 0x00, 0xb0, 0x00, 0xb1, 0x00};
+static const guint8 goodix5e0a_capture_payload[10] = {0x05, 0x00, 0xb0, 0x00, 0xb2, 0x00, 0xb0, 0x00, 0xb1, 0x00};
+
+void
+goodix5e0a_set_capture_payload (FpDevice *dev, const guint8 payload[10])
+{
+  FpiDeviceGoodixTlsPrivate *priv =
+    fpi_device_goodixtls_get_instance_private (FPI_DEVICE_GOODIXTLS (dev));
+
+  memcpy (priv->capture_payload, payload, sizeof (priv->capture_payload));
+}
 
 void
 goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,
@@ -916,8 +928,11 @@ goodix_send_mcu_get_image (FpDevice *dev, GoodixImageCallback callback,
 
   if (g_strcmp0 (fp_device_get_driver (dev), "goodixtls5e0a") == 0)
     {
-      payload = goodix5e0a_capture_payload;
-      len = sizeof (goodix5e0a_capture_payload);
+      FpiDeviceGoodixTlsPrivate *priv =
+        fpi_device_goodixtls_get_instance_private (FPI_DEVICE_GOODIXTLS (dev));
+
+      payload = priv->capture_payload;
+      len = sizeof (priv->capture_payload);
     }
 
   if (callback)
@@ -2191,6 +2206,7 @@ goodix_tls_read_image (FpDevice *dev, GoodixImageCallback callback,
 static void
 fpi_device_goodixtls_init (FpiDeviceGoodixTls *self)
 {
+  goodix5e0a_set_capture_payload (FP_DEVICE (self), goodix5e0a_capture_payload);
 }
 
 static void

@@ -1,6 +1,6 @@
 # Goodix 27c6:5e0a Linux Driver
 
-Linux fingerprint driver for Goodix 27c6:5e0a sensors (found in laptops like the Realme Book Prime).
+Linux fingerprint driver for the Goodix 27c6:5e0a sensor in the Realme Book Prime.
 
 Runs as a libfprint module and loads Goodix's Windows engine (`GoodixEngineAdapter.dll`) via a PE loader.
 
@@ -26,7 +26,10 @@ command-line tools, `fprintd-delete "$USER"` removes your existing fingerprints;
 follow it with `fprintd-enroll` to create a new enrollment.
 
 The corrected processing is enabled by default; no experiment flag or Windows
-calibration export is needed. See [validation and scope](docs/native-raster-validation.md).
+calibration export is needed. OTP calibration selects the capture settings for
+the maintainer's and Jet-Soup's tested units automatically, in both normal
+installs and hardware tests. This does not establish support for other laptops.
+See [validation and scope](docs/native-raster-validation.md).
 
 ### NixOS
 
@@ -46,10 +49,11 @@ services.fprintd.goodix.pamServices = true;
 
 ## Enroll Fails?
 
-Many laptops lock the sensor with a unique hardware key during Windows setup. If `fprintd-enroll` fails with `enroll-unknown-error`, extract your laptop's key using **[docs/psk-extraction.md](docs/psk-extraction.md)**.
+Many laptops lock the sensor with a unique hardware key during Windows setup. If `fprintd-enroll` fails with `enroll-unknown-error` or TLS errors (`bad record MAC`), extract your laptop's key directly on Linux using [`tools/extract_psk_whitebox.py`](docs/psk-extraction.md) (with Windows DPAPI as fallback). See **[docs/psk-extraction.md](docs/psk-extraction.md)**.
 
 ## License and Credits
 
-- huge thanks to @ptrip7 for their help on the native raster experiments
+- Thanks to @ptrip7 for their help on the native raster experiments.
+- Thanks to @Jet-Soup for discovering and contributing Linux-only PSK recovery, documenting the record layout, and supplying their Windows-derived capture settings.
 - Driver code: LGPL-2.1-or-later ([LICENSE](LICENSE)).
 - `GoodixEngineAdapter.dll`: Proprietary Goodix binary included for research.

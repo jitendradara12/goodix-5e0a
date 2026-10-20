@@ -39,6 +39,10 @@ flat-frame rejection, band-pass edge behavior, an analytic impulse response and
 saturation. It also checks tagged-print round trips and rejects incompatible
 or malformed saved prints. The frame
 checks use synthetic pixels, not private captures or a Python implementation.
+The same real-driver harness now runs cold OTP selection for both known
+profiles, warm reuse without an OTP read, full re-read after a failed warm
+handshake, malformed-OTP fallback, and transport-error termination before TLS.
+It checks the configuration actually passed to the upload callback.
 
 CI runs these checks plus installer/cleanup fixtures and a downstream fprintd
 build in the `Required native software tests` job with

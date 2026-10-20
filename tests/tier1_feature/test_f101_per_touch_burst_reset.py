@@ -63,8 +63,8 @@ class TestF101PerTouchBurst(unittest.TestCase):
                          "reset must immediately precede the SSM re-arm")
 
     def test_burst_hygiene_sites_preserved(self):
-        """(b) All pre-existing reset sites survive the ticket-101 edit."""
-        self.assertEqual(self.src_c.count("goodix5e0a_reset_touch_frames (self);"), 8)
+        """(b) All pre-existing reset sites survive the ticket-101 edit, plus ticket-118 spurious air trigger reset."""
+        self.assertEqual(self.src_c.count("goodix5e0a_reset_touch_frames (self);"), 9)
         for fn in ("goodix5e0a_scan_complete", "goodix5e0a_scan_start",
                    "goodix5e0a_deactivate"):
             self.assertIn(fn, self.src_c)

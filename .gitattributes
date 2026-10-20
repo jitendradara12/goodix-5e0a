@@ -1,0 +1,2 @@
+# A blank context line in a unified patch contains one significant space.
+experiments/*.patch whitespace=-blank-at-eol,-blank-at-eof
