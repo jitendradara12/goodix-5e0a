@@ -4,7 +4,7 @@
 
 **Verdict:** falsified for merge readiness: the cold activation ladder bypassed OTP.
 
-**Successor:** [120 — OTP activation](120-ready-for-hardware-verify-otp-activation.md). The following is the original audit record; its helper tests did not establish activation reachability.
+**Successor:** [120 — OTP activation](120-closed-otp-activation.md). The following is the original audit record; its helper tests did not establish activation reachability.
 
 Changes:
 - Keep image-command calibration in each device's transport state; rebuild all packets from defaults on recalibration or invalid OTP.

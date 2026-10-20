@@ -1,8 +1,8 @@
 # 120 — Reach OTP on cold activation and preserve verified DAC words
 
-**Status:** ready-for-hardware-verify
+**Status:** closed
 
-**Verdict:** inconclusive-because-current-driver-hardware-run-pending.
+**Verdict:** confirmed on deployed driver `ee3ecdf` (maintainer unit).
 
 The original PR #15 cold ladder ran NOP → RESET → firmware check, bypassing the new OTP state entirely. Both earlier code reviews missed this; green helper tests and old no-flags hardware reports do not establish automatic calibration.
 
@@ -21,3 +21,17 @@ Single next experiment: deploy the current candidate using `bash tools/test-hard
 - **Inconclusive:** build/service/client failure or interrupted phases prevent those measurements; record the flaw and review that bundle before requesting another run.
 
 Jet-Soup's final no-flags run remains a follow-up on the corrected activation path; earlier no-flags results must not be relabeled as proof of that path.
+
+## Deployed-driver result
+
+Guided no-flags run `8f72a31af505296c` at `ee3ecdf2a8b26469665155e67b8ce1afa9ed1b82`, 2026-10-20 18:31:53–18:33:24 IST, confirmed the corrected cold path:
+- `OTP DAC calibration: 0x0b0 0x0b2 0x0b0 0x0b1`, followed by `dynamic config applied: standard unit`.
+- Hands off 18:31:58 +20s stayed silent; holding 18:32:19 +20s advanced once. Twelve-touch enrollment completed.
+- Genuine 5/5 matched; wrong finger 5/5 rejected.
+- Storage isolated, original print counts 7/0/7, `store_unchanged: true`, `restored: true`.
+- Driver SHA-256: `b056b17a9d9e8fe834a24e64e619f23a3dfb86886004ffe8625f1a8d963208eb`.
+- Report: `/var/tmp/goodix-5e0a-reports/goodix-test-8f72a31af505296c.zip`, SHA-256 `16275805ebbf8342f28a5a93e19c9833ebb9d52738e4ce9e0b99cd4ea8429e97`.
+
+The full required Linux suite passed (two existing missing-image-fixture skips), including all 14 native lifecycle/activation cases. Both GitHub checks passed at the tested revision. The independent reviewer rechecked this fix and independently passed F117/F90. This closure only updates documentation; the deployed driver sources are unchanged.
+
+Single next experiment: Jet-Soup's standard no-flags run on the corrected activation path, with the same confirm/falsify signatures above. This remains a unit-specific follow-up; no universal hardware claim is made.
