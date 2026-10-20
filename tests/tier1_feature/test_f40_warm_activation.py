@@ -116,9 +116,10 @@ class TestF40WarmActivation(unittest.TestCase):
         src = _read(GOODIX5E0A_C)
         run = _slice(src, "activate_run_state (FpiSsm *ssm, FpDevice *dev)",
                      "on_chip_enabled")
-        # Ticket 45: RESET jumps unconditionally to CHECK_FW_VER (eliminating CMD 0xa2)
+        # Ticket 45 forbids MCU reset, not cold OTP reads. Real cold/warm
+        # transitions are executed by the native activation regression tests.
         reset_case = run[run.index("case ACTIVATE_RESET:"):run.index("break;", run.index("case ACTIVATE_RESET:"))]
-        self.assertIn("fpi_ssm_jump_to_state (ssm, ACTIVATE_CHECK_FW_VER);", reset_case)
+        self.assertNotIn("goodix_send_reset", reset_case)
 
         # CHIP_ID + OTP jump to the kept FW discriminator on warm
         for state in ("case ACTIVATE_READ_CHIP_ID:",
