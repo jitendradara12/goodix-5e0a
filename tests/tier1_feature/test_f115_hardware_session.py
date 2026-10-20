@@ -289,6 +289,26 @@ class SessionTests(unittest.TestCase):
             SESSION.expire_session("test")
         self.assertFalse(self.runtime.exists())
 
+    def test_timer_recovers_after_owner_ignores_termination(self):
+        self.runtime.mkdir()
+        (self.runtime / "manifest.json").write_text(json.dumps({"nonce": "test", "session_pid": 123, "session_starttime": "start"}))
+        with mock.patch.object(SESSION, "process_identity", side_effect=["start", "start", "start", None, None]), mock.patch.object(SESSION.os, "kill") as kill, mock.patch.object(SESSION, "restore") as restore, mock.patch.object(SESSION.time, "monotonic", side_effect=[0, 16, 17]):
+            SESSION.expire_session("test")
+        self.assertEqual(kill.call_args_list, [mock.call(123, SESSION.signal.SIGTERM), mock.call(123, SESSION.signal.SIGKILL)])
+        restore.assert_called_once()
+
+    def test_selinux_label_failure_aborts_before_service_restart(self):
+        exists = Path.exists
+        def selinux_enabled(path):
+            return str(path) == "/sys/fs/selinux/enforce" or exists(path)
+        self.failure = lambda args: args[0] == "chcon"
+        with mock.patch.object(Path, "exists", selinux_enabled):
+            code, result = self.run_session(self.exercise)
+        self.assertEqual(code, 1)
+        self.assertTrue(result["restored"])
+        self.assertNotIn(["systemctl", "restart", "fprintd.service"], self.calls)
+        self.assertFalse(result["hardware_run"])
+
     def test_timer_does_not_signal_a_reused_pid_or_another_session(self):
         self.runtime.mkdir()
         (self.runtime / "manifest.json").write_text(json.dumps({"nonce": "test", "session_pid": 123, "session_starttime": "old"}))
