@@ -96,7 +96,7 @@ void configure(FpiDeviceGoodixTls5e0a *self, const guint16 *dacs) {
     def configure(self, device, dacs):
         self.lib.configure(ctypes.byref(device), (ctypes.c_uint16 * 4)(*dacs))
 
-    def test_actual_decoder_handles_both_units_redundancy_and_ninth_bits(self):
+    def test_actual_decoder_handles_both_units_redundancy_and_unmapped_flags(self):
         for channels in ([0xb0, 0xb2, 0xb0, 0xb1], [0xad, 0xae, 0xac, 0xad]):
             for primary, secondary in ((channels, channels), (channels, [0]*4), ([0]*4, channels), ([1]*4, channels)):
                 for mask in range(16):
@@ -105,7 +105,15 @@ void configure(FpiDeviceGoodixTls5e0a *self, const guint16 *dacs) {
                         raw[0x2e:0x32] = bytes(primary)
                         raw[0x32:0x36] = bytes(secondary)
                         raw[0x13] = mask
-                        self.assertEqual(self.decode(raw), [v | (0x100 if mask & (1 << (3-i)) else 0) for i, v in enumerate(channels)])
+                        self.assertEqual(self.decode(raw), list(channels))
+
+    def test_observed_otp_flags_do_not_change_verified_wire_dacs(self):
+        # Maintainer's live OTP low nibble is 0x0c. Its verified Windows wire
+        # DAC words are 00b0/00b2/00b0/00b1, not 01b0/01b2/00b0/00b1.
+        raw = bytearray(64)
+        raw[0x13] = 0x0c
+        raw[0x2e:0x32] = raw[0x32:0x36] = bytes([0xb0, 0xb2, 0xb0, 0xb1])
+        self.assertEqual(self.decode(raw), [0xb0, 0xb2, 0xb0, 0xb1])
 
     def test_actual_decoder_rejects_missing_channel_and_truncated_reads(self):
         self.assertIsNone(self.decode(None))

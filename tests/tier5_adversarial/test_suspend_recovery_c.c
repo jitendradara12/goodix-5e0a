@@ -14,6 +14,7 @@
 #define goodix_start_read_loop mock_start_read_loop
 #define goodix_stop_read_loop mock_stop_read_loop
 #define goodix_send_nop mock_send_nop
+#define goodix_send_read_otp mock_send_read_otp
 #define goodix_send_query_firmware_version mock_send_query_firmware_version
 #define goodix_send_preset_psk_read_5e0a mock_send_preset_psk_read_5e0a
 #define goodix_send_upload_config_mcu mock_send_upload_config_mcu
@@ -31,6 +32,10 @@
 static gboolean tls_alive, reading;
 static guint tls_inits, shutdowns, probes, configs, enables, suspends, resumes, errors;
 static guint scan_commands;
+static guint otp_reads, firmware_reads;
+static guint8 otp_data[64], uploaded_config[256];
+static guint16 otp_length;
+static gboolean otp_failure;
 static GoodixCallbackInfo *scan_command;
 static GoodixNoneCallback tls_cb, enable_cb;
 static gpointer tls_data, enable_data;
@@ -56,8 +61,17 @@ void mock_start_read_loop (FpDevice *dev) { reading = TRUE; }
 void mock_stop_read_loop (FpDevice *dev) { reading = FALSE; }
 void mock_send_nop (FpDevice *dev, GoodixNoneCallback cb, gpointer data)
 { cb (dev, data, NULL); }
+void mock_send_read_otp (FpDevice *dev, GoodixDefaultCallback cb, gpointer data)
+{
+  otp_reads++;
+  cb (dev, otp_data, otp_length, data,
+      otp_failure ? g_error_new_literal (G_IO_ERROR, G_IO_ERROR_TIMED_OUT, "OTP timeout") : NULL);
+}
 void mock_send_query_firmware_version (FpDevice *dev, GoodixFirmwareVersionCallback cb, gpointer data)
-{ cb (dev, GOODIX_5E0A_FIRMWARE_VERSION, data, NULL); }
+{
+  firmware_reads++;
+  cb (dev, GOODIX_5E0A_FIRMWARE_VERSION, data, NULL);
+}
 void mock_send_preset_psk_read_5e0a (FpDevice *dev, guint32 flags, guint32 len,
                                     guint32 offset, GoodixPresetPskReadCallback cb, gpointer data)
 { cb (dev, TRUE, flags, NULL, 0, data, NULL); }
@@ -65,6 +79,8 @@ void mock_send_upload_config_mcu (FpDevice *dev, guint8 *config, guint16 len,
                                   GDestroyNotify free_func, GoodixSuccessCallback cb, gpointer data)
 {
   configs++;
+  g_assert_cmpuint (len, ==, sizeof (uploaded_config));
+  memcpy (uploaded_config, config, len);
   cb (dev, TRUE, data, NULL);
 }
 void mock_send_enable_chip (FpDevice *dev, gboolean enabled, GoodixNoneCallback cb, gpointer data)
@@ -106,7 +122,15 @@ static FpDevice *new_device (void)
 {
   tls_alive = reading = FALSE;
   tls_inits = shutdowns = probes = configs = enables = suspends = resumes = errors = 0;
-  scan_commands = 0;
+  scan_commands = otp_reads = firmware_reads = 0;
+  otp_length = sizeof (otp_data);
+  otp_failure = FALSE;
+  memset (otp_data, 0, sizeof (otp_data));
+  otp_data[0x13] = 0x0c; /* Live maintainer flags; wire DAC upper bytes stay zero. */
+  const guint8 standard_dacs[4] = {0xb0, 0xb2, 0xb0, 0xb1};
+  memcpy (otp_data + 0x2e, standard_dacs, sizeof (standard_dacs));
+  memcpy (otp_data + 0x32, standard_dacs, sizeof (standard_dacs));
+  memset (uploaded_config, 0, sizeof (uploaded_config));
   g_clear_pointer (&probe, g_free);
   g_clear_pointer (&scan_command, g_free);
   FpDeviceClass *klass = g_type_class_ref (fpi_device_goodixtls5e0a_get_type ());
@@ -488,6 +512,111 @@ static void test_step_cb_cancelled_fails_fast (void)
   self->scan_ssm = NULL;
 }
 
+/* Run the actual activation factories, callbacks, packet builder and libfprint
+ * SSM. Only the device I/O is synthetic; helper presence cannot satisfy these. */
+static void test_cold_activation_reads_otp (void)
+{
+  const guint8 profiles[2][4] = {{0xb0, 0xb2, 0xb0, 0xb1}, {0xad, 0xae, 0xac, 0xad}};
+  for (guint profile = 0; profile < G_N_ELEMENTS (profiles); profile++)
+    {
+      g_autoptr(FpDevice) dev = new_device ();
+      FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+      memcpy (otp_data + 0x2e, profiles[profile], 4);
+      memcpy (otp_data + 0x32, profiles[profile], 4);
+      dev_activate ((FpImageDevice *) dev);
+      g_assert_cmpuint (otp_reads, ==, 1);
+      g_assert_cmpuint (firmware_reads, ==, 1);
+      g_assert_cmpuint (tls_inits, ==, 1);
+      for (guint i = 0; i < 4; i++)
+        {
+          g_assert_cmpuint (self->dac[i], ==, profiles[profile][i]);
+          g_assert_cmpuint (self->fdt_down_s12[2 + 2 * i], ==, profiles[profile][i]);
+          g_assert_cmpuint (self->fdt_up_u01[2 + 2 * i], ==, profiles[profile][i]);
+        }
+      /* Completing TLS uploads the profile selected through that OTP read. */
+      tls_cb (dev, tls_data, NULL);
+      g_assert_cmpuint (configs, ==, 1);
+      g_assert_cmpmem (uploaded_config, sizeof (uploaded_config),
+                       self->mcu_config, sizeof (self->mcu_config));
+      g_assert_cmpuint (uploaded_config[0xc8], ==, profile ? 0x1f : 0x15);
+      g_assert_cmpuint (uploaded_config[0xfe], ==, profile ? 0x4a : 0x53);
+      g_assert_cmpuint (uploaded_config[0xff], ==, profile ? 0x1e : 0x0e);
+      goodix5e0a_suspend (dev);
+    }
+}
+
+static void test_warm_activation_retains_otp_and_fallback_rereads (void)
+{
+  g_autoptr(FpDevice) dev = new_device ();
+  FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+  const guint8 jet_dacs[4] = {0xad, 0xae, 0xac, 0xad};
+  memcpy (otp_data + 0x2e, jet_dacs, 4);
+  memcpy (otp_data + 0x32, jet_dacs, 4);
+  dev_activate ((FpImageDevice *) dev);
+  tls_cb (dev, tls_data, NULL);
+  mock_shutdown_tls (dev, NULL);
+  /* A warm handshake must reuse calibrated state without reading changed OTP. */
+  memset (otp_data, 0, sizeof (otp_data));
+  goodix5e0a_start_warm_activation (dev);
+  g_assert_cmpuint (otp_reads, ==, 1);
+  g_assert_cmpuint (firmware_reads, ==, 2);
+  g_assert_cmpuint (self->dac[0], ==, 0xad);
+  g_assert_cmpuint (self->mcu_config[0xc8], ==, 0x1f);
+  tls_cb (dev, tls_data, NULL);
+  g_assert_cmpuint (configs, ==, 1);
+  mock_shutdown_tls (dev, NULL);
+  goodix5e0a_start_warm_activation (dev);
+  /* A failed warm attempt takes the full ladder and must read OTP again. */
+  memcpy (otp_data + 0x2e, jet_dacs, 4);
+  memcpy (otp_data + 0x32, jet_dacs, 4);
+  tls_cb (dev, tls_data,
+          g_error_new_literal (G_IO_ERROR, G_IO_ERROR_TIMED_OUT, "warm TLS timeout"));
+  g_assert_false (self->warm_attempted);
+  g_assert_cmpuint (otp_reads, ==, 2);
+  g_assert_cmpuint (firmware_reads, ==, 4);
+  g_assert_cmpuint (tls_inits, ==, 4);
+  tls_cb (dev, tls_data, NULL);
+  g_assert_cmpuint (configs, ==, 2);
+  g_assert_cmpuint (uploaded_config[0xc8], ==, 0x1f);
+  goodix5e0a_suspend (dev);
+}
+
+static void test_invalid_cold_otp_rebuilds_defaults (void)
+{
+  for (guint length = 63; length <= 64; length++)
+    {
+      g_autoptr(FpDevice) dev = new_device ();
+      FpiDeviceGoodixTls5e0a *self = FPI_DEVICE_GOODIXTLS5E0A (dev);
+      const guint16 jet_dacs[4] = {0xad, 0xae, 0xac, 0xad};
+      goodix5e0a_update_dacs (self, jet_dacs);
+      memset (otp_data, 0, sizeof (otp_data));
+      otp_length = length;
+      dev_activate ((FpImageDevice *) dev);
+      g_assert_cmpuint (otp_reads, ==, 1);
+      g_assert_cmpuint (self->dac[0], ==, 0xb0);
+      tls_cb (dev, tls_data, NULL);
+      g_assert_cmpmem (uploaded_config, sizeof (uploaded_config),
+                       goodix_5e0a_config, sizeof (goodix_5e0a_config));
+      goodix5e0a_suspend (dev);
+    }
+}
+
+static void test_cold_otp_transport_failure_stops_before_tls (void)
+{
+  g_autoptr(FpDevice) dev = new_device ();
+  otp_failure = TRUE;
+  probe_complete_calls = 0;
+  /* Capture the failure at the actual activation SSM's completion boundary. */
+  fpi_ssm_start (fpi_ssm_new (dev, activate_run_state, ACTIVATE_NUM_STATES), probe_complete);
+  g_assert_cmpuint (otp_reads, ==, 1);
+  g_assert_cmpuint (probe_complete_calls, ==, 1);
+  g_assert_cmpuint (probe_complete_domain, ==, G_IO_ERROR);
+  g_assert_cmpint (probe_complete_code, ==, G_IO_ERROR_TIMED_OUT);
+  g_assert_cmpuint (firmware_reads, ==, 0);
+  g_assert_cmpuint (tls_inits, ==, 0);
+  g_assert_cmpuint (configs, ==, 0);
+}
+
 int main (int argc, char **argv)
 {
   g_test_init (&argc, &argv, NULL);
@@ -501,5 +630,9 @@ int main (int argc, char **argv)
   g_test_add_func ("/goodix/lifecycle/suspend-mid-command-real-priv", test_suspend_mid_command_real_priv);
   g_test_add_func ("/goodix/lifecycle/step-cb-cancelled-fails-fast", test_step_cb_cancelled_fails_fast);
   g_test_add_func ("/goodix/prints/processing-format", test_print_processing_format);
+  g_test_add_func ("/goodix/activation/cold-reads-otp", test_cold_activation_reads_otp);
+  g_test_add_func ("/goodix/activation/warm-reuse-and-cold-fallback", test_warm_activation_retains_otp_and_fallback_rereads);
+  g_test_add_func ("/goodix/activation/invalid-otp-defaults", test_invalid_cold_otp_rebuilds_defaults);
+  g_test_add_func ("/goodix/activation/otp-error-stops-before-tls", test_cold_otp_transport_failure_stops_before_tls);
   return g_test_run ();
 }

@@ -1,8 +1,10 @@
 # 119 — PR #15 merge audit
 
-**Status:** closed
+**Status:** superseded
 
-**Verdict:** confirmed for the software audit. No new deployed-driver hardware run is claimed.
+**Verdict:** falsified for merge readiness: the cold activation ladder bypassed OTP.
+
+**Successor:** [120 — OTP activation](120-ready-for-hardware-verify-otp-activation.md). The following is the original audit record; its helper tests did not establish activation reachability.
 
 Changes:
 - Keep image-command calibration in each device's transport state; rebuild all packets from defaults on recalibration or invalid OTP.

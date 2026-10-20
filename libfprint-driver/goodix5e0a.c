@@ -168,8 +168,8 @@ on_psk_hash_read (FpDevice *dev, gboolean success, guint32 flags,
   fpi_ssm_next_state (ssm);
 }
 
-/* OTP stores redundant channel values plus four ninth bits. Keep the decoder
- * independent of transport so malformed reads never partially update packets. */
+/* OTP stores redundant byte-sized DAC values. Keep decoding independent of
+ * transport so malformed reads never partially update packets. */
 static gboolean
 goodix5e0a_decode_otp (const guint8 *data, guint16 len, guint16 dacs[4])
 {
@@ -184,7 +184,9 @@ goodix5e0a_decode_otp (const guint8 *data, guint16 len, guint16 dacs[4])
 
       if (!value)
         return FALSE;
-      dacs[i] = value | ((data[0x13] & (1 << (3 - i))) ? 0x100 : 0);
+      /* OTP[0x13] is 0x0c on the maintainer's unit, but the verified wire
+       * DAC high bytes are all zero. Do not reinterpret those flags as bits. */
+      dacs[i] = value;
     }
   return TRUE;
 }
@@ -280,8 +282,9 @@ activate_run_state (FpiSsm *ssm, FpDevice *dev)
       break;
 
     case ACTIVATE_RESET:
-      /* Ticket 45: 5e0a relies on USB reset rather than MCU command 0xa2. */
-      fpi_ssm_jump_to_state (ssm, ACTIVATE_CHECK_FW_VER);
+      /* USB reset already happened at open. Cold activation must read OTP;
+       * warm activation reuses the packets calibrated on this device boot. */
+      fpi_ssm_jump_to_state (ssm, self->warm_attempted ? ACTIVATE_CHECK_FW_VER : ACTIVATE_READ_OTP);
       break;
 
     case ACTIVATE_READ_CHIP_ID:
