@@ -11,6 +11,7 @@ Changes:
 - Retain the historical wire patch for comparison. Both old runner flags now test the normal automatic driver; remove the obsolete separate candidate CI build.
 - Check enrollment contents as well as print counts, fail on listing errors, restore the original inactive service state, and label both libraries and private storage under SELinux. No permissive-policy workaround is applied.
 - Give the recovery timer an owned-session expiry path, with process-start identity checks. A live or wedged test cannot disable timed cleanup merely by retaining its PID.
+- Start the enrollment release deadline for rejected low-quality touches as well as accepted touches, closing an unbounded-hold path.
 - Detect hands-off capture activity even when the enrollment client reports no advance.
 - Keep the 2,000-code-line architecture budget while excluding comments, so documentation does not encourage compressed statements.
 

@@ -1377,6 +1377,7 @@ choose_best:
           g_message ("5e0a enrollment touch rejected: active=%u (press firmer)",
                      self->best_active);
           goodix5e0a_reset_touch_frames (self);
+          self->retry_guard_mono = g_get_monotonic_time ();
           goodix5e0a_retry_enroll (dev, FP_DEVICE_RETRY_TOO_SHORT);
           fpi_ssm_next_state (ssm);
           return;
