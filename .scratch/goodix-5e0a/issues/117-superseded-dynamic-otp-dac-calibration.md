@@ -14,6 +14,6 @@
 
 **Blocked by:** None.
 
-**Status:** superseded by 118-ready-for-hardware-verify-spurious-air-trigger-and-dac-alignment.md
+**Status:** superseded by 118-closed-spurious-air-trigger-and-dac-alignment.md
 
-**Successor:** 118-ready-for-hardware-verify-spurious-air-trigger-and-dac-alignment.md
+**Successor:** 118-closed-spurious-air-trigger-and-dac-alignment.md
