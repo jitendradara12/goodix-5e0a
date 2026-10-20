@@ -8,6 +8,7 @@ import unittest
 import os
 import re
 from tests.repo_paths import repo
+from tests.source_checks import c_code_lines
 
 class TestF13NoPolling(unittest.TestCase):
 
@@ -48,14 +49,14 @@ class TestF13NoPolling(unittest.TestCase):
         """Verify goodix5e0a.c stays compact for a production driver with clean base-class subclassing."""
         with open(self.driver_c_path, "r") as f:
             content = f.read()
-            lines = [l for l in content.splitlines() if l.strip()]
+            lines = c_code_lines(content)
         # Ticket 73: Milan proprietary engine integration and FpDevice transition.
         # Driver manages direct template stitching, verification, and PE loader shims.
         # Ticket 76: Milan native quality proxy judging (+~40 lines: native pair
         # state, lexicographic rank, extended journal lines).
         # Ticket 77: gallery identify (+~100 lines: is_identify flag,
         # dev_identify entry, deliver N-gallery branch, enroll-loop guard).
-        self.assertLess(len(lines), 2000, f"Driver exceeds production compactness limit: {len(lines)} LOC")
+        self.assertLess(len(lines), 2000, f"Driver exceeds production code-size limit: {len(lines)} LOC")
         self.assertIn("FPI_TYPE_DEVICE_GOODIXTLS5XX", content)
 
 

@@ -326,6 +326,42 @@ class SessionTests(unittest.TestCase):
         self.assertIn("quality=12 overlap=98", report)
 
 
+class GuidedPhaseTests(unittest.TestCase):
+    def run_guided(self, journal):
+        verification = iter([True] * 5 + [False] * 5)
+        class FakeClient:
+            def __init__(self, args, event):
+                self.enroll = args[0] == "fprintd-enroll"
+                self.lines = ["Enrolling right-index-finger"] if self.enroll else []
+                self.process = mock.Mock()
+                self.process.poll.return_value = None
+                self.pumps = 0
+            def pump(self, seconds):
+                self.pumps += 1
+                if self.enroll and self.pumps == 2:
+                    self.lines.append("Enroll result: enroll-stage-passed")
+            def wait(self, seconds):
+                if self.enroll:
+                    self.lines.append("Enroll result: enroll-completed")
+                else:
+                    status = "match" if next(verification) else "no-match"
+                    self.lines.append(f"Verify result: verify-{status} (done)")
+                return 0
+        with mock.patch.object(SESSION, "Client", FakeClient), mock.patch("builtins.input", return_value=""), mock.patch.object(SESSION.time, "sleep"), mock.patch.object(SESSION, "filtered_journal", return_value=journal):
+            return SESSION.guided_test(mock.Mock(), [])
+
+    def test_quiet_sensor_with_expected_decisions_is_confirmed(self):
+        result = self.run_guided("")
+        self.assertEqual(result["verdict"], "confirmed")
+        self.assertFalse(result["hands_off_activity"])
+        self.assertEqual(result["holding_advances"], 1)
+
+    def test_rejected_air_captures_falsify_even_when_client_is_quiet(self):
+        result = self.run_guided("5e0a frame 1/4: declen=10564 active=5120 range=200 quality=0 overlap=0 score-proxy=0")
+        self.assertEqual(result["verdict"], "falsified")
+        self.assertTrue(result["hands_off_activity"])
+
+
 class CaptureCandidateTests(unittest.TestCase):
     def test_wire_patch_preserves_default_sources_and_only_changes_capture_data(self):
         names = ("libfprint-driver/goodix.c", "libfprint-driver/goodix5e0a.h")

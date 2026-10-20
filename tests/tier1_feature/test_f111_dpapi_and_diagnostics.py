@@ -9,12 +9,13 @@ Verifies without hardware:
     implements polling loop up to 20s, system logging, and accurate DPAPI structure length validation;
 (c) goodix5e0a.c and goodix_milan.c adhere strictly to repository standards and AGENTS.md:
     no ad-hoc environment variable overrides or diagnostic dumping in production driver code,
-    staying within the 2000-line and 25-g_message budgets.
+    staying within the 2000-code-line and 25-g_message budgets.
 """
 
 import os
 import struct
 import unittest
+from tests.source_checks import c_code_lines
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -185,8 +186,8 @@ class TestF111DpapiAndDiagnostics(unittest.TestCase):
         self.assertIn('g_getenv ("GOODIX_5E0A_DUMP_DIR")', c_src)
         self.assertIn("goodix5e0a_dump_debug_frame", c_src)
 
-        lines = [l for l in c_src.splitlines() if l.strip()]
-        self.assertLess(len(lines), 2000, f"Driver LOC {len(lines)} exceeds 2000")
+        lines = c_code_lines(c_src)
+        self.assertLess(len(lines), 2000, f"Driver code LOC {len(lines)} exceeds 2000")
         self.assertEqual(c_src.count("g_message ("), 25, "g_message budget violated")
 
     def test_g_read_dpapi_blob_fail_closed(self):

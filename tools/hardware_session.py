@@ -296,12 +296,17 @@ def guided_test(event, clients):
         enroll.pump(.2)
         if enroll.process.poll() is not None or time.monotonic() > deadline:
             raise RuntimeError("Enrollment did not start; no hardware verdict")
+    hands_off_start = time.time()
     event("hands off", duration_seconds=20)
     print("HANDS OFF: leave the sensor untouched for 20 seconds.", flush=True)
     enroll.pump(20)
     hands_off_results = [line for line in enroll.lines if "Enroll result:" in line]
-    if hands_off_results:
-        event("hands-off-activity", statuses=hands_off_results)
+    # Quiet client output alone cannot rule out rejected capture loops.
+    hands_off_captures = bool(re.search(r"5e0a (?:D32 touch confirmed:|(?:best )?frame \d+/)",
+                                       filtered_journal(hands_off_start)))
+    hands_off_activity = bool(hands_off_results) or hands_off_captures
+    if hands_off_activity:
+        event("hands-off-activity", statuses=hands_off_results, captures=hands_off_captures)
     if enroll.process.poll() is not None:
         raise RuntimeError("Enrollment ended during hands-off phase")
     event("holding", duration_seconds=20)
@@ -336,9 +341,9 @@ def guided_test(event, clients):
             if label == "wrong" and matched:
                 return {"verdict": "falsified", "reason": "wrong-finger-matched", "attempts": results}
             time.sleep(2)
-    verdict = "confirmed" if not hands_off_results and holding_advances == 1 and all(r["matched"] == (r["label"] == "genuine") for r in results) else "falsified"
+    verdict = "confirmed" if not hands_off_activity and holding_advances == 1 and all(r["matched"] == (r["label"] == "genuine") for r in results) else "falsified"
     return {"verdict": verdict, "scope": "this unit and this guided run only",
-            "attempts": results, "hands_off_activity": bool(hands_off_results), "holding_advances": holding_advances}
+            "attempts": results, "hands_off_activity": hands_off_activity, "holding_advances": holding_advances}
 
 
 def filtered_journal(start):
@@ -658,7 +663,8 @@ def main():
             try:
                 manifest = json.loads((RUNTIME / "manifest.json").read_text())
                 pid = manifest.get("session_pid")
-                if pid and pid != os.getpid():
+                identity = manifest.get("session_starttime")
+                if pid and pid != os.getpid() and (not identity or process_identity(pid) == identity):
                     try:
                         os.kill(pid, 0)
                         print(f"Warning: Live session with PID {pid} is currently active. Refusing --restore while session is running.", file=sys.stderr)
