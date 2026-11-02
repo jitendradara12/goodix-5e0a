@@ -15,7 +15,6 @@ Verifies without hardware (hermetic static & structural validation):
 (g) same-SSM burst invariants hold: no state transitions or completions inside keep_best_frame.
 """
 
-import os
 import unittest
 from tests.repo_paths import repo
 

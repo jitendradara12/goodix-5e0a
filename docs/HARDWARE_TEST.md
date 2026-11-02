@@ -2,7 +2,7 @@
 
 The repository includes an isolated hardware test runner (`tools/test-hardware.sh`) to verify driver functionality on live hardware.
 
-It builds a temporary driver instance, isolates fprintd storage, and runs a protocol-compliant test session using separate enrollment storage. It checks the original storage after cleanup.
+It builds a temporary driver instance, isolates fprintd storage, and runs a protocol-compliant test session using separate enrollment storage.
 
 ## Running the Test
 
@@ -31,7 +31,6 @@ Fingerprint login is temporarily unavailable during the test.
 ## Results & Cleanup
 
 - Attach the ZIP path printed at the end to the PR, including a failed or interrupted run. It contains numerical results, not keys, images or templates. If no ZIP was created, paste the error.
-- Stop after one run so the result can be reviewed before another test.
 - Original fprintd service and fingerprint storage are restored automatically upon exit or Ctrl-C.
 - If interrupted abruptly, restore system state manually:
   ```bash

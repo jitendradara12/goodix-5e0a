@@ -22,29 +22,16 @@ journal noise and the factory secret (see the ticket-26 provenance notes).
 Not covered here: live activation sequencing (needs hardware/fprintd).
 """
 
-import os
 import re
 import unittest
-
+from tests.repo_paths import repo
+from tests.source_checks import parse_c_array
 from tests.test_utils import CANONICAL_PSK
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-HEADER_PATH = os.path.join(REPO_ROOT, "libfprint-driver", "goodix5e0a.h")
-GOODIX_C_PATH = os.path.join(REPO_ROOT, "libfprint-driver", "goodix.c")
-GOODIX_H_PATH = os.path.join(REPO_ROOT, "libfprint-driver", "goodix.h")
-GOODIX_5E0A_C_PATH = os.path.join(REPO_ROOT, "libfprint-driver", "goodix5e0a.c")
-
-
-def parse_c_array(header_content: str, array_name: str) -> bytes:
-    """Extracts a byte array from a C header file."""
-    pattern = rf"(?:static\s+)?const\s+guint8\s+{array_name}\s*\[\s*\d*\s*\]\s*=\s*\{{([^}}]+)\}};"
-    match = re.search(pattern, header_content, re.DOTALL)
-    if not match:
-        raise ValueError(f"Array '{array_name}' not found in header")
-    hex_str = match.group(1)
-    # Extract all 0x.. hex literals
-    hex_bytes = re.findall(r"0x([0-9a-fA-F]{2})", hex_str)
-    return bytes(int(b, 16) for b in hex_bytes)
+HEADER_PATH = repo("libfprint-driver", "goodix5e0a.h")
+GOODIX_C_PATH = repo("libfprint-driver", "goodix.c")
+GOODIX_H_PATH = repo("libfprint-driver", "goodix.h")
+GOODIX_5E0A_C_PATH = repo("libfprint-driver", "goodix5e0a.c")
 
 
 class TestF27UpstreamCleanNoPskReconciliation(unittest.TestCase):

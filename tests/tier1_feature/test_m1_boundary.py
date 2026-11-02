@@ -7,26 +7,16 @@ and buffer encapsulation limits for Goodix 27c6:5e0a.
 import struct
 import unittest
 from tests.test_utils import (
-    CANONICAL_PSK,
-    CANONICAL_CONFIG_52XD,
-    CANONICAL_FDT_MODE,
-    CANONICAL_FDT_DOWN,
-    CANONICAL_FDT_UP,
-    CANONICAL_REG_022C_GAIN,
     CMD_MCU_SWITCH_TO_FDT_DOWN,
     CMD_MCU_SWITCH_TO_FDT_UP,
     CMD_MCU_SWITCH_TO_FDT_MODE,
-    CMD_WRITE_SENSOR_REGISTER,
     FLAGS_MSG_PROTOCOL,
     EP_OUT_CHUNK_SIZE,
     encode_protocol,
     decode_protocol,
     encode_pack,
-    decode_pack,
-    calc_protocol_checksum,
-    calc_pack_checksum,
 )
-from tests.tier1_feature.test_m1_payloads import parse_c_array, parse_c_macro
+from tests.source_checks import parse_c_array
 from tests.repo_paths import REPO_ROOT
 
 HEADER_PATH = REPO_ROOT / "libfprint-driver" / "goodix5e0a.h"

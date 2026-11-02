@@ -4,8 +4,6 @@ When Windows sets up the sensor, it locks the hardware with a unique key. If you
 
 Extract the key once and back up `/etc/libfprint/goodix-5e0a.psk` to safe storage.
 
----
-
 ## Method 1: Linux Recovery (Recommended)
 
 Extracts and verifies the key directly on Linux without booting Windows.
@@ -32,8 +30,6 @@ The script extracts the whitebox record, verifies the SHA-256 hash against your 
 ```bash
 fprintd-enroll
 ```
-
----
 
 ## Record layout and the by-offset read
 
@@ -65,9 +61,7 @@ does not establish another offset. Verification remains mandatory.
 
 The tool sends NOP and read commands only. It does not re-pair, provision,
 write flash, extract templates, or change the driver. `--print-key` explicitly
-prints the verified secret after it has been saved; normal use does not need it.
-
----
+prints the verified secret after it has been saved.
 
 ## Method 2: Windows DPAPI (Fallback)
 
@@ -101,8 +95,6 @@ sudo install -D -m 600 -o root -g root goodix-5e0a.psk /etc/libfprint/goodix-5e0
 sudo systemctl restart fprintd
 fprintd-enroll
 ```
-
----
 
 ## Troubleshooting
 

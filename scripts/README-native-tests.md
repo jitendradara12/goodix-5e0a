@@ -75,5 +75,4 @@ For local Python-only work without Nix, explicitly opt out:
 GOODIX_NATIVE_TESTS=skip bash tests/run_all_tests.sh
 ```
 
-That command prints and counts the native skip. It is not a required-lane pass.
 These tests do not establish hardware behavior or release readiness.

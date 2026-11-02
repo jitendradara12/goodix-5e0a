@@ -12,6 +12,8 @@ Verifies without hardware:
     staying within the 2000-code-line and 25-g_message budgets.
 """
 
+import contextlib
+import io
 import os
 import struct
 import unittest
@@ -73,6 +75,12 @@ class MockDevice:
 
 
 class TestF111DpapiAndDiagnostics(unittest.TestCase):
+
+    def setUp(self):
+        trap = io.StringIO()
+        ctx = contextlib.redirect_stdout(trap)
+        ctx.__enter__()
+        self.addCleanup(ctx.__exit__, None, None, None)
 
     def test_a_dpapi_blob_length_parsing(self):
         """parse_dpapi_blob_length accurately calculates length and detects completion."""

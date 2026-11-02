@@ -27,7 +27,6 @@ from goodix_whitebox import (
     mutate_byte15,
     derive_hash2,
     derive_keys,
-    compute_hmac,
     KNOWN_PSK,
     KNOWN_OUTPUT,
 )

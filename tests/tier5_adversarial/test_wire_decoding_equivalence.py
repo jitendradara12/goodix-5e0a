@@ -7,7 +7,6 @@ and real hardware captures.
 
 import unittest
 import random
-import struct
 from tests.repo_paths import REPO_ROOT
 from tests.test_utils import (
     FRAME_PIXELS,
@@ -16,8 +15,6 @@ from tests.test_utils import (
     FRAME_BLOCK_ACTIVE_BYTES,
     WIRE_FRAME_BYTES,
     pack_12bit_frame,
-    decode_12bit_frame,
-    decode_chicagoh_frame,
 )
 
 FINGERPRINT_PGM = (REPO_ROOT / "legacy-experiments" / "fingerprint.pgm"

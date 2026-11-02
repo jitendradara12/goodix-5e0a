@@ -3,51 +3,18 @@ Tier 1 Feature Tests: Milestone 1 Payload & Sensor Register Verification
 Validates byte-exactness of hardware tables in goodix5e0a.h against canonical hardware prototypes.
 """
 
-import re
 import struct
 import unittest
 from pathlib import Path
+from tests.repo_paths import REPO_ROOT
+from tests.source_checks import parse_c_array, parse_c_macro
 from tests.test_utils import (
     CANONICAL_PSK,
-    CANONICAL_CONFIG_52XD,
-    CANONICAL_FDT_MODE,
-    CANONICAL_FDT_DOWN,
-    CANONICAL_FDT_UP,
     CANONICAL_REG_022C_GAIN,
     FINGER_EXPOSURE_PAYLOAD,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 HEADER_PATH = REPO_ROOT / "libfprint-driver" / "goodix5e0a.h"
-
-
-def parse_c_array(header_content: str, array_name: str) -> bytes:
-    """Extracts a byte array from a C header file."""
-    pattern = rf"(?:static\s+)?const\s+guint8\s+{array_name}\s*\[\s*\d*\s*\]\s*=\s*\{{([^}}]+)\}};"
-    match = re.search(pattern, header_content, re.DOTALL)
-    if not match:
-        raise ValueError(f"Array '{array_name}' not found in header")
-    hex_str = match.group(1)
-    # Extract all 0x.. hex literals
-    hex_bytes = re.findall(r"0x([0-9a-fA-F]{2})", hex_str)
-    return bytes(int(b, 16) for b in hex_bytes)
-
-
-def parse_c_macro(header_content: str, macro_name: str) -> int:
-    """Extracts an integer macro value from a C header file."""
-    pattern = rf"#define\s+{macro_name}\s+\(([^)]+)\)"
-    match = re.search(pattern, header_content)
-    if not match:
-        pattern2 = rf"#define\s+{macro_name}\s+(\S+)"
-        match2 = re.search(pattern2, header_content)
-        if not match2:
-            raise ValueError(f"Macro '{macro_name}' not found in header")
-        val_str = match2.group(1).strip()
-    else:
-        val_str = match.group(1).strip()
-    if val_str.startswith("0x") or val_str.startswith("0X"):
-        return int(val_str, 16)
-    return int(val_str)
 
 
 class TestMilestone1Payloads(unittest.TestCase):

@@ -39,8 +39,8 @@ hardware validation. This change does not establish a fix for that unit.
 The clean production default was checked without the experiment flag: all 213
 saved raw frames normalize byte for byte identically to the tested candidate.
 The native C replay also preserves its enrollment selections, probe scores,
-gallery decisions and both held-out session results. The software suite passes
-368 tests with no skips; native tests cover pixel layout and print save/load.
+gallery decisions and both held-out session results.
+Native tests cover pixel layout and print save/load.
 
 ## Enrollment compatibility
 
@@ -61,5 +61,4 @@ Confirm: no hands-off advances, one hold advance followed by waiting for
 release, all 12 enrollment stages complete, genuine matches and wrong-finger
 rejections. Falsify: repeated hold advances, spurious activity, genuine failures
 or any wrong-finger match. Wrong build or old enrollment makes the run
-inconclusive. The single next hardware check is this normal-install run on
-ptrip7's affected laptop; no new dumps or Windows exports are requested.
+inconclusive.

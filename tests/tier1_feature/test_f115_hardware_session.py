@@ -1,8 +1,7 @@
-"""Failure-injection tests for the disposable hardware session, without USB/root."""
-
+import contextlib
 import importlib.util
+import io
 import json
-import os
 from pathlib import Path
 import re
 import shutil
@@ -22,6 +21,14 @@ COUNT_PRINTS = SESSION.count_prints
 
 class SessionTests(unittest.TestCase):
     def setUp(self):
+        trap_out = io.StringIO()
+        trap_err = io.StringIO()
+        out_ctx = contextlib.redirect_stdout(trap_out)
+        err_ctx = contextlib.redirect_stderr(trap_err)
+        out_ctx.__enter__()
+        err_ctx.__enter__()
+        self.addCleanup(err_ctx.__exit__, None, None, None)
+        self.addCleanup(out_ctx.__exit__, None, None, None)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.base = Path(self.tmp.name)
@@ -367,7 +374,12 @@ class GuidedPhaseTests(unittest.TestCase):
                     status = "match" if next(verification) else "no-match"
                     self.lines.append(f"Verify result: verify-{status} (done)")
                 return 0
-        with mock.patch.object(SESSION, "Client", FakeClient), mock.patch("builtins.input", return_value=""), mock.patch.object(SESSION.time, "sleep"), mock.patch.object(SESSION, "filtered_journal", return_value=journal):
+        with mock.patch.object(SESSION, "Client", FakeClient), \
+             mock.patch("builtins.input", return_value=""), \
+             mock.patch.object(SESSION.time, "sleep"), \
+             mock.patch.object(SESSION, "filtered_journal", return_value=journal), \
+             contextlib.redirect_stdout(io.StringIO()), \
+             contextlib.redirect_stderr(io.StringIO()):
             return SESSION.guided_test(mock.Mock(), [])
 
     def test_quiet_sensor_with_expected_decisions_is_confirmed(self):

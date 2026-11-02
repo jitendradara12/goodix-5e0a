@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Offline ticket 91 checks. PATH contains only mocks and allowlisted local tools."""
 import json
-import os
 from pathlib import Path
 import shutil
 import signal

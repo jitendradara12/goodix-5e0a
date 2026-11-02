@@ -5,8 +5,6 @@ temp_hot_seconds set to -1 (disables thermal watchdog polling).
 """
 
 import unittest
-import os
-import re
 from tests.repo_paths import repo
 from tests.source_checks import c_code_lines
 
