@@ -404,7 +404,7 @@ class CaptureCandidateTests(unittest.TestCase):
                 target = source / name
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(originals[name])
-            patch = ROOT / "experiments/jet-soup-capture.patch"
+            patch = ROOT / "legacy-experiments/jet-soup-capture.patch"
             subprocess.run(["git", "apply", "--no-index", "--check", str(patch)], cwd=source,
                            check=True, capture_output=True)
             subprocess.run(["git", "apply", "--no-index", str(patch)], cwd=source,

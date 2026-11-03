@@ -8,5 +8,5 @@ Helper scripts for sensor PSK extraction and driver hardware testing.
 - `test-hardware.sh`: Convenience wrapper around `hardware_session.py` to run isolated driver hardware tests with separate enrollment storage and automatic OTP calibration. See [docs/HARDWARE_TEST.md](../docs/HARDWARE_TEST.md).
 - `hardware_session.py`: Isolated hardware test runner with temporary fprintd storage drop-ins and automatic restoration.
 
-`experiments/jet-soup-capture.patch` preserves the original wire comparison.
+`legacy-experiments/jet-soup-capture.patch` preserves the original wire comparison.
 The runner no longer applies it; the driver now selects that profile itself.
